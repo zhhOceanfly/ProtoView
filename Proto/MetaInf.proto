@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+package MetaInf;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/MetaInf"; // go_package选项。
+option csharp_namespace = "Shared.Proto.MetaInf"; // csharp_namespace选项。
+
+import "google/protobuf/descriptor.proto";
+
+// 内存模式。
+enum MemMode {
+  // 未定义。
+  None = 0;
+
+  // 可读可写。
+  Write = 1;
+
+  // 只读不写。
+  Read = 2;
+}
+
+// 日志等级。
+enum LogLevel {
+  // 未定义。
+  Undefined = 0;
+
+  // 紧急（0）：系统不可用，通常用于灾难性故障。
+  Emergency = 1;
+
+  // 警报（1）：必须立即采取行动，指示需要立即注意的情况。
+  Alert = 2;
+
+  // 严重（2）：严重条件，指示需要立即注意的严重故障。
+  Critical = 3;
+
+  // 错误（3）：错误条件，指示应该解决的错误。
+  Error = 4;
+
+  // 警告（4）：警告条件，指示潜在问题，如果不解决可能会导致错误。
+  Warn = 5;
+
+  // 通知（5）：正常但重要的情况，指示值得注意但不一定有问题的事件。
+  Notice = 6;
+
+  // 信息（6）：信息消息，用于系统操作的一般信息。
+  Info = 7;
+
+  // 调试（7）：调试级别的消息，用于调试和故障排除目的的消息。
+  Debug = 8;
+}
+
+// 后台权限组
+enum ManagerRole {
+  MR_Default = 0; // 默认
+  MR_SuperAdmin = 1; // 超级管理员
+  MR_GameOperator = 2; //游戏运营
+}
+
+// 客户端角色
+enum ClientRole {
+  CR_Default = 0; // 默认普通玩家
+  CR_JuniorAdmin = 1; // 小管理
+  CR_Gm = 2; // GM
+}
+
+//token标签
+enum TokenTag {
+  AU_GAME = 0; //游戏玩家
+  AU_OFFICIAL = 1; //官网玩家
+  AU_LAUNCHER = 2; //启动器玩家
+  AU_MANAGER = 3; //管理员
+}
+
+// jwt来源
+enum JwtSource {
+  JS_NONE = 0; //未定义
+  JS_PLAYER = 1; //玩家
+  JS_MANAGER = 2; //管理员
+}
+
+// 认证选项
+enum AuthOption {
+  NO_AUTH = 0; //不认证
+  JWT_AUTH = 1; //jwt认证
+  SELECT_AUTH = 2; //选择认证
+}
+
+// 一致性选项
+enum ConsistOption {
+  EventualConsistency = 0; //最终一致性 Saga
+  StrongConsistency = 1; //强一致性 TCC
+  WeakConsistency = 2; //弱一致性
+}
+
+// HTTP 请求和响应体的编码方式。
+enum BodyMode {
+  BODY_MODE_PROTO = 0;
+  BODY_MODE_RAW_TEXT = 1;
+}
+
+// 防重放配置
+message ReplayConfig {
+  int32 CacheTime = 1; //防重复缓存时间
+}
+
+//线程配置
+message LoomConfig {
+  int32 Lid = 1; //包含
+  int32 Rid = 2; //不包含
+}
+
+// 会话配置
+message SessionConfig {
+  oneof config {
+    LoomConfig Rand = 1; //随机
+    LoomConfig ServerRand = 2; //服务器随机
+    LoomConfig UserRand = 3; //玩家随机
+    LoomConfig GameMod = 4; //游戏服务器取模
+    LoomConfig UserMod = 5; //玩家取模
+    LoomConfig TroopRand = 6; //团队随机
+    LoomConfig SceneMod = 7; //场景取模
+  }
+}
+
+// 认证配置
+message AuthConfig {
+  AuthOption AuthOption = 1; //认证选项
+  repeated JwtSource JwtSources = 2; //jwt来源
+  repeated string TokenType = 3; //token类型
+  JtiConfig JtiCheck = 4; //jti配置
+  repeated TokenTag Tags = 5; //token标签
+}
+
+// jti配置
+message JtiConfig {
+  int32 ClientTtl = 1; //客户端缓存时间-秒
+}
+
+// 限流参数
+message LimitParam {
+  int32 TimeWindow = 1; //限流时间窗口
+  int32 CallCount = 2; //限流调用数
+  int32 BanTime = 3; //封禁时间
+}
+
+// 自然日限流参数，按北京时间零点切换，放行请求即计次
+message DailyLimitParam {
+  int32 CallCount = 1; //每日最多放行次数，必须大于0
+}
+
+//限流配置
+message LimitConfig {
+  LimitParam IpLimit = 1; //ip限流参数
+  LimitParam UserLimit = 2; //玩家限流参数
+  LimitParam UserMethodLimit = 3; //玩家方法限流参数
+  DailyLimitParam UserMethodDailyLimit = 4; //玩家单接口自然日限流参数
+}
+
+//缓存配置
+message CacheConfig {
+  int32 ClientTtl = 1; //客户端缓存时间-秒
+  int32 ServerTtl = 2; //服务器缓存时间-秒
+}
+
+// 幂等配置
+message IdempotentConfig {
+  bool Verify = 1; //是否开启幂等校验
+  int32 CacheTime = 2; //幂等缓存时间-秒
+  ConsistOption ConsistType = 3; //一致性类型
+}
+
+// 熔断配置
+message CircuitConfig {
+  int32 TimeWindow = 1; //阈值窗口时间-秒
+  int32 FailureThreshold = 2; //请求失败阈值
+}
+
+// 协议描述。
+message MetaData {
+  // 内存模式
+  MemMode Mem = 1;
+
+  // 日志等级。
+  LogLevel Log = 2;
+
+  //超时时间（秒，负数为不设置）
+  int32 Timeout = 3;
+
+  // 认证配置
+  AuthConfig AuthConfig = 4;
+
+  // 是否不签名
+  bool NotSigna = 5;
+
+  // 是否不链路跟踪
+  bool NotTracing = 6;
+  
+  // 后台权限组列表
+  repeated ManagerRole ManagerRoles = 7;
+
+  // 客户端角色列表
+  repeated ClientRole ClientRoles = 8;
+
+  // 防重放配置
+  ReplayConfig Replay = 9;
+
+  // 会话配置
+  SessionConfig SessionConfig = 10;
+
+  // 限流配置
+  LimitConfig LimitConfig = 11;
+
+  //TODO 一致性检查
+  bool ConsistCheck = 12;
+  
+  //实例一致性检查
+  bool PodConsistCheck = 13;
+
+  // 缓存配置
+  CacheConfig CacheConfig = 14;
+
+  // 额外参数
+  repeated string Extras = 15;
+
+  // 接口关闭开关
+  bool Closed = 16;
+
+  // 幂等配置
+  IdempotentConfig Idempotent = 17;
+
+  // 熔断配置
+  CircuitConfig CircuitConfig = 18;
+
+  // HTTP 请求体编码方式；gRPC 始终使用原有 protobuf 编码。
+  BodyMode RequestBodyMode = 20;
+
+  // HTTP 响应体编码方式；gRPC 始终使用原有 protobuf 编码。
+  BodyMode ResponseBodyMode = 19;
+}
+
+extend google.protobuf.MethodOptions {
+  // 协议描述
+  MetaData Meta = 50000;
+}

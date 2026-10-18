@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package Pet;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Pet";
+option csharp_namespace = "Shared.Proto.Pet";
+
+/** **************** message **************** **/
+
+// 空请求体
+message Empty {}
+
+// 宠物资质百分比
+message PetQualification {
+  int32 HpRate = 1; // 生命资质 %
+  int32 AtkRate = 2; // 攻击资质 %
+  int32 DefRate = 3; // 防御资质 %
+}
+
+// 宠物数据
+message PetData {
+  int64 PetId = 1 [jstype = JS_STRING]; // 宠物唯一ID
+  int32 PetConfigId = 2; // 宠物配置ID
+  string Name = 3; // 宠物名称
+  int32 CurExp = 4; // 当前经验
+  int32 CurHp = 5; // 当前血量
+  PetQualification PetQualification = 6; // 宠物资质百分比
+  string AttributeData = 7; // 预留属性字段
+  string EntryData = 8; // 宠物词条快照
+  bool IsPeer = 9; // 是否为当前同行宠物
+  PetState State = 10; // 宠物状态
+  int32 Slot = 11; // 仓库槽位
+}
+
+//宠物容量数据
+message PetCapacityData {
+  int32 CurCap = 1; //当前仓库容量
+  int32 ExtendNum = 2; //扩容次数
+  int32 ExtendNumLimit = 3; //扩容次数上限
+  int32 ExtendCap = 4; //单次扩容容量
+  ExtendCost Cost = 5; //扩容消耗
+}
+//扩容消耗
+message ExtendCost {
+  int32 CurrencyId = 1; //货币id
+  int32 Amount = 2; //数量
+}
+
+//培育消耗
+message RaisingCost {
+  int32 GoodsId = 1; //道具id
+  int32 Amount = 2; //数量
+}
+
+// 宠物培养数据
+message PetRaisingData {
+  int64 PetId = 1 [jstype = JS_STRING]; // 宠物唯一ID
+  int32 PetConfigId = 2; // 宠物配置ID
+  RaisingType RaisingType = 3; // 培育类型
+  int32 RaisingSlot = 4; // 培养槽位
+  int32 CurExp = 5; // 当前经验
+  int32 CurHp = 6; // 当前血量
+  int32 RaisedExp = 7; //培育后经验
+  int32 RaisedHp = 8; //培育后血量
+  int32 RaiseStartTime = 9; // 培育开始时间
+  int32 RaiseTime = 10; // 培养时间
+  bool IsCompleted = 11; // 是否已完成
+}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+  EVENT_PET_RAISING_STARTED = 1; //宠物培育开始事件
+  EVENT_PET_RELEASE = 2; //宠物单独放生结果事件
+}
+
+// 宠物单独放生结果事件
+message ReleasePetEvt {
+  RespCode Result = 1; //放生结果
+  int64 PetId = 2 [jstype = JS_STRING]; //宠物唯一ID
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; // 失败
+  SUCCESS = 1; // 成功
+  INVALID_PARAM = 2; // 参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+  OPERATE_LOCK_FAILURE = 7; //操作加锁失败
+  //...
+  PET_NOT_EXIST = 10; // 宠物不存在
+  PET_CONFIG_NOT_EXIST = 11; // 宠物配置不存在
+  PET_RAISING_CONFIG_INVALID = 12; // 宠物培养配置无效
+  PET_RAISING_SLOT_INVALID = 13; // 宠物培养槽位无效
+  PET_STATE_INVALID = 14; // 宠物状态无效
+  PET_RAISING_GOODS_NOT_ENOUGH = 15; // 宠物培养道具不足
+  PET_CAPACITY_IS_FULL = 16; // 宠物仓库已满
+  PET_CAPACITY_EXTEND_OVER_LIMIT = 17; // 宠物仓库扩容次数已达上限
+  PET_CAPACITY_EXTEND_CONFIG_ERROR = 18; // 宠物仓库扩容配置错误
+  PET_CAPACITY_EXTEND_CURRENCY_NOT_FULL = 19; // 宠物仓库扩容货币不足
+  PET_RAISING_NOT_COMPLETED = 20; // 宠物培育未完成
+  GOODS_NOT_EXIST = 21; // 道具不存在
+  PET_RAISING_SLOT_ALREADY_USED = 22; // 宠物培养槽位已使用
+  PET_ALREADY_RAISING = 23; // 宠物正在培育中
+  PET_RAISING_OPERATE_NOT_ALLOWED = 24; // 宠物培育操作不允许
+  PET_EXP_NOT_FULL = 25; // 宠物经验不足
+  PET_ALREADY_MAX_STAGE = 26; // 宠物已达到最高阶段
+  PET_NOT_PEER = 27; // 宠物不是同行
+  PET_CHANGE_NOT_ALLOWED = 28; // 宠物变更不允许
+  PET_RAISING_GOODS_CONFIG_ERROR = 29; // 宠物培育道具配置错误
+  PET_HP_ALREADY_FULL = 30; // 宠物血量已满
+  PET_EXP_ALREADY_FULL = 31; // 宠物经验已满
+  PET_ALREADY_DEAD = 32; // 宠物已死亡
+  PET_CAPTURE_GOODS_NOT_ENOUGH = 33; // 捕捉道具不足
+  PET_NAME_INVALID = 34; // 宠物名称不合法
+  DRONE_NOT_EXIST = 35; // 无人机配置不存在
+  DRONE_NOT_OWNED = 36; // 玩家未拥有无人机
+  DRONE_ALREADY_EQUIPPED = 37; // 无人机已穿戴（预留）
+}
+
+// 宠物状态
+enum PetState {
+  PS_NORMAL = 0; // 正常
+  PS_DEAD = 1; // 死亡
+  PS_RELEASED = 2; // 已放生
+  PS_RAISING = 3; // 培育中
+}
+
+//培育类似
+enum RaisingType {
+  RT_NORMAL = 0; //普通培育
+  RT_PROMOTION = 1; //突破培育
+  RT_REVIVE = 2; //死亡复活
+}
+
+// 玩家无人机信息
+message DroneData {
+  int32 DroneId = 1; // 无人机配置id
+  bool IsEquipped = 2; // 是否正在穿戴
+}

@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package Official;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Official";
+option csharp_namespace = "Shared.Proto.Official";
+
+import "MetaInf.proto";
+import "Official.Shared.proto";
+
+/** **************** service **************** **/
+
+// 服务定义
+service PublicService {
+  //发送预约游戏验证码
+  rpc ReqBaseSendPreRegisterVerifyCode(SendPreRegisterVerifyCodeReq) returns (SendPreRegisterVerifyCodeResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      Replay: {
+        CacheTime: 10
+      },
+      SessionConfig: {
+        Rand: {}
+      },
+      LimitConfig: {
+        IpLimit: {
+          TimeWindow: 1,
+          CallCount: 5,
+          BanTime: 1
+        }
+      }
+    };
+  };
+  //官网预约游戏
+  rpc ReqBaseWebsitePreRegisterGame(PreRegisterGameReq) returns (PreRegisterGameResp) {
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      Replay : {
+        CacheTime: 10
+      },
+      SessionConfig: {
+        Rand: {}
+      },
+      LimitConfig: {
+        IpLimit: {
+          TimeWindow: 1,
+          CallCount : 5,
+          BanTime   : 1
+        }
+      }
+    };
+  };
+  //查询官网首页统计数据
+  rpc ReqOfficialHomeStatData(OfficialHomeStatDataReq) returns (OfficialHomeStatDataResp) {
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_MANAGER]
+      },
+      ManagerRoles: [MR_SuperAdmin],
+      SessionConfig: {
+        UserMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //查询官网首页访问趋势
+  rpc ReqOfficialHomeAccessTrend(OfficialHomeAccessTrendReq) returns (OfficialHomeAccessTrendResp) {
+    option (MetaInf.Meta) = {
+      Closed: true,
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_MANAGER]
+      },
+      ManagerRoles: [MR_SuperAdmin],
+      SessionConfig: {
+        UserMod: {}
+      },
+      CacheConfig: {
+        ClientTtl: 5,
+        ServerTtl: 0
+      }
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+}
+
+/** **************** message **************** **/
+
+//发送预约游戏验证码请求体
+message SendPreRegisterVerifyCodeReq {
+  string Account = 1; //账号
+}
+//发送预约游戏验证码响应体
+message SendPreRegisterVerifyCodeResp {
+  RespCode Result = 1; //结果
+}
+
+//官网预约游戏请求
+message PreRegisterGameReq {
+  string Account      = 1; //账号
+  string VerifyCode = 2; //验证码
+}
+//官网预约游戏响应
+message PreRegisterGameResp {
+  RespCode Result = 1; //结果
+}
+
+//查询官网首页统计数据请求
+message OfficialHomeStatDataReq {
+  int32 stat_date = 1; //统计日期
+}
+//查询官网首页统计数据响应
+message OfficialHomeStatDataResp {
+  RespCode result = 1; //结果
+  repeated DailyStatData data_list = 2; //数据列表
+  repeated PreRegisterData pre_register_data = 3; //累计预约（按来源）
+}
+message PreRegisterData {
+  PreRegisterSource source = 1; //来源
+  int32 count = 2; //数量
+}
+//每日pv/uv数据
+message DailyStatData {
+  int32 stat_date = 1; //统计日期
+  int32 pv = 2; //pv
+  int32 uv = 3; //uv
+  int32 pre_register_count = 4; //预约人数
+} 
+//查询官网首页访问趋势请求
+message OfficialHomeAccessTrendReq {
+  int32 stat_date = 1; //统计日期
+}
+//查询官网首页访问趋势响应
+message OfficialHomeAccessTrendResp {
+  RespCode result = 1; //结果
+  repeated DailyStatData data_list = 2; //数据列表
+}

@@ -1,0 +1,102 @@
+{
+  "name": "protoview",
+  "displayName": "ProtoView",
+  "description": "按 package / service 浏览 Protobuf，并在接口、message、enum 之间跳转",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Other"],
+  "activationEvents": [
+    "onView:protoview.explorer",
+    "onCommand:protoview.show",
+    "workspaceContains:**/*.proto"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "protoview.show",
+        "title": "在预览中打开",
+        "category": "Proto"
+      },
+      {
+        "command": "protoview.openSource",
+        "title": "跳转到源码",
+        "icon": "$(go-to-file)",
+        "category": "Proto"
+      },
+      {
+        "command": "protoview.refresh",
+        "title": "重新解析",
+        "icon": "$(refresh)",
+        "category": "Proto"
+      },
+      {
+        "command": "protoview.showAtCursor",
+        "title": "预览光标所在定义",
+        "category": "Proto"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "protoview",
+          "title": "Proto",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "protoview": [
+        {
+          "id": "protoview.explorer",
+          "name": "Packages"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "protoview.refresh",
+          "when": "view == protoview.explorer",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "protoview.openSource",
+          "when": "view == protoview.explorer && viewItem == source",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "protoview.showAtCursor",
+          "when": "resourceExtname == .proto",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ProtoView",
+      "properties": {
+        "protoview.showGoogle": {
+          "type": "boolean",
+          "default": false,
+          "description": "在侧边栏中显示 google.* 标准包。关闭时仍会解析它们，以便跳转到被引用的类型。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.5.0"
+  }
+}

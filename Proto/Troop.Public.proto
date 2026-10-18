@@ -1,0 +1,1295 @@
+syntax = "proto3";
+
+package Troop;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Troop";
+option csharp_namespace = "Shared.Proto.Troop";
+
+import "MetaInf.proto";
+import "Troop.Shared.proto";
+
+/** **************** service **************** **/
+
+// 服务定义
+service PublicService {
+  //玩家创建队伍
+  rpc ReqPlayerCreateTroop(PlayerCreateTroopReq) returns (PlayerCreateTroopResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      Replay: {
+        CacheTime: 10
+      },
+      ConsistCheck: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+      CacheConfig: {
+        ClientTtl: 0,
+        ServerTtl: 10
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //查看团队列表
+  rpc ReqTroopList(Empty) returns (TroopListResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //查看玩家团队信息
+  rpc ReqPlayerTroopInfo(Empty) returns (PlayerTroopInfoResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //查看团队成员列表
+  rpc ReqTroopMemberList(TroopMemberListReq) returns (TroopMemberListResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //申请加入团队
+  rpc ReqApplyJoinTroop(ApplyJoinTroopReq) returns (ApplyJoinTroopResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      Replay: {
+        CacheTime: 10
+      },
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //取消申请加入团队
+  rpc ReqCancelApplyJoinTroop(CancelApplyJoinTroopReq) returns (CancelApplyJoinTroopResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //团队申请加入列表
+  rpc ReqTroopApplyJoinList(TroopApplyJoinListReq) returns (TroopApplyJoinListResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //审核加入团队
+  rpc ReqReviewJoinTroop(ReviewJoinTroopReq) returns (ReviewJoinTroopResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      Replay: {
+        CacheTime: 10
+      },
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //玩家离开团队
+  rpc ReqPlayerLeaveTroop(PlayerLeaveTroopReq) returns (PlayerLeaveTroopResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //踢出团队玩家
+  rpc ReqKickoutTroopPlayer(KickoutTroopPlayerReq) returns (KickoutTroopPlayerResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      Replay: {
+        CacheTime: 10
+      },
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //转让团长
+  rpc ReqTransferTroopCaptain(TransferTroopCaptainReq) returns (TransferTroopCaptainResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //设立副队长
+  // rpc ReqSetTroopCocaptain(SetTroopCocaptainReq) returns (SetTroopCocaptainResp){
+  //   option (MetaInf.Meta) = {
+  //     Timeout: 15,
+  //     AuthConfig: {
+  //       AuthOption: JWT_AUTH,
+  //       JwtSources: [JS_PLAYER],
+  //       JtiCheck: {
+  //         ClientTtl: 10
+  //       }
+  //     },
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //     LimitConfig: {
+  //       UserMethodLimit: {
+  //         TimeWindow: 1,
+  //         CallCount: 3,
+  //         BanTime: 2
+  //       }
+  //     }
+  //   };
+  // };
+  //取消设立副队长
+  // rpc ReqUnsetTroopCocaptain(UnsetTroopCocaptainReq) returns (UnsetTroopCocaptainResp){
+  //   option (MetaInf.Meta) = {
+  //     Timeout: 15,
+  //     AuthConfig: {
+  //       AuthOption: JWT_AUTH,
+  //       JwtSources: [JS_PLAYER],
+  //       JtiCheck: {
+  //         ClientTtl: 10
+  //       }
+  //     },
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //     LimitConfig: {
+  //       UserMethodLimit: {
+  //         TimeWindow: 1,
+  //         CallCount: 3,
+  //         BanTime: 2
+  //       }
+  //     }
+  //   };
+  // };
+  //解散团队
+  rpc ReqDismissTroop(DismissTroopReq) returns (DismissTroopResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //修改团队公告
+  rpc ReqUpdateTroopNotice(UpdateTroopNoticeReq) returns (UpdateTroopNoticeResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //修改团队名称
+  rpc ReqUpdateTroopName(UpdateTroopNameReq) returns (UpdateTroopNameResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  // //修改团队简称
+  // rpc ReqUpdateTroopShortName(UpdateTroopShortNameReq) returns (UpdateTroopShortNameResp){
+  //   option (MetaInf.Meta) = {
+  //     Timeout: 15,
+  //     AuthConfig: {
+  //       AuthOption: JWT_AUTH,
+  //       JwtSources: [JS_PLAYER],
+  //       JtiCheck: {
+  //         ClientTtl: 10
+  //       }
+  //     },
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //     LimitConfig: {
+  //       UserMethodLimit: {
+  //         TimeWindow: 1,
+  //         CallCount: 3,
+  //         BanTime: 2
+  //       }
+  //     }
+  //   };
+  // };
+  //获取团队权限
+  rpc ReqGetTroopPermission(GetTroopPermissionReq) returns (GetTroopPermissionResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //修改团队权限
+  rpc ReqUpdateTroopPermission(UpdateTroopPermissionReq) returns (UpdateTroopPermissionResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+
+  // //团队背包列表
+  // rpc ReqTroopBagList(TroopBagListReq) returns (TroopBagListResp){
+  //   option (MetaInf.Meta) = {
+  //     Timeout: 15,
+  //     AuthConfig: {
+  //       AuthOption: JWT_AUTH,
+  //       JwtSources: [JS_PLAYER],
+  //       JtiCheck: {
+  //         ClientTtl: 10
+  //       }
+  //     },
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //     LimitConfig: {
+  //       UserMethodLimit: {
+  //         TimeWindow: 1,
+  //         CallCount: 3,
+  //         BanTime: 2
+  //       }
+  //     }
+  //   };
+  // };
+  // //玩家存入团队背包
+  // rpc ReqPlayerStoreTroopBag(PlayerStoreTroopBagReq) returns (PlayerStoreTroopBagResp){
+  //   option (MetaInf.Meta) = {
+  //     Timeout: 15,
+  //     AuthConfig: {
+  //       AuthOption: JWT_AUTH,
+  //       JwtSources: [JS_PLAYER],
+  //       JtiCheck: {
+  //         ClientTtl: 10
+  //       }
+  //     },
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //     LimitConfig: {
+  //       UserMethodLimit: {
+  //         TimeWindow: 1,
+  //         CallCount: 3,
+  //         BanTime: 2
+  //       }
+  //     }
+  //   };
+  // };
+  // //玩家取出团队背包
+  // rpc ReqPlayerTakeOutTroopBag(PlayerTakeOutTroopBagReq) returns (PlayerTakeOutTroopBagResp){
+  //   option (MetaInf.Meta) = {
+  //     Timeout: 15,
+  //     AuthConfig: {
+  //       AuthOption: JWT_AUTH,
+  //       JwtSources: [JS_PLAYER],
+  //       JtiCheck: {
+  //         ClientTtl: 10
+  //       }
+  //     },
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //     LimitConfig: {
+  //       UserMethodLimit: {
+  //         TimeWindow: 1,
+  //         CallCount: 3,
+  //         BanTime: 2
+  //       }
+  //     }
+  //   };
+  // };
+
+  //保存游戏团队设置
+  rpc ReqSaveGameTroopSetting(SaveGameTroopSettingReq) returns (SaveGameTroopSettingResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_MANAGER]
+      },
+      ManagerRoles: [MR_SuperAdmin],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+      }
+    };
+  };
+  //获取游戏团队设置
+  rpc ReqGameTroopSetting(Empty) returns (GameTroopSettingResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      Mem: Read,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_MANAGER]
+      },
+      ManagerRoles: [MR_SuperAdmin],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+      }
+    };
+  };
+  //保存游戏服务器团队设置
+  rpc ReqSaveGameServerTroopSetting(SaveGameServerTroopSettingReq) returns (SaveGameServerTroopSettingResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_MANAGER]
+      },
+      ManagerRoles: [MR_SuperAdmin],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+      }
+    };
+  };
+  //获取游戏服务器团队设置
+  rpc ReqGameServerTroopSetting(Empty) returns (GameServerTroopSettingResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      Mem: Read,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_MANAGER]
+      },
+      ManagerRoles: [MR_SuperAdmin],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+      }
+    };
+  };
+
+  //邀请玩家加入小队
+  rpc ReqInviteTeamPlayer(InviteTeamPlayerReq) returns (InviteTeamPlayerResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      Replay: {
+        CacheTime: 10
+      },
+      ConsistCheck: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //响应小队邀请
+  rpc ReqReplyTeamInvite(ReplyTeamInviteReq) returns (ReplyTeamInviteResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      Replay: {
+        CacheTime: 10
+      },
+      ConsistCheck: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //查看小队成员列表
+  rpc ReqTeamMemberList(Empty) returns (TeamMemberListResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //退出小队
+  rpc ReqLeaveTeam(LeaveTeamReq) returns (LeaveTeamResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      Replay: {
+        CacheTime: 10
+      },
+      ConsistCheck: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //踢出小队玩家
+  rpc ReqKickoutTeamPlayer(KickoutTeamPlayerReq) returns (KickoutTeamPlayerResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      ConsistCheck: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //转让小队长
+  rpc ReqTransferTeamCaptain(TransferTeamCaptainReq) returns (TransferTeamCaptainResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      ConsistCheck: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+  //解散小队
+  rpc ReqDismissTeam(Empty) returns (DismissTeamResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 10
+        }
+      },
+      ClientRoles: [CR_Default],
+      ConsistCheck: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+  };
+
+  //查询玩家副本通关统计
+  rpc ReqGetPlayerDungeonBeatStat(GetPlayerDungeonBeatStatReq) returns (GetPlayerDungeonBeatStatResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 0
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        UserMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 2,
+          BanTime: 1
+        }
+      }
+    };
+  };
+  //查询玩家副本通关排行榜
+  rpc ReqGetPlayerDungeonBeatRank(GetPlayerDungeonBeatRankReq) returns (GetPlayerDungeonBeatRankResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 0
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        UserMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 2,
+          BanTime: 1
+        }
+      }
+    };
+  };
+  //玩家取消派对中申请挑战副本
+  rpc ReqPlayerCancelApplyChallengeDungeon(PlayerCancelApplyChallengeDungeonReq) returns (PlayerCancelApplyChallengeDungeonResp){
+    option (MetaInf.Meta) = {
+      Closed: true,
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 0
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        UserMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 2,
+          BanTime: 1
+        }
+      }
+    };
+  };
+  //玩家取消准备申请挑战副本
+  rpc ReqPlayerRefuseApplyChallengeDungeon(PlayerRefuseApplyChallengeDungeonReq) returns (PlayerRefuseApplyChallengeDungeonResp){
+    option (MetaInf.Meta) = {
+      Timeout: 15,
+      AuthConfig: {
+        AuthOption: JWT_AUTH,
+        JwtSources: [JS_PLAYER],
+        Tags: [AU_GAME],
+        JtiCheck: {
+          ClientTtl: 0
+        }
+      },
+      ClientRoles: [CR_Default],
+      SessionConfig: {
+        UserMod: {}
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 2,
+          BanTime: 1
+        }
+      }
+    };
+  };
+}
+
+/** **************** message **************** **/
+
+//玩家创建团队请求体
+message PlayerCreateTroopReq {
+  string TroopName = 1; //团队名称
+}
+//玩家创建团队响应体
+message PlayerCreateTroopResp {
+  RespCode Result = 1; //结果
+  TroopData TroopInfo = 2; //团队信息
+  PlayerTroopData PlayerTroop = 3; //玩家团队信息
+}
+
+//获取团队列表响应体
+message TroopListResp {
+  RespCode Result = 1; //结果
+  repeated TroopListData TroopList = 2; //团队列表
+}
+
+//获取团队信息响应体
+message PlayerTroopInfoResp {
+  RespCode Result = 1; //结果
+  TroopData TroopInfo = 2; //团队信息
+  PlayerTroopData PlayerTroop = 3; //玩家团队信息
+}
+
+//团队成员列表请求体
+message TroopMemberListReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+//团队成员列表响应体
+message TroopMemberListResp {
+  RespCode Result = 1; //结果
+  repeated MemberData MemberList = 2; //团队成员列表
+}
+
+//申请加入团队请求体
+message ApplyJoinTroopReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+//申请加入团队响应体
+message ApplyJoinTroopResp {
+  RespCode Result = 1; //结果
+}
+
+//取消申请加入团队请求体
+message CancelApplyJoinTroopReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+//取消申请加入团队响应体
+message CancelApplyJoinTroopResp {
+  RespCode Result = 1; //结果
+}
+
+//团队申请加入列表请求体
+message TroopApplyJoinListReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+//团队申请加入列表响应体
+message TroopApplyJoinListResp {
+  RespCode Result = 1; //结果
+  repeated TroopApplyJoinData ApplyList = 2; //申请列表
+}
+
+//审核加入团队请求体
+message ReviewJoinTroopReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 ApplyId = 2 [jstype = JS_STRING]; //申请id
+  ReviewOperateType OperateType = 3; //操作类型
+}
+//审核加入团队响应体
+message ReviewJoinTroopResp {
+  RespCode Result = 1; //结果
+}
+
+//玩家离开团队请求体
+message PlayerLeaveTroopReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+//玩家离开团队响应体
+message PlayerLeaveTroopResp {
+  RespCode Result = 1; //结果
+}
+
+//踢出团队玩家请求体
+message KickoutTroopPlayerReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+}
+//踢出团队玩家响应体
+message KickoutTroopPlayerResp {
+  RespCode Result = 1; //结果
+}
+
+//转让团队队长请求体
+message TransferTroopCaptainReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+}
+//转让团队队长响应体
+message TransferTroopCaptainResp {
+  RespCode Result = 1; //结果
+}
+
+//设立团队副队长请求体
+message SetTroopCocaptainReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+}
+//设立团队副队长响应体
+message SetTroopCocaptainResp {
+  RespCode Result = 1; //结果
+}
+
+//取消设立团队副队长请求体
+message UnsetTroopCocaptainReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+}
+//取消设立团队副队长响应体
+message UnsetTroopCocaptainResp {
+  RespCode Result = 1; //结果
+}
+
+//解散团队请求体
+message DismissTroopReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+//解散团队响应体
+message DismissTroopResp {
+  RespCode Result = 1; //结果
+}
+
+//更新团队公告请求体
+message UpdateTroopNoticeReq {
+  string Notice = 1; //团队公告
+}
+//更新团队公告响应体
+message UpdateTroopNoticeResp {
+  RespCode Result = 1; //结果
+  string Notice = 2; //团队公告
+}
+
+//更新团队名称请求体
+message UpdateTroopNameReq {
+  string TroopName = 1; //团队名称
+}
+//更新团队名称响应体
+message UpdateTroopNameResp {
+  RespCode Result = 1; //结果
+  string TroopName = 2; //团队名称
+}
+
+//更新团队简称请求体
+message UpdateTroopShortNameReq {
+  string ShortName = 1; //团队简称
+}
+//更新团队简称响应体
+message UpdateTroopShortNameResp {
+  RespCode Result = 1; //结果
+  string ShortName = 2; //团队简称
+}
+
+//获取团队权限请求体
+message GetTroopPermissionReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  TroopRole MemberRole = 2; //成员角色
+}
+//获取团队权限响应体
+message GetTroopPermissionResp {
+  RespCode Result = 1; //结果
+  TroopRole MemberRole = 2; //成员角色
+  repeated int32 TroopPermission = 3; //权限列表
+}
+//更新团队权限请求体
+message UpdateTroopPermissionReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  TroopRole MemberRole = 2; //成员角色
+  repeated int32 TroopPermission = 3; //权限列表
+}
+//更新团队权限响应体
+message UpdateTroopPermissionResp {
+  RespCode Result = 1; //结果
+  repeated int32 TroopPermission = 2; //权限列表
+}
+
+//团队背包列表请求体
+message TroopBagListReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  repeated int32 GoodsType = 2; //物品类型
+}
+//团队背包列表响应体
+message TroopBagListResp {
+  RespCode Result = 1; //结果
+  repeated TroopBagData BagList = 2; //背包列表
+}
+
+//玩家存入团队背包请求体
+message PlayerStoreTroopBagReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int32 GoodsId = 2; //物品id
+  int32 GoodsAmount = 3; //物品数量
+}
+//玩家存入团队背包响应体
+message PlayerStoreTroopBagResp {
+  RespCode Result = 1; //结果
+}
+
+//玩家取出团队背包请求体
+message PlayerTakeOutTroopBagReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int32 GoodsId = 2; //物品id
+  int32 GoodsAmount = 3; //物品数量
+}
+//玩家取出团队背包响应体
+message PlayerTakeOutTroopBagResp {
+  RespCode Result = 1; //结果
+}
+
+//邀请玩家加入小队请求体
+message InviteTeamPlayerReq {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  int64 InvitedPlayerId = 2 [jstype = JS_STRING]; //被邀请玩家id
+}
+//邀请玩家加入小队响应体
+message InviteTeamPlayerResp {
+  RespCode Result = 1; //结果
+}
+
+//响应小队邀请请求体
+message ReplyTeamInviteReq {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  ReviewOperateType OperateType = 2; //操作类型（同意/拒绝）
+}
+//响应小队邀请响应体
+message ReplyTeamInviteResp {
+  RespCode Result = 1; //结果
+  PlayerTeamData PlayerTeam = 2; //玩家小队信息
+}
+
+//小队成员列表响应体
+message TeamMemberListResp {
+  RespCode Result = 1; //结果
+  PlayerTeamData PlayerTeam = 2; //玩家小队信息
+}
+
+//退出小队请求体
+message LeaveTeamReq {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+}
+//退出小队响应体
+message LeaveTeamResp {
+  RespCode Result = 1; //结果
+}
+
+//踢出小队玩家请求体
+message KickoutTeamPlayerReq {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  int64 KickoutPlayerId = 2 [jstype = JS_STRING]; //被踢出玩家id
+}
+//踢出小队玩家响应体
+message KickoutTeamPlayerResp {
+  RespCode Result = 1; //结果
+}
+
+//转让小队长请求体
+message TransferTeamCaptainReq {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  int64 TransferPlayerId = 2 [jstype = JS_STRING]; //转让玩家id
+}
+//转让小队长响应体
+message TransferTeamCaptainResp {
+  RespCode Result = 1; //结果
+}
+
+//解散小队响应体
+message DismissTeamResp {
+  RespCode Result = 1; //结果
+}
+
+//保存游戏服务器团队设置请求体
+message SaveGameServerTroopSettingReq {
+  int32 TeamCd = 1; //团队CD总秒数
+}
+//保存游戏服务器团队设置响应体
+message SaveGameServerTroopSettingResp {
+  RespCode Result = 1; //结果
+  int32 TeamCd = 2; //团队CD总秒数
+}
+//获取游戏服务器团队设置响应体
+message GameServerTroopSettingResp {
+  RespCode Result = 1; //结果
+  int32 TeamCd = 2; //团队CD总秒数
+}
+//保存游戏团队设置请求体
+message SaveGameTroopSettingReq {
+  GameTroopSetting Setting = 1; //游戏团队设置
+}
+//保存游戏团队设置响应体
+message SaveGameTroopSettingResp {
+  RespCode Result = 1; //结果
+  GameTroopSetting Setting = 2; //游戏团队设置
+}
+//获取游戏团队设置响应体
+message GameTroopSettingResp {
+  RespCode Result = 1; //结果
+  GameTroopSetting Setting = 2; //游戏团队设置
+}
+message GameTroopSetting {
+  int32 DungeonDayFreeAwardCount = 1; //副本当日免费奖励次数
+  int32 DungeonDayPaidAwardCount = 2; //副本当日付费奖励次数
+  int32 DungeonWeekAwardCount = 3; //副本周奖励次数
+}
+
+//查询玩家副本通关统计请求体
+message GetPlayerDungeonBeatStatReq {
+  int32 DungeonId = 1; //副本id
+}
+//查询玩家副本通关统计响应体
+message GetPlayerDungeonBeatStatResp {
+  RespCode Result = 1; //结果
+  DungeonBeatStatData StatData = 2; //副本通关统计数据
+  bool NeedSecondConfirm = 3; //是否需要二次确认
+}
+
+//查询玩家副本通关排行榜请求体
+message GetPlayerDungeonBeatRankReq {
+  int32 DungeonId = 1; //副本id
+}
+//查询玩家副本通关排行榜响应体
+message GetPlayerDungeonBeatRankResp {
+  RespCode Result = 1; //结果
+  DungeonBeatRankData DungeonBeatRankData = 2; //副本通关排行榜数据
+}
+
+//副本通关排行榜数据
+message DungeonBeatRankData {
+  repeated PlayerDungeonBeatRankData RankList = 1; //排行榜列表
+  repeated int64 NoRankedPlayerIds = 2 [jstype = JS_STRING]; //未上榜玩家id列表
+}
+//玩家副本通关排行榜数据
+message PlayerDungeonBeatRankData {
+  int64 PlayerId = 1 [jstype = JS_STRING]; //玩家id
+  string PlayerName = 2; //玩家名称
+  int32 DungeonBeatTime = 3; //副本通关时间
+  int32 Rank = 4; //排名
+}
+
+//玩家取消申请挑战副本请求体
+message PlayerCancelApplyChallengeDungeonReq {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+}
+//玩家取消申请挑战副本响应体
+message PlayerCancelApplyChallengeDungeonResp {
+  RespCode Result = 1; //结果
+}
+//玩家拒绝申请挑战副本请求体
+message PlayerRefuseApplyChallengeDungeonReq {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+}
+//玩家拒绝申请挑战副本响应体
+message PlayerRefuseApplyChallengeDungeonResp {
+  RespCode Result = 1; //结果
+}

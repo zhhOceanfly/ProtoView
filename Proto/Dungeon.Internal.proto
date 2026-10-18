@@ -1,0 +1,252 @@
+syntax = "proto3";
+
+package Dungeon;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Dungeon";
+option csharp_namespace = "Shared.Proto.Dungeon";
+
+import "MetaInf.proto";
+import "Dungeon.Shared.proto";
+
+/** **************** service **************** **/
+
+// 内部服务定义
+service InternalService {
+  //内部请求服务器场景玩家信息
+  rpc ReqInternalScenePlayerData(ScenePlayerDataReq) returns (ScenePlayerDataResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        UserMod: {}
+      },
+    };
+  };
+  //内部请求持久化服务器场景玩家数据
+  rpc ReqInternalPersistScenePlayerData(PersistScenePlayerDataReq) returns (PersistScenePlayerDataResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        UserMod: {}
+      },
+    };
+  };
+  //内部请求服务器场景建筑列表
+  rpc ReqInternalSceneBuildingList(SceneBuildingListReq) returns (SceneBuildingListResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        SceneMod: {}
+      },
+    };
+  };
+  //内部请求持久化服务器场景建造数据
+  rpc ReqInternalPersistSceneBuilding(PersistSceneBuildingReq) returns (PersistSceneBuildingResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        SceneMod: {}
+      },
+    };
+  };
+  //内部请求玩家建造建筑
+  rpc ReqInternalBuildSceneBuilding(BuildSceneBuildingReq) returns (BuildSceneBuildingResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        UserMod: {}
+      },
+    };
+  };
+  //内部请求确认场景建筑
+  rpc ReqInternalConfirmSceneBuilding(ConfirmSceneBuildingReq) returns (ConfirmSceneBuildingResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        UserMod: {}
+      },
+    };
+  };
+  //内部请求手动拆除场景建造
+  rpc ReqInternalRemoveSceneBuilding(RemoveSceneBuildingReq) returns (RemoveSceneBuildingResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        SceneMod: {}
+      },
+    };
+  };
+  //内部请求确认拆除场景建筑
+  rpc ReqInternalConfirmRemoveSceneBuilding(ConfirmRemoveSceneBuildingReq) returns (ConfirmRemoveSceneBuildingResp){
+    option (MetaInf.Meta) = {
+      Closed: true,
+      SessionConfig: {
+        SceneMod: {}
+      },
+    };
+  };
+  //内部请求清理场景所有建造数据
+  rpc ReqInternalClearSceneBuilding(Empty) returns (ClearSceneBuildingResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        SceneMod: {}
+      },
+    };
+  };
+  //内部请求获取玩家领地水晶数据
+  rpc ReqInternalPlayerCrystalBuilding(PlayerCrystalBuildingReq) returns (PlayerCrystalBuildingResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        SceneMod: {}
+      },
+      CacheConfig: {
+        ClientTtl: 10,
+        ServerTtl: 0
+      }
+    };
+  };
+  
+  //内部请求持久化服务器玩家设计图
+  rpc ReqInternalPersistPlayerDesign(PersistPlayerDesignReq) returns (PersistPlayerDesignResp){
+    option (MetaInf.Meta) = {
+      Closed: true,
+      SessionConfig: {
+        UserMod: {}
+      },
+    };
+  };
+
+  //内部请求游戏玩家配置
+  rpc ReqInternalGamePlayerConfig(Empty) returns (GamePlayerConfigResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        UserMod: {}
+      },
+    };
+  };
+}
+
+/** **************** message **************** **/
+
+//服务器场景玩家请求体
+message ScenePlayerDataReq {
+  int32 MapId = 1; //地图id
+}
+//服务器场景玩家响应体
+message ScenePlayerDataResp {
+  RespCode Result = 1; //结果
+  int32 MapId = 2; //地图id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //玩家id
+  bytes Data = 4; //玩家场景数据
+}
+//持久化服务器场景玩家请求体
+message PersistScenePlayerDataReq {
+  int32 MapId = 1; //地图id
+  bytes Data = 2; //玩家场景数据
+}
+//持久化服务器场景玩家响应体
+message PersistScenePlayerDataResp {
+  RespCode Result = 1; //结果
+}
+//服务器场景建筑列表请求体
+message SceneBuildingListReq {
+  int64 SceneId = 1 [jstype = JS_STRING]; //场景id
+}
+//服务器场景建筑列表响应体
+message SceneBuildingListResp {
+  RespCode Result = 1; //结果
+  repeated BuildingData BuildingList = 2; //建筑列表
+}
+//建造数据结构体
+message BuildingData {
+  int64 UniqueId = 1 [jstype = JS_STRING]; //建造唯一id
+  int32 BuildingId = 2; //建筑id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //归属玩家id
+  int64 TroopId = 4 [jstype = JS_STRING]; //团队id
+  bytes Data = 5; //建造数据
+  int32 Version = 6; //版本
+  BuildingStatus Status = 7; //状态
+}
+//持久化场景建造请求体
+message PersistSceneBuildingReq {
+  repeated BuildingData BuildingList = 1; //建筑列表
+}
+//持久化场景建造响应体
+message PersistSceneBuildingResp {
+  RespCode Result = 1; //结果
+}
+//建造场景建筑请求体
+message BuildSceneBuildingReq {
+  int64 SceneId = 1 [jstype = JS_STRING]; //游戏服务器场景id
+  int32 MapId = 2; //地图id
+  BuildingData BuildingData = 3; //建造数据
+}
+//建造场景建筑响应体
+message BuildSceneBuildingResp {
+  RespCode Result = 1; //结果
+  BuildingData BuildingData = 2; //建造数据
+}
+//确认场景建筑请求体
+message ConfirmSceneBuildingReq {
+  int64 SceneId = 1 [jstype = JS_STRING]; //游戏服务器场景id
+  bool IsBuild = 2; //是否建造成功
+  BuildingData BuildingData = 3; //建造数据
+}
+//确认场景建筑响应体
+message ConfirmSceneBuildingResp {
+  RespCode Result = 1; //结果
+}
+//拆除场景建筑请求体
+message RemoveSceneBuildingReq {
+  int64 SceneId = 1 [jstype = JS_STRING]; //游戏服务器场景id
+  repeated BuildingTxData BuildingList = 2; //建造id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //返还材料玩家id
+}
+message BuildingTxData {
+  int32 BuildingId = 1; //建造id
+  int64 UniqueId = 2 [jstype = JS_STRING]; //建造唯一id
+}
+//拆除场景建筑响应体
+message RemoveSceneBuildingResp {
+  RespCode Result = 1; //结果
+}
+//确认拆除场景建筑请求体
+message ConfirmRemoveSceneBuildingReq {
+  int64 SceneId = 1 [jstype = JS_STRING]; //游戏服务器场景id
+  repeated BuildingTxData BuildingList = 2; //建造id
+}
+//确认拆除场景建筑响应体
+message ConfirmRemoveSceneBuildingResp {
+  RespCode Result = 1; //结果
+}
+//清理场景所有建造数据响应体
+message ClearSceneBuildingResp {
+  RespCode Result = 1; //结果
+}
+//玩家领地水晶数据请求体
+message PlayerCrystalBuildingReq {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //服务器id
+  int64 PlayerId = 2 [jstype = JS_STRING]; //玩家id
+}
+//玩家领地水晶数据响应体
+message PlayerCrystalBuildingResp {
+  RespCode Result = 1; //结果
+  PlayerCrystalBuildingData CrystalData = 2; //玩家领地水晶数据
+}
+//玩家领地水晶数据
+message PlayerCrystalBuildingData {
+  int32 CrystalId = 1; //水晶id
+  int64 SceneId = 2 [jstype = JS_STRING]; //场景id
+}
+
+//持久化玩家设计图请求体
+message PersistPlayerDesignReq {
+  string Name = 1; //名称
+  bytes Data = 2; //设计图数据
+}
+//持久化玩家设计图响应体
+message PersistPlayerDesignResp {
+  RespCode Result = 1; //结果
+}
+
+//游戏玩家配置响应体
+message GamePlayerConfigResp {
+  RespCode Result = 1; //结果
+  GamePlayerConfig Config = 2; //游戏配置数据
+}
+//游戏配置
+message GamePlayerConfig {
+  int32 CapNum = 1; //休眠舱数量
+  int32 WorkbenchNum = 2; //锻造台数量
+}

@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package Dungeon;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Dungeon";
+option csharp_namespace = "Shared.Proto.Dungeon";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+//领地数据结构体
+message TerritoryData {
+  int32 TerritoryId = 1; //领地id
+  int64 TroopId = 2 [jstype = JS_STRING]; //团队id
+  int64 ChallengeTroopId = 3 [jstype = JS_STRING]; //挑战团队id
+  int32 ChallengeTime = 4; //挑战时间
+  int32 Level = 5; //领地等级
+  bytes Data = 6; //领地数据
+}
+
+//领地团队箱数据结构体
+message TerritoryBoxData {
+  int32 TerritoryId = 1; //领地id
+  bytes Data = 2; //团队箱数据
+}
+
+//设计图数据结构体
+message DesignData {
+  int64 DesignId = 1 [jstype = JS_STRING]; //设计图id
+  string Name = 2; //名称
+  int32 CreateTime = 3; //创建时间
+  bytes Data = 4; //设计图数据
+}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+  EVENT_NOTIFY_BUILD_SCENE_BUILDING = 1; //通知场景建筑建造
+  EVENT_NOTIFY_REMOVE_SCENE_BUILDING = 2; //通知场景建筑拆除
+}
+
+//通知场景建筑建造事件
+message NotifySceneBuildingBuildingEvt {
+  int32 BuildingId = 1; //建造id
+  int64 PlayerId = 2 [jstype = JS_STRING]; //归属玩家id
+  int64 UniqueId = 3 [jstype = JS_STRING]; //建造唯一id
+  bytes Data = 4; //建造数据
+  int32 Version = 5; //版本
+  int64 TroopId = 6 [jstype = JS_STRING]; //建造团队id
+}
+//通知场景建筑拆除事件
+message NotifySceneBuildingRemoveEvt {
+  int32 BuildingId = 1; //建造id
+  int64 UniqueId = 2 [jstype = JS_STRING]; //建造唯一id
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+  //...
+  TERRITORY_CONFIG_ERROR = 10; //领地配置错误
+  TERRITORY_CHALLENGE_FB_PRICE_ERROR = 11; //领地副本挑战价格配置错误
+  TERRITORY_PURCHASE_FB_PRICE_CONFIG_EMPTY = 12; //领地副本挑战价格配置为空
+  TERRITORY_CHALLENGE_PRICE_ERROR = 13; //领地挑战价格配置错误
+  TERRITORY_PURCHASE_PRICE_CONFIG_EMPTY = 14; //领地挑战价格配置为空
+  PLAYER_NOT_EXIST_TROOP = 15; //操作玩家不存在团队
+  PLAYER_TROOP_ROLE_NO_PERMISSION = 16; //操作玩家团队角色无权限
+  TERRITORY_DATA_EXPIRED = 17; //领地数据过期
+  TERRITORY_BOX_DATA_EXPIRED = 18; //领地团队箱数据过期
+  TERRITORY_PURCHASE_PRICE_ERROR = 19; //领地购买价格配置错误
+  TERRITORY_PURCHASE_CURRENCY_NOT_FULL = 20; //购买领地货币不足
+
+  DESIGN_ID_NOT_EXIST= 21; //设计图id不存在
+  DESIGN_NUM_OVER_LIMIT = 22; //设计图数量达上限
+
+  BUILDING_ID_NOT_EXIST = 30; //建造id不存在
+  BUILDING_COST_GOODS_NOT_FULL = 31; //建造物品不足
+  BUILDING_NOT_EXIST = 32; //建筑不存在
+  BUILDING_STATE_ERROR = 33; //建筑状态错误
+  BUILDING_REMOVE_BY_OTHER_PLAYER = 34; //建筑拆除玩家不匹配
+  BUILDING_OVER_NUMBER_LIMIT = 35; //建筑数量已达上限
+}
+
+//建筑状态
+enum BuildingStatus {
+  BUILDING_STATE_BUILDED = 0; //已建造
+  BUILDING_STATE_TO_DELETE = 1; //已废弃
+}

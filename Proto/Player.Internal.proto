@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package Player;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Player";
+option csharp_namespace = "Shared.Proto.Player";
+
+import "MetaInf.proto";
+import "Player.Shared.proto";
+
+/** **************** service **************** **/
+
+// 内部服务定义
+service InternalService {
+  //内部批量获取玩家信息
+  rpc ReqInternalPlayerList(PlayerListReq) returns (PlayerListResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        Rand: {}
+      },
+      CacheConfig: {
+        ClientTtl: 30,
+        ServerTtl: 60
+      }
+    };
+  };
+}
+
+/** **************** message **************** **/

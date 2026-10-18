@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package Activity;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Activity";
+option csharp_namespace = "Shared.Proto.Activity";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+  //...
+}

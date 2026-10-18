@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package Pay;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Pay";
+option csharp_namespace = "Shared.Proto.Pay";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+  OPERATE_LOCK_FAILURE = 7; //操作加锁失败
+  //...
+  PAY_CONFIG_NOT_FOUND = 10; //支付配置未找到
+  PAY_PRE_CREATE_FAILURE = 12; //统一下单失败
+  PAY_QUERY_FAILURE = 13; //订单查询失败
+  PAY_CLOSE_FAILURE = 14; //关闭订单失败
+  PAY_REFUND_FAILURE = 15; //申请退款失败
+  PAY_REFUND_QUERY_FAILURE = 16; //退款查询失败
+}
+
+//订单交易状态
+enum TradeState {
+  TRADE_STATE_UNKNOWN = 0; //未知
+  TRADE_STATE_SUCCESS = 1; //支付成功
+  TRADE_STATE_REFUND = 2; //转入退款
+  TRADE_STATE_NOTPAY = 3; //未支付
+  TRADE_STATE_CLOSED = 4; //已关闭
+  TRADE_STATE_REVOKED = 5; //已撤销
+  TRADE_STATE_REVERSE = 6; //已冲正
+}
+
+//退款状态
+enum RefundState {
+  REFUND_STATE_UNKNOWN = 0; //未知
+  REFUND_STATE_SUCCESS = 1; //退款成功
+  REFUND_STATE_FAIL = 2; //退款失败
+  REFUND_STATE_PROCESSING = 3; //退款中
+  REFUND_STATE_CHANGE = 4; //转入代发
+}

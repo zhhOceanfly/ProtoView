@@ -1,0 +1,492 @@
+syntax = "proto3";
+
+package Troop;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Troop";
+option csharp_namespace = "Shared.Proto.Troop";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+//团队数据结构体
+message TroopData {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  string TroopName = 2; //团队名称
+  string CaptainPlayerName = 3; //团队队长玩家名称
+  int32 MemberNum = 4; //团队人数
+  int32 MaxMember = 5; //团队人数上限
+  string ShortName = 6; //团队简称
+  int32 Grade = 7; //团队等级
+  string Notice = 8; //团队公告
+  int32 CreateTime = 9; //创建时间
+  int32 OnlineNum = 10; //当前在线团队玩家人数
+  repeated TroopPermissionData PermissionList = 11; //团队权限列表
+}
+
+//团队权限数据结构体
+message TroopPermissionData {
+  TroopRole MemberRole = 1; //成员角色
+  repeated int32 TroopPermission = 2; //团队权限
+}
+
+//团队列表数据结构体
+message TroopListData {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  string TroopName = 2; //团队名称
+  string ShortName = 3; //团队简称
+  string CaptainPlayerName = 4; //团队队长玩家名称
+  int32 MemberNum = 5; //团队人数
+  int32 MaxMember = 6; //团队人数上限
+  TroopApplyState ApplyState = 7; //申请状态
+  int32 CreateTime = 8; //团队创建时间
+  string Notice = 9; //团队公告
+}
+
+//团队缓存数据结构体
+message TroopCacheData {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  string TroopName = 2; //团队名称
+  string ShortName = 3; //团队简称
+  int32 Grade = 4; //团队等级
+  int64 Version = 5 [jstype = JS_STRING]; //版本
+  repeated TroopPermissionData PermissionList = 6; //团队权限列表
+  bool IsDismiss = 7; //是否已解散
+}
+//玩家团队缓存数据结构体
+message PlayerTroopData {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  TroopRole PlayerRole = 2; //玩家团队角色
+  PlayerTeamData PlayerTeam = 3; //玩家小队信息
+}
+
+//团队成员数据结构体
+message MemberData {
+  int64 MemberId = 1 [jstype = JS_STRING]; //成员id
+  string Name = 2; //名称
+  string DisplayId = 3; //显示id
+  OnlineState OnlineState = 4; //成员状态
+  TroopRole MemberRole = 5; //成员角色
+  int32 LastJoinTime = 6; //最后进入服务器时间
+  int64 PlayerId = 7 [jstype = JS_STRING]; //玩家id
+  int64 SceneId = 8 [jstype = JS_STRING]; //场景id
+  string SceneName = 9; //场景名称
+  bool IsTeamMember = 10; //是否是小队成员
+}
+
+//申请加入数据结构体
+message TroopApplyJoinData {
+  int64 ApplyId = 1 [jstype = JS_STRING]; //申请id
+  string Name = 2; //名称
+  string DisplayId = 3; //显示id
+  int32 ApplyTime = 4; //申请时间
+}
+
+//玩家小队数据
+message PlayerTeamData {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  repeated TeamMemberData MemberList = 2; //小队成员列表
+}
+
+//小队成员数据结构体
+message TeamMemberData {
+  int64 MemberId = 1 [jstype = JS_STRING]; //成员id
+  string Name = 2; //名称
+  TeamRole MemberRole = 3; //成员角色
+  PlayerStateData PlayerState = 4; //玩家状态
+}
+//玩家状态数据结构体
+message PlayerStateData {
+  int64 PlayerId = 1 [jstype = JS_STRING]; //玩家id
+  int64 SceneId = 2 [jstype = JS_STRING]; //场景id
+  string SceneName = 3; //场景名称
+  int32 DungeonId = 4; //副本id
+  OnlineState State = 5; //状态
+  int32 MapId = 6; //地图id
+}
+
+//背包数据结构体
+message TroopBagData {
+  int64 BagId = 1 [jstype = JS_STRING]; //背包id
+  int32 GoodsId = 2; //物品id
+  int32 GoodsAmount = 3; //物品数量
+}
+
+//物品变动数据
+message GoodsChangeData {
+  GoodsChangeType ChangeType = 1; //变动原因
+  int32 GoodsId = 2; //物品id
+  int32 ChangeAmount = 3; //变动数量
+}
+
+//副本通关统计数据结构体
+message DungeonBeatStatData {
+  int64 PlayerId = 1 [jstype = JS_STRING]; //玩家id
+  int32 DayTotalFreeAwardCount = 2; //当日总免费奖励次数
+  int32 WeekTotalAwardCount = 3; //周总奖励次数
+  int32 DayFreeAwardCount = 4; //当日免费奖励次数
+  int32 DayLeftPaidAwardCount = 5; //当日剩余付费奖励次数
+  int32 WeekAwardCount = 6; //周奖励次数
+}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+  EVENT_TROOP_NOTICE_CHANGE = 1; //团队公告变更事件
+  EVENT_TROOP_NAME_CHANGE = 2; //团队名称变更事件
+  EVENT_TROOP_SHORT_NAME_CHANGE = 3; //团队简称变更事件
+  EVENT_TROOP_GRADE_CHANGE = 4; //团队等级变更事件
+  EVENT_TROOP_MEMBER_ROLE_CHANGE = 5; //团队成员角色变更事件
+  EVENT_TROOP_MEMBER_JOIN = 6; //团队成员加入事件
+  EVENT_TROOP_MEMBER_LEAVE = 7; //团队成员离开事件
+  EVENT_TROOP_CREATE = 8; //团队创建事件
+  EVENT_TROOP_DISMISS = 9; //团队解散事件
+  EVENT_TROOP_APPLY_CHANGE = 10; //团队申请变更事件
+  EVENT_TROOP_MEMBER_KICKOUT = 11; //团队成员被踢事件
+  EVENT_TROOP_PERMISSION_CHANGE = 12; //团队权限变更事件
+  EVENT_TROOP_BAG_CHANGE = 13; //团队背包变动事件
+  EVENT_GAME_SERVER_TROOP_SYNC = 14; //同步服务器团队事件
+  EVENT_TEAM_INVITE = 15; //小队邀请事件
+  EVENT_TEAM_INVITE_REFUSED = 16; //小队邀请拒绝事件
+  EVENT_TEAM_MEMBER_JOIN = 17; //小队成员加入事件
+  EVENT_TEAM_MEMBER_LEAVE = 18; //小队成员离开事件
+  EVENT_TEAM_MEMBER_KICKOUT = 20; //小队成员被踢事件
+  EVENT_TEAM_INFO_CHANGE = 21; //小队信息变更事件
+  EVENT_TEAM_DISMISS = 22; //小队解散事件
+  EVENT_DUNGEON_APPLY_CHALLENGE = 23; //副本申请挑战事件
+  EVENT_DUNGEON_APPLY_CHALLENGE_CHANGE = 24; //副本申请挑战变更事件
+  EVENT_DUNGEON_CANCEL_CHALLENGE = 25; //副本取消挑战事件
+  EVENT_DUNGEON_QUEUE_CHALLENGE = 26; //副本排队挑战事件
+  EVENT_DUNGEON_CHALLENGE_JOIN_SCENE = 27; //副本加入挑战场景事件
+}
+
+// 副本加入挑战场景事件
+message DungeonChallengeJoinSceneMsg {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //服务器id
+  int64 SceneId = 2 [jstype = JS_STRING]; //场景id
+  int32 DungeonId = 3; //副本id
+  int32 MapId = 4; //地图id
+}
+
+//同步服务器团队事件
+// message GameServerTroopEvent {
+//   repeated ServerTroopCache List = 1; //列表
+// }
+
+//团队公告变更消息
+message TroopNoticeChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  string Notice = 2; //团队公告
+}
+//团队名称变更消息
+message TroopNameChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  string Name = 2; //团队名称
+}
+//团队简称变更消息
+message TroopShortNameChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  string ShortName = 2; //团队简称
+}
+//团队等级变更消息
+message TroopGradeChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int32 Grade = 2; //团队等级
+  int64 Version = 3 [jstype = JS_STRING]; //版本
+}
+//团队成员角色变更消息
+message TroopMemberRoleChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //玩家id
+  TroopRole OldRole = 4; //玩家旧角色
+  TroopRole NewRole = 5; //玩家新角色
+  string PlayerName = 6; //玩家名称
+  repeated int32 TroopPermission = 7; //团队权限
+  int64 Version = 8 [jstype = JS_STRING]; //版本
+}
+//团队成员加入消息
+message TroopMemberJoinMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //玩家id
+  string TroopName = 4; //团队名称
+  TroopRole Role = 5; //玩家角色
+  repeated int32 TroopPermission = 6; //团队权限
+  int64 Version = 7 [jstype = JS_STRING]; //版本
+}
+//团队成员离开消息
+message TroopMemberLeaveMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //玩家id
+  int64 Version = 4 [jstype = JS_STRING]; //版本
+}
+//团队创建消息
+message TroopCreateMsg {
+  TroopCacheData TroopData = 1; //团队缓存数据
+  PlayerTroop PlayerTroopData = 2; //玩家团队缓存数据
+}
+//玩家团队信息
+message PlayerTroop {
+  int64 PlayerId = 1 [jstype = JS_STRING]; //玩家id
+  int64 TroopId = 2 [jstype = JS_STRING]; //团队id
+  TroopRole PlayerRole = 3; //团队玩家角色
+}
+
+//团队解散消息
+message TroopDismissMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 PlayerId = 2 [jstype = JS_STRING]; //玩家id
+}
+//团队申请变更消息
+message TroopApplyChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  string TroopName = 2; //团队名称
+}
+//团队成员被踢消息
+message TroopMemberKickoutMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 MemberId = 2 [jstype = JS_STRING]; //成员id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //玩家id
+  int64 Version = 4 [jstype = JS_STRING]; //版本
+}
+//团队权限变更消息
+message TroopPermissionChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  TroopRole MemberRole = 2; //成员角色
+  repeated int32 TroopPermission = 3; //团队权限
+  int64 Version = 4 [jstype = JS_STRING]; //版本
+}
+
+//团队背包变动消息
+message EventTroopBagChangeMsg {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+
+//小队邀请消息
+message TeamInviteMsg {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  string InvitePlayerName = 2; //邀请人玩家名称
+  int32 InviteTime = 3; //邀请时间
+  int32 ExpireTime = 4; //邀请过期时间
+}
+//小队邀请拒绝消息
+message TeamInviteRefusedMsg {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  string RefusePlayerName = 2; //拒绝人玩家名称
+}
+//小队成员加入消息
+message TeamMemberJoinMsg {
+  int64 JoinPlayerId = 1 [jstype = JS_STRING]; //加入玩家id
+  string JoinPlayerName = 2; //加入玩家名称
+  int64 TeamId = 3 [jstype = JS_STRING]; //小队id
+}
+//小队成员离开消息
+message TeamMemberLeaveMsg {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  int64 LeavePlayerId = 2 [jstype = JS_STRING]; //离开玩家id
+  string LeavePlayerName = 3; //离开玩家名称
+}
+//小队成员被踢消息
+message TeamMemberKickoutMsg {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+  int64 KickoutPlayerId = 2 [jstype = JS_STRING]; //踢出玩家id
+  string KickoutPlayerName = 3; //踢出玩家名称
+}
+//小队信息变更消息
+message TeamInfoChangeMsg {
+  PlayerTeamData PlayerTeam = 1; //玩家小队信息
+}
+//小队解散消息
+message TeamDismissMsg {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+}
+
+//副本申请挑战消息
+message DungeonApplyChallengeMsg {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+  int32 DungeonId = 2; //副本id
+  int32 ApplyTime = 3; //申请时间
+  int32 ExpireTime = 4; //申请过期时间
+  int32 AcceptNum = 5; //接受人数
+  int32 TotalNum = 6; //总人数
+}
+//副本申请挑战消息变更
+message DungeonApplyChallengeChangeMsg {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+  int32 DungeonId = 2; //副本id
+  int32 ApplyTime = 3; //申请时间
+  int32 ExpireTime = 4; //申请过期时间
+  int32 AcceptNum = 5; //接受人数
+  int32 TotalNum = 6; //总人数
+}
+//副本取消挑战消息
+message DungeonCancelChallengeMsg {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+  int32 DungeonId = 2; //副本id
+  DungeonCancelReason CancelReason = 3; //取消原因
+}
+//副本排队挑战消息
+message DungeonQueueChallengeMsg {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+  int32 DungeonId = 2; //副本id
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+  OPERATE_LOCK_FAILURE = 7; //操作加锁失败
+  //...
+  TROOP_NAME_INVALID = 10; //团队名称不合法
+  TROOP_NAME_LENGTH_ERROR = 11; //团队名称长度错误
+  TROOP_NAME_CHAR_ILLEGAL = 12; //团队名称字符不合法
+  TROOP_SHORT_NAME_INVALID = 13; //团队简称不合法
+  TROOP_SHORT_NAME_LENGTH_ERROR= 14; //团队简称长度错误
+  TROOP_SHORT_NAME_CHAR_ILLEGAL = 15; //团队简称字符不合法
+  TROOP_NAME_ALREADY_EXIST = 16; //团队名称已存在
+  CREATE_TROOP_CONFIG_EMPTY = 17; //创建团队配置为空
+  CREATE_TROOP_COST_FAILURE = 18; //创建团队消耗失败
+  CREATE_TROOP_PRICE_ERROR = 19; //创建团队消耗价格配置错误
+  TROOP_GRADE_TERRITORY_NOT_EXIST = 20; //团队等级对应领地不存在
+  PLAYER_ALREADY_EXIST_TROOP = 21; //玩家已存在团队
+  TROOP_ID_NOT_EXIST = 22; //团队不存在
+  PLAYER_ALREADY_APPLY_JOIN_TROOP = 23; //玩家已申请加入团队
+  PLAYER_NO_APPLY_JOIN_TROOP = 24; //玩家未申请加入团队
+  TROOP_MEMBER_OVER_LIMIT = 25; //团队成员数量已达上限
+  PLAYER_APPLY_NUM_OVER_LIMIT = 26; //玩家申请加入团队数量已达上限
+  PLAYER_FLUSH_TIME_SHORT = 27; //玩家团队刷新时间太短
+  PLAYER_NOT_IN_TROOP = 28; //玩家不在团队里
+  PLAYER_NOT_PERMISSION_OPERATE = 29; //玩家没有权限操作
+  APPLY_ID_NOT_EXIST = 30; //申请团队记录不存在
+  DISMISS_TROOP_HAS_MEMBER = 31; //解散团队人存在成员
+  TROOP_PERMISSION_DATA_ERROR = 32; //团队权限数据错误
+  TROOP_GOODS_NOT_EXIST = 33; //团队背包物品不存在
+  GOODS_CHANGE_PARAM_EMPTY = 34; //物品变动参数为空
+  GOODS_AMOUNT_ERROR = 35; //物品数量错误
+  TROOP_GOODS_AMOUNT_NOT_FULL = 36; //背包物品数量不足
+  GOODS_NOT_STORAGE = 37; //物品不允许被存储
+  TROOP_BAG_IS_FULL = 38; //团队背包已满
+  GOODS_NOT_BUILD = 39; //团队背包物品不允许被建造
+  CREATE_TROOP_CURRENCY_NOT_FULL = 40; //创建团队货币不足
+  //...
+  TEAM_ID_NOT_EXIST = 50; //小队不存在
+  TEAM_INVITE_ALREADY_IN_OTHER_TEAM = 51; //邀请人已有其他小队
+  TEAM_INVITED_ALREADY_IN_OTHER_TEAM = 52; //邀请目标已有其他小队
+  TEAM_INVITE_NOT_IN_TEAM = 53; //邀请人不在小队里
+  TEAM_INVITED_NOT_IN_TEAM = 54; //邀请目标不在小队里
+  TEAM_INVITE_ALREADY_IN_TEAM = 55; //邀请人已有小队
+  TEAM_INVITED_ALREADY_IN_TEAM = 56; //邀请目标已有小队
+  TEAM_MEMBER_OVER_LIMIT = 57; //小队成员数量已达上限
+  TEAM_INVITE_NOT_EXIST = 58; //小队邀请不存在
+  TEAM_INVITE_EXPIRED = 59; //小队邀请已过期
+  TEAM_INVITE_TARGET_NOT_SAME_TROOP = 60; //只能邀请同一团队的玩家
+  TEAM_INVITE_NOT_IN_TROOP = 61; //邀请人不在团队里
+  TEAM_INVITED_NOT_IN_TROOP = 62; //邀请目标不在团队里
+  TEAM_INVITED_ALREADY_INVITED = 63; //邀请目标已有邀请
+  TEAM_PLAYER_NO_PERMISSION_OPERATE = 64; //玩家没有权限操作
+  TEAM_PLAYER_NOT_IN_TEAM = 65; //玩家不在小队里
+  TEAM_CAPTAIN_NOT_LEAVE = 66; //队长不能退出小队
+  TEAM_TARGET_NOT_IN_TEAM = 67; //操作目标不在小队里
+  TEAM_DISMISS_MEMBER_NOT_EMPTY = 68; //小队解散成员不为空
+
+  DUNGEON_CONFIG_ERROR = 80; //副本配置错误
+  DUNGEON_DAY_AWARD_COUNT_NOT_ENOUGH = 81; //副本每日奖励次数不足
+  DUNGEON_WEEK_AWARD_COUNT_NOT_ENOUGH = 82; //副本每周奖励次数不足
+  DUNGEON_AWARD_COST_CONFIG_ERROR = 83; //副本奖励消耗配置错误
+  DUNGEON_PAID_AWARD_CURRENCY_NOT_FULL = 84; //副本付费奖励货币不足
+  TEAM_MEMBER_OVER_DUNGEON_LIMIT = 85; //副本小队成员数量超出副本限制
+  DUNGEON_APPLY_FREQUENCY_LIMIT = 86; //副本申请频率限制
+  TEAM_MEMBER_ALREADY_IN_DUNGEON = 87; //有小队成员已在副本中
+  TEAM_MEMBER_DUNGEON_OPERATE_EXPIRED = 88; //小队成员副本操作已过期
+  DUNGEON_BEAT_NO_NEED_AWARD = 89; //副本通关无需发放奖励
+  DUNGEON_EXPIRED_CANCEL = 90; //副本已过期取消
+}
+
+//团队角色类型
+enum TroopRole {
+  MEMBER = 0; //队员
+  COCAPTAIN = 1; //副队长
+  CAPTAIN = 2; //队长
+}
+
+//小队角色类型
+enum TeamRole {
+  TEAM_MEMBER = 0; //小队队员
+  TEAM_CAPTAIN = 1; //小队长
+}
+
+//审核操作类型
+enum ReviewOperateType {
+  REJECT = 0; //拒绝
+  AGREE = 1; //同意
+}
+
+//团队申请状态
+enum TroopApplyState {
+  AS_UNKNOWN = 0; //未知
+  IS_APPLY = 1; //已申请
+  NO_APPLY = 2; //未申请
+}
+
+enum OnlineState {
+  OS_UNKNOWN = 0; //未知
+  ONLINE = 1; //在线
+  OFFLINING = 2; //离线中
+  OFFLINE = 3; //离线
+}
+
+//团队权限标签
+enum TroopPermissionLabel {
+  PL_MODIFY_NOTICE = 0; //修改公告权限
+  PL_MODIFY_TROOP_NAME = 1; //修改团队名权限
+  PL_MODIFY_TROOP_LOGO = 2; //修改团队队徽权限
+  PL_REVIEW_TROOP_APPLY = 3; //审核团队申请权限
+  PL_INVITE_TROOP_PLAYER = 4; //邀请成员权限
+  PL_KICKOUT_TROOP_PLAYER = 5; //踢出成员权限
+  PL_MOVE_BUILDING = 6; //移动团队建造权限
+  PL_REMOVE_BUILDING = 7; //拆除团队建造权限
+}
+
+//物品变动类型
+enum GoodsChangeType {
+  GOODS_CHANGE_UNKNOWN = 0; //未知
+
+  STORAGE_GAIN = 1001; //背包存入
+
+  BUILDING_COST = 2001; //建造消耗
+  TAKE_OUT_COST = 2002; //背包取出
+}
+
+//副本取消原因
+enum DungeonCancelReason {
+  DCR_UNKNOWN = 0; //未知
+  DCR_MANUAL_CANCEL = 1; //小队长主动取消
+  DCR_MANUAL_REFUSE = 2; //小队成员拒绝
+  DCR_COUNTDOWN_TIMEOUT = 3; //超时倒计时自动取消
+  DCR_PLAYER_FIGHTING = 4; //玩家战斗中
+  DCR_PLAYER_NOT_READY = 5; //玩家未就绪
+  DCR_TEAM_INFO_CHANGE = 6; //小队信息变更
+  DCR_SERVER_ERROR = 7; //服务器错误
+  DCR_PLAYER_LEAVE_SCENE = 8; //玩家离开场景
+  DCR_PLAYER_OFFLINE = 9; //玩家掉线
+  DCR_RETRY_NUM_OVER = 10; //重试次数超出
+}
+
+//副本状态
+enum DungeonState {
+  DS_UNKNOWN = 0; //未知
+  DS_IN_READY = 1; //准备中
+  DS_IN_QUEUE = 2; //排队中
+  DS_IN_FIGHTING = 3; //战斗中
+}

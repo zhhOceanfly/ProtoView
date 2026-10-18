@@ -1,0 +1,319 @@
+syntax = "proto3";
+
+package Troop;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Troop";
+option csharp_namespace = "Shared.Proto.Troop";
+
+import "MetaInf.proto";
+import "Troop.Shared.proto";
+
+/** **************** service **************** **/
+
+// 内部服务定义
+service InternalService {
+  //内部获取服务器团队缓存
+  rpc ReqInternalServerTroopCache(ServerTroopCacheReq) returns (ServerTroopCacheResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      },
+      CacheConfig: {
+        ClientTtl: 5,
+        ServerTtl: 0
+      }
+    };
+  };
+  //内部获取服务器团队版本缓存
+  rpc ReqInternalServerTroopVersionCache(TroopVersionCacheReq) returns (TroopVersionCacheResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      }
+    };
+  };
+  //内部获取服务器小队缓存
+  rpc ReqInternalServerTeamCache(ServerTeamCacheReq) returns (ServerTeamCacheResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      }
+    };
+  };
+  //内部同步游戏服务器玩家状态
+  rpc ReqInternalSyncGamePlayerState(SyncGamePlayerStateReq) returns (SyncGamePlayerStateResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      }
+    };
+  };
+  //内部刷新玩家游戏服务器名称
+  rpc ReqInternalUpdateGameServerPlayerName(UpdateGameServerPlayerNameReq) returns (UpdateGameServerPlayerNameResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      }
+    };
+  };
+
+  //确认挑战副本结束
+  rpc ReqInternalConfirmStopDungeon(ConfirmStopDungeonReq) returns (ConfirmStopDungeonResp){
+    option (MetaInf.Meta) = {
+      Closed: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+    };
+  };
+  //内部获取玩家副本通关统计
+  rpc ReqInternalGetPlayerDungeonBeatStat(InternalGetPlayerDungeonBeatStatReq) returns (InternalGetPlayerDungeonBeatStatResp){
+    option (MetaInf.Meta) = {
+      Closed: true,
+      SessionConfig: {
+        GameMod: {}
+      },
+    };
+  };
+  //上报玩家副本通关结果
+  rpc ReqSubmitPlayerDungeonBeatResult(SubmitPlayerDungeonBeatResultReq) returns (SubmitPlayerDungeonBeatResultResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      },
+    };
+  };
+  //玩家申请挑战副本
+  rpc ReqPlayerApplyChallengeDungeon(PlayerApplyChallengeDungeonReq) returns (PlayerApplyChallengeDungeonResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      },
+    };
+  };
+  //玩家接受挑战副本
+  rpc ReqPlayerAcceptChallengeDungeon(PlayerAcceptChallengeDungeonReq) returns (PlayerAcceptChallengeDungeonResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      },
+    };
+  };
+  //同步玩家挑战副本是否就绪
+  rpc ReqSyncPlayerChallengeDungeonIsReady(SyncPlayerChallengeDungeonIsReadyReq) returns (SyncPlayerChallengeDungeonIsReadyResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      },
+    };
+  };
+  // //内部获取团队缓存
+  // rpc ReqInternalTroopCache(TroopCacheReq) returns (TroopCacheResp){
+  //   option (MetaInf.Meta) = {
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //     CacheConfig: {
+  //       ClientTtl: 10,
+  //       ServerTtl: 0
+  //     }
+  //   };
+  // };
+  // //内部获取团队数据列表
+  // rpc ReqInternalTroopDataList(Empty) returns (TroopDataListResp){
+  //   option (MetaInf.Meta) = {
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     }
+  //   };
+  // };
+  // //内部持久化团队数据
+  // rpc ReqInternalPersistTroopData(PersistTroopDataReq) returns (PersistTroopDataResp){
+  //   option (MetaInf.Meta) = {
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //   };
+  // };
+  // //团队背包物品变动处理
+  // rpc ReqInternalTroopBagGoodsChange(TroopBagGoodsChangeReq) returns (TroopBagGoodsChangeResp){
+  //   option (MetaInf.Meta) = {
+  //     SessionConfig: {
+  //       GameMod: {}
+  //     },
+  //   };
+  // };
+}
+
+/** **************** message **************** **/
+
+//服务器小队缓存请求体
+message ServerTeamCacheReq {
+  int64 TeamId = 1 [jstype = JS_STRING]; //小队id
+}
+//服务器小队缓存响应体
+message ServerTeamCacheResp {
+  RespCode Result = 1; //结果
+  int64 TeamId = 2 [jstype = JS_STRING]; //小队id
+  repeated TeamMemberData MemberList = 3; //小队成员列表
+}
+
+//服务器团队缓存请求体
+message ServerTroopCacheReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+}
+//服务器团队缓存响应体
+message ServerTroopCacheResp {
+  RespCode Result = 1; //结果
+  repeated TroopCacheData TroopList = 2; //团队列表
+  repeated PlayerTroop PlayerList = 3; //玩家团队列表
+}
+
+//服务器团队版本缓存请求体
+message TroopVersionCacheReq {
+  repeated TroopVersionData TroopVersionList = 1; //团队版本列表
+}
+//服务器团队版本缓存响应体
+message TroopVersionCacheResp {
+  RespCode Result = 1; //结果
+  repeated TroopCacheData TroopList = 2; //团队列表
+  repeated PlayerTroop PlayerList = 3; //玩家团队列表
+}
+//团队版本数据结构体
+message TroopVersionData {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  int64 Version = 2 [jstype = JS_STRING]; //版本
+}
+
+//内部刷新玩家游戏服务器名称请求体
+message UpdateGameServerPlayerNameReq {
+  string PlayerName = 1; //玩家游戏服务器名称
+}
+//内部刷新玩家游戏服务器名称响应体
+message UpdateGameServerPlayerNameResp {
+  RespCode Result = 1; //结果
+}
+
+//确认挑战副本结束请求体
+message ConfirmStopDungeonReq {
+  int64 SceneId = 1 [jstype = JS_STRING]; //场景id
+}
+//确认挑战副本结束响应体
+message ConfirmStopDungeonResp {
+  RespCode Result = 1; //结果
+}
+
+//同步游戏服务器玩家状态请求体
+message SyncGamePlayerStateReq {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //游戏服务器id
+  repeated PlayerStateData ExistPlayerList = 2; //存在玩家状态列表
+}
+//同步游戏服务器玩家状态响应体
+message SyncGamePlayerStateResp {
+  RespCode Result = 1; //结果
+}
+
+//团队缓存请求体
+message TroopCacheReq {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //游戏服务器id
+  int64 TroopId = 2 [jstype = JS_STRING]; //团队id
+}
+//团队缓存响应体
+message TroopCacheResp {
+  RespCode Result = 1; //结果
+  repeated int64 PlayerIds = 2 [jstype = JS_STRING]; //玩家id列表
+}
+
+//团队数据列表响应体
+message TroopDataListResp {
+  RespCode Result = 1; //结果
+  repeated InternalTroopData List = 2; //团队数据列表
+}
+//团队数据结构体
+message InternalTroopData {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  bytes Data = 2; //团队数据
+}
+
+//持久化团队数据请求体
+message PersistTroopDataReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  bytes Data = 2; //团队数据
+}
+//持久化团队数据响应体
+message PersistTroopDataResp {
+  RespCode Result = 1; //结果
+}
+
+//团队背包物品变动请求体
+message TroopBagGoodsChangeReq {
+  int64 TroopId = 1 [jstype = JS_STRING]; //团队id
+  repeated GoodsChangeData List = 2; //变动列表
+}
+//团队背包物品变动响应体
+message TroopBagGoodsChangeResp {
+  RespCode Result = 1; //结果
+}
+
+//内部查询玩家副本通关统计请求体
+message InternalGetPlayerDungeonBeatStatReq {
+  int32 DungeonId = 1; //副本id
+  int32 BeatTime = 2; //通关时间
+  int32 OpenTime = 3; //开启时间
+  repeated int64 PlayerIds = 4 [jstype = JS_STRING]; //玩家id列表
+}
+//内部查询玩家副本通关统计响应体
+message InternalGetPlayerDungeonBeatStatResp {
+  RespCode Result = 1; //结果
+  repeated DungeonBeatStatData StatList = 2; //副本通关统计数据列表
+}
+
+//上报玩家副本通关结果请求体
+message SubmitPlayerDungeonBeatResultReq {
+  int64 SceneId = 1 [jstype = JS_STRING]; //场景id
+  int32 DungeonId = 2; //副本id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //玩家id
+  int32 BeatTime = 4; //通关时间
+  int32 OpenTime = 5; //开启时间
+  bool NeedAward = 6; //是否需要奖励
+}
+//上报玩家副本通关结果响应体
+message SubmitPlayerDungeonBeatResultResp {
+  RespCode Result = 1; //结果
+  RespCode AwardResult = 2; //奖励结果
+  repeated AwardData AwardList = 3; //奖励列表
+}
+//奖励数据结构体
+message AwardData {
+  //物品变动数据
+  int32 GoodsId = 1; //物品id
+  int32 GoodsAmount = 2; //变动数量
+}
+
+//玩家申请挑战副本请求体
+message PlayerApplyChallengeDungeonReq {
+  int32 DungeonId = 1; //副本id
+}
+//玩家申请挑战副本响应体
+message PlayerApplyChallengeDungeonResp {
+  RespCode Result = 1; //结果
+}
+//玩家接受挑战副本请求体
+message PlayerAcceptChallengeDungeonReq {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+}
+//玩家接受挑战副本响应体
+message PlayerAcceptChallengeDungeonResp {
+  RespCode Result = 1; //结果
+}
+//同步玩家挑战副本是否就绪请求体
+message SyncPlayerChallengeDungeonIsReadyReq {
+  int64 ChallengeDungeonId = 1 [jstype = JS_STRING]; //挑战副本id
+  bool IsReady = 2; //是否就绪
+  bool IsCancel = 3; //是否取消
+  DungeonCancelReason NotReadyReason = 4; //未就绪原因
+}
+//同步玩家挑战副本是否就绪响应体
+message SyncPlayerChallengeDungeonIsReadyResp {
+  RespCode Result = 1; //结果
+  bool IsContinueSync = 2; //是否继续同步
+}

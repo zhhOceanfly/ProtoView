@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package Official;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Official";
+option csharp_namespace = "Shared.Proto.Official";
+
+//import "MetaInf.proto";
+//import "Official.Shared.proto";
+
+/** **************** service **************** **/
+
+// 内部服务定义
+service InternalService {
+}
+
+/** **************** message **************** **/

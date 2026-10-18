@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package Template;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Template";
+option csharp_namespace = "Shared.Proto.Template";
+
+//import "MetaInf.proto";
+//import "Template.Shared.proto";
+
+/** **************** service **************** **/
+
+// 服务定义
+service PublicService {
+}
+
+/** **************** message **************** **/

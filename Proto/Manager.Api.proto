@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package Manager;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Manager";
+option csharp_namespace = "Shared.Proto.Manager";
+
+import "MetaInf.proto";
+import "Manager.Shared.proto";
+import "google/api/annotations.proto";
+
+/** **************** service **************** **/
+
+service ApiService {
+  //配置刷新（按参数控制刷新 Excel / Jwt / OpsConfig；签名或开发模式可调用）
+  rpc ReqBaseConfigUpdate(ConfigUpdateReq) returns (ConfigUpdateResp){
+    option (MetaInf.Meta) = {
+      Timeout: 30,
+      NotSigna: true,
+      AuthConfig: {
+        AuthOption: NO_AUTH
+      },
+      LimitConfig: {
+        UserMethodLimit: {
+          TimeWindow: 1,
+          CallCount: 3,
+          BanTime: 2
+        }
+      }
+    };
+    option (google.api.http) = {
+      post: "/manager/base/config_update"
+      body: "*"
+    };
+  };
+}

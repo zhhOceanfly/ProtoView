@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package Push;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Push";
+option csharp_namespace = "Shared.Proto.Push";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+//客户端事件消息体
+message ClientEvent {
+  ClientEventData EventData = 1; //客户端事件数据
+}
+
+//客户端事件数据结构体
+message ClientEventData {
+  int64 EventId = 1 [jstype = JS_STRING]; //事件幂等id
+  EventType EventType = 2; //事件类型
+  oneof payload {
+    HeartbeatMsg HeartbeatData = 11; //心跳消息
+    ConfirmLoginReq ConfirmLoginData = 12; //确认登录消息
+    ConfirmLeaveServerReq ConfirmLeaveServerData = 13; //确认离开游戏服消息
+    ConfirmReadyReq ConfirmReadyData = 14; //确认就绪消息
+  }
+}
+
+//服务端事件消息体
+message ServerEvent {
+  ServerEventData EventData = 1; //服务端事件数据
+}
+
+//服务器事件数据结构体
+message ServerEventData {
+  int64 EventId = 1 [jstype = JS_STRING]; //事件幂等id
+  int32 ModuleType = 2; //模块类型
+  int32 EventType = 3; //事件类型
+  bytes Payload = 4; //事件数据
+}
+
+//token数据
+message TokenData {
+  string AccessToken = 1; //访问token
+  string RefreshToken = 2; //刷新token
+}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  EVENT_HEARTBEAT = 1;
+  EVENT_CONFIRM_LOGIN = 2;
+  EVENT_CONFIRM_JOIN_SERVER = 3;
+  EVENT_CONFIRM_LEAVE_SERVER = 4;
+  EVENT_KICKOUT = 5;
+  EVENT_CONFIRM_READY = 6;
+  EVENT_TOKEN_REFRESH = 7;
+}
+
+//心跳消息体
+message HeartbeatMsg {
+  int32 BeatTime = 1; //心跳时间戳
+}
+
+//确认登录请求体
+message ConfirmLoginReq {
+}
+//确认登录响应体
+message ConfirmLoginResp {
+  RespCode Result = 1; //结果
+  TokenData TokenInfo = 2; //token信息
+}
+
+//token刷新事件
+message TokenRefreshEvt {
+  TokenData TokenInfo = 1; //token信息
+}
+
+//确认离开游戏服请求体
+message ConfirmLeaveServerReq {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //游戏服务器id
+  string TokenJti = 2; //token唯一jti
+}
+
+//确认加入服务器事件
+message ConfirmJoinServerEvt {
+  TokenData TokenInfo = 1; //token信息
+  int64 ServerId = 2 [jstype = JS_STRING]; //服务器id
+  int64 GameServerId = 3 [jstype = JS_STRING]; //游戏服务器id
+  string PhysicalServerAddr = 4; //物理服务器地址
+  string TokenJti = 5; //token唯一jti
+  bool IsReconnect = 6; //是否重连
+  string GameServerPlayerName = 7; //游戏服务器玩家名称
+}
+
+//踢掉事件
+message KickoutEvt {
+  KickoutReason Reason= 1; //踢掉原因
+}
+
+//确认就绪事件
+message ConfirmReadyReq {
+  ClientStatus Status = 1; //客户端状态
+  string Config = 2; //配置
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+
+  PUSH_STRATEGY_NOT_SUPPORT = 10; //推送策略不支持
+  PUSH_CHANNEL_FAILURE = 11; //推送频道失败
+  REFRESH_TOKEN_ERROR = 12; //刷新token错误
+  TOKEN_GEN_FAILURE = 13; //生成token失败
+  BIZ_CLIENT_GET_FAILED = 14; //业务客户端获取失败
+  TOKEN_JTI_NOT_MATCH = 15; //token jti不匹配
+  PLAYER_BANNED = 16; //玩家被封禁
+}
+
+//推送业务类型
+enum PushBizType {
+  PLAYER = 0; //玩家
+  INTERNAL_SERVER = 1; //内部服务
+  PHYSICAL_GAME_SERVER = 2; //物理游戏服务器
+}
+
+//踢掉原因
+enum KickoutReason {
+  KR_UNKNOWN = 0; //未知
+  KR_ANOTHER_LOGIN = 1; //其他人登录踢掉
+  KR_SYSTEM_MAINTENANCE = 2; //系统维护
+  KR_ACCOUNT_BANNED = 3; //账号被封禁
+  KR_CONNECT_EXPIRED = 4; //连接过期
+}
+
+//推送条件表达式
+enum PushCondExp {
+  CE_LTE = 0; //小于等于
+}
+
+//客户端状态
+enum ClientStatus {
+  CS_INIT_STATUS        = 0; //初始状态
+	CS_CONNECTED_STATUS   = 1; //已连接状态
+	CS_RECONNECTED_STATUS = 2; //重连状态
+	CS_READY_STATUS       = 3; //就绪状态
+	CS_CLOSED_STATUS      = 4; //已关闭状态
+}

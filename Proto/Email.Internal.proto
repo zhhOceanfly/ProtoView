@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package Email;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Email";
+option csharp_namespace = "Shared.Proto.Email";
+
+import "MetaInf.proto";
+import "Email.Shared.proto";
+
+/** **************** service **************** **/
+
+// 内部服务定义
+service InternalService {
+  //内部发送邮件接口
+  rpc ReqInternalSendEmail(InternalSendEmailReq) returns (InternalSendEmailResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      },
+      ConsistCheck: true
+    };
+  };
+  //内部发送邮箱接口
+  rpc ReqInternalSendEmailBox(InternalSendEmailBoxReq) returns (InternalSendEmailBoxResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        Rand: {}
+      },
+      ConsistCheck: true
+    };
+  };
+}
+
+/** **************** message **************** **/
+
+//内部发送邮件请求体
+message InternalSendEmailReq {
+  int32 EmailTemplateId = 1; //邮件模板id
+  repeated AttachmentData AttachmentList = 2; // 附件列表
+  string Title = 3; //邮件标题
+  string Content = 4; //邮件内容
+}
+//内部发送邮件响应体
+message InternalSendEmailResp {
+  RespCode Result = 1; //结果
+}
+
+//内部发送邮箱请求体
+message InternalSendEmailBoxReq {
+  string Title = 1; //邮件标题
+  string Content = 2; //邮件内容
+  int32 SendTime = 3; //发送时间 0为立即发送
+  repeated AttachmentData AttachmentList = 4; // 附件列表
+  string Receiver = 5; //接收者
+  int32 TemplateId = 6; //邮件模板id
+  int64 GameServerId = 7 [jstype = JS_STRING]; //游戏服id
+  EmailIsOnline IsOnline = 8; //是否在线发送
+}
+//内部发送邮箱响应体
+message InternalSendEmailBoxResp {
+  RespCode Result = 1; //结果
+}

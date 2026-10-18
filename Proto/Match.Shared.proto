@@ -1,0 +1,255 @@
+syntax = "proto3";
+
+package Match;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Match";
+option csharp_namespace = "Shared.Proto.Match";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+//场景数据结构体
+message SceneData {
+  int64 ServerId = 1 [jstype = JS_STRING]; //服务器id
+  int64 GameServerId = 2 [jstype = JS_STRING]; //游戏服务器id
+  int64 SceneId = 3 [jstype = JS_STRING]; //场景id
+  int32 MapId = 4; //地图id
+  int32 DungeonId = 5; //副本id
+  ManageServerState State = 6; //服务器状态
+  int32 CreateTime = 7; //创建时间
+  int32 MaxPeople = 8; //最大人数
+}
+
+//玩家数据结构体
+message PlayerData {
+  string DisplayId = 1; //玩家显示id
+  string Nickname = 2; //玩家名称
+  string HeadImg = 3; //玩家头像
+  OnlineState OnlineState = 4; //在线状态
+  string AccountName = 5; //账户名称
+  int32 CreateTime = 6; //创建时间
+  int64 PlayerId = 7 [jstype = JS_STRING]; //玩家id
+}
+
+//后台玩家数据结构体
+message ManagePlayerData {
+  string DisplayId = 1; //玩家显示id
+  string Nickname = 2; //玩家名称
+  string HeadImg = 3; //玩家头像
+  OnlineState OnlineState = 4; //在线状态
+  string AccountName = 5; //账户名称
+  int32 CreateTime = 6; //创建时间
+  int64 PlayerId = 7 [jstype = JS_STRING]; //玩家id
+  string Account = 8; //账户名称
+  string Phone = 9; //手机号
+  string Email = 10; //邮箱
+}
+
+//token数据
+message TokenData {
+  string AccessToken = 1; //访问token
+  string RefreshToken = 2; //刷新token
+}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+  EVENT_GAME_SERVER_SCENE_CLOSED = 1; //游戏服务器场景关闭事件
+  EVENT_GAME_SERVER_SCENE_SYNC = 2; //同步游戏服务器场景事件
+  EVENT_GAME_SERVER_PLAYER_KICKOUT = 3; //游戏服务器玩家被踢出事件
+  EVENT_GAME_SERVER_SCENE_PLAYER_LEAVE = 4; //玩家离开服务器场景事件
+  EVENT_GAME_SERVER_PLAYER_STATE_SYNC = 5; //同步服务器玩家状态事件
+  EVENT_GAME_SERVER_PLAYER_NAME_SYNC = 6; //同步服务器玩家名称事件
+  EVENT_GAME_SERVER_PLAYER_JOIN = 7; //服务器玩家加入事件
+}
+
+//游戏服务器场景关闭事件
+message GameServerSceneClosedEvent {
+  int64 SceneId = 1 [jstype = JS_STRING]; //场景id
+  LeaveReason Reason= 2; //关闭原因
+}
+
+//同步服务器场景事件
+message GameServerSceneEvent {
+  repeated SceneData List = 1; //场景列表
+}
+
+//服务器玩家加入事件
+message GameServerPlayerJoin {
+  int64 PlayerId = 1 [jstype = JS_STRING]; //玩家id
+  int64 ServerId = 2 [jstype = JS_STRING]; //服务器id
+  int64 GameServerId = 3 [jstype = JS_STRING]; //游戏服务器id
+  string TokenJti = 4; //token唯一jti
+  int32 GamePlayerCreateTime = 5; //游戏玩家创建时间
+  string PhysicalServerAddr = 6; //物理服务器地址
+  string GameServerPlayerName = 7; //游戏服务器玩家名称
+  bool IsReconnect = 8; //是否重连
+}
+
+//服务器玩家被踢出事件
+message GameServerPlayerKickout {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //服务器id
+  int64 PlayerId = 2 [jstype = JS_STRING]; //玩家id
+  LeaveReason Reason= 3; //踢掉原因
+}
+
+//玩家离开服务器场景事件
+message GameServerScenePlayerLeave {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //服务器id
+  int64 SceneId = 2 [jstype = JS_STRING]; //场景id
+  int64 PlayerId = 3 [jstype = JS_STRING]; //玩家id
+  LeaveReason Reason= 4; //踢掉原因
+}
+
+//同步服务器玩家状态事件
+message GameServerPlayerStateSync {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //服务器id
+  repeated PlayerStateData OnlineList = 2; //在线列表
+}
+message PlayerStateData {
+  int64 PlayerId = 1 [jstype = JS_STRING]; //玩家id
+  int64 SceneId = 2 [jstype = JS_STRING]; //场景id
+  OnlineState State = 3; //在线状态
+}
+
+// 同步服务器玩家名称事件
+message GameServerPlayerNameSync {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //服务器id
+  int64 PlayerId = 2 [jstype = JS_STRING]; //玩家id
+  string PlayerName = 3; //玩家名称
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+  OPERATE_LOCK_FAILURE = 7; //操作加锁失败
+  //...
+  SERVER_NOT_EXIST = 10; //服务器不存在
+  SERVER_INFO_ERROR = 11; //服务器信息错误
+  SERVER_FULL_PEOPLE = 12; //服务器人数已满
+  SERVER_NAME_EXIST = 13; //服务器名称已存在
+  SERVER_EXIST_PLAYER = 14; //服务器仍存在玩家
+  SERVER_ALREADY_DELETE = 15; //服务器已删除
+  SERVER_STATUS_ERROR = 16; //服务器状态错误
+  SERVER_PLAYER_NOT_EXIST = 17; //服务器玩家不存在
+  SERVER_PLAYER_STATUS_ERROR = 18; //服务器玩家状态错误
+  SERVER_TOKEN_GEN_FAILURE = 19; //服务器token生成失败
+  SERVER_CONFIRM_JOIN_NOTIFY_FAILED = 20; //游戏服务器确认加入通知失败
+  GAME_SCENE_MAP_NOT_EXIST = 21; //游戏场景地图不存在
+  GAME_SCENE_MAP_NOT_SUPPORT = 22; //游戏场景地图不支持
+  GAME_SCENE_NOT_EXIST = 23; //游戏场景不存在
+  GAME_SCENE_MAP_NO_DISPLAY = 24; //游戏场景地图不显示
+  GAME_SCENE_FULL_PEOPLE = 25; //游戏场景人数已满
+  SCENE_TOKEN_GEN_ERROR = 26; //场景token生成错误
+  SCENE_TOKEN_ERROR = 27; //场景token错误
+  REFRESH_TOKEN_NOT_SAME = 28; //刷新token不一致
+  REFRESH_TOKEN_OUT_OF_DATE = 29; //刷新token过期
+  SERVER_ALREADY_STARTED = 30; //服务器已开启
+  SERVER_ALREADY_CLOSED = 31; //服务器已关闭
+  SERVER_PRESET_TOKEN_NOT_MATCH = 32; //服务器预设token不匹配
+  GAME_SCENE_PRESET_TOKEN_NOT_MATCH = 33; //服务器场景预设token不匹配
+  GAME_PLAYER_OFFLINE = 34; //游戏玩家离线
+  GAME_SCENE_CONN_INFO_ERROR = 35; //游戏场景连接信息错误
+  SERVER_STATE_ERROR = 36; //服务器状态错误
+  PLAYER_NOT_EXIST = 37; //玩家不存在
+  SCENE_PLAYER_NOT_EXIST = 38; //场景玩家不存在
+  SCENE_PLAYER_OPERATE_EXPIRED = 39; //场景玩家操作过期
+  SCENE_PLAYER_ALREADY_EXIST = 40; //玩家已存在场景
+  GAME_SCENE_STATE_ERROR = 41; //游戏场景状态错误
+  SERVER_NOT_READY = 42; //服务器未就绪
+  GAME_SCENE_NO_AVALABLE_PHYSICAL = 43; //游戏场景没有可用物理服务器
+  GAME_SCENE_ALREADY_CLOSED = 44; //游戏场景已关闭
+  GAME_DUNGEON_SOLO1_DAY_LIMIT = 45; //个人副本1每日次数限制
+  SERVER_LINE_NOT_EXIST = 46; //服务器分线不存在
+  SERVER_LINE_LIMIT = 47; //服务器分线数量达到上限
+  SERVER_LINE_NAME_EXIST = 48; //服务器分线名称已存在
+  SERVER_STATE_INVALID = 49; //服务器状态不允许删除
+  SERVER_NAME_FORMAT_INVALID = 50; //服务器名称格式不合法
+  SERVER_NAME_LENGTH_INVALID = 51; //服务器名称长度不合法
+  SCENE_NAME_FORMAT_INVALID = 52; //场景名称格式不合法
+  SCENE_NAME_LENGTH_INVALID = 53; //场景名称长度不合法
+  PRE_SERVER_ID_INVALID = 54; //预分配服务器id实例不合法
+  PLAYER_MANUAL_CHANGE_LINE_CD_LIMIT = 55; //玩家手动切换分线冷却时间限制
+  GAME_SCENE_ALREADY_TO_CLOSE = 56; //游戏场景已定时关闭
+  GAME_SERVER_PLAYER_NAME_FORMAT_INVALID = 57; //游戏服务器玩家名称格式不合法
+  GAME_SERVER_PLAYER_NAME_LENGTH_INVALID = 58; //游戏服务器玩家名称长度不合法
+  GAME_SERVER_PLAYER_NAME_EXIST = 59; //游戏服务器玩家名称已存在
+  GAME_SCENE_NOT_DUNGEON = 60; //游戏场景不是副本
+  DUNGEON_CONFIG_NOT_EXIST = 61; //副本配置不存在
+  GAME_SCENE_ALREADY_EXIST = 62; //游戏场景已存在
+  PLAYER_NO_PERMISSION_TO_JOIN_DUNGEON = 63; //玩家没有权限加入副本
+  REFRESH_TOKEN_ERROR = 70; //刷新token错误
+  PLAYER_BANNED = 71; //玩家被封禁
+  TOKEN_GEN_FAILURE = 72; //token生成失败
+  TOKEN_JTI_NOT_MATCH = 73; //token jti不匹配
+  BIZ_CLIENT_GET_FAILED = 74; //biz客户端获取失败
+  TOKEN_GAME_SERVER_ID_NOT_MATCH = 75; //token游戏服务器id不匹配
+  GAME_SCENE_MAP_TYPE_INVALID = 76; //游戏场景地图类型不合法
+  DUNGEON_CONFIG_MAP_NOT_MATCH = 77; //副本配置地图不匹配
+  TEAM_DUNGEON_LIMIT = 78; //团队副本数量达到上限
+  CLEAR_SCENE_BUILDING_FAILURE = 79; //清理场景建造数据失败
+}
+
+//服务器类型
+enum ServerType {
+  ST_OFFICIAL = 0; //官方服
+  ST_STEAM = 1; //steam服
+}
+
+//在线状态
+enum OnlineState {
+  OS_UNKNOWN = 0; //未知
+  ONLINE = 1; //在线
+  OFFLINING = 2; //离线中
+  OFFLINE = 3; //离线
+}
+
+//后台服务器状态
+enum ManageServerState {
+  SS_CLOSED = 0; //已关闭
+  SS_OPENED = 1; //已开启
+  SS_OPENNING = 2; //开启中
+  SS_CLOSING = 3; //关闭中
+  SS_DELETED = 4; //已删除
+}
+
+//离开原因
+enum LeaveReason {
+  LR_UNKNOWN = 0; //未知
+  LR_ANOTHER_LOGIN = 1; //其他人登录踢掉
+  LR_SYSTEM_MAINTENANCE = 2; //系统维护
+  LR_ACCOUNT_BANNED = 3; //账号被封禁
+  LR_CONNECT_EXPIRED = 4; //连接过期
+  LR_NORMAL_JUMP_SCENE = 5; //正常跳转场景
+  LR_NORMAL_LEAVE_SERVER = 6; //正常主动离开服务器
+}
+
+//搜索排序
+enum SearchSort {
+  SS_PLAYER_ID = 0; //默认玩家id
+  SS_CREATE_TIME = 1; //创建时间
+  SS_ONLINE_STATE = 2; //在线状态
+}
+
+//排序方向
+enum SortDirection {
+  SD_ASC = 0; //升序
+  SD_DESC = 1; //降序
+}
+
+//游戏服模式
+enum GameServerMode {
+  GS_MODE_DEFAULT = 0; //默认模式
+  GS_MODE_DEBUG = 1; //调试模式
+}

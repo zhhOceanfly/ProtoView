@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package Character;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Character";
+option csharp_namespace = "Shared.Proto.Character";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+//角色选择数据
+message CharacterSelectedData {
+  int32 CharacterId = 1; //角色id
+}
+
+//角色数据结构体
+message CharacterData {
+  int64 CharacterAid = 1 [jstype = JS_STRING]; //存档id
+  int32 CharacterId = 2; //角色id
+  string Remark = 3; //备注
+  int32 ValidTime = 4; //有效时间
+  int32 Amount = 5; //数量
+  int32 GrowStage = 6; //成长阶段
+  int32 CurExp = 7; //当前经验
+  int32 ExpUpperLimit = 8; //经验上限
+  int32 PersistTime = 9; //持久化时间
+  CharacterState State = 10; //角色状态
+  repeated int32 ClothIds = 13; //皮肤id列表
+}
+
+//创建角色数据结构体
+message CreateCharacterData {
+  int64 CharacterAid = 1 [jstype = JS_STRING]; //存档id
+  int32 CharacterId = 2; //角色id
+  int32 ExpUpperLimit = 3; //经验上限
+}
+
+//角色数据结构体
+message UseCharacterData {
+  int64 CharacterAid = 1 [jstype = JS_STRING]; //存档id
+  int32 CharacterId = 2; //角色id
+  string Remark = 3; //备注
+  int32 MapId = 4; //地图id
+  int32 TerritoryId = 5; //领地id
+  string Position = 6; //位置
+  string Rotation = 7; //旋转
+  bytes Data = 8; //角色数据
+  int32 CurExp = 9; //当前经验值
+  int32 ExpUpperLimit = 10; //经验上限
+  CharacterState State = 11; //角色状态
+}
+//选取角色数据结构体
+message SelectCharacterData {
+  int64 CharacterAid = 1 [jstype = JS_STRING]; //存档id
+  int32 MapId = 2; //地图id
+  int32 TerritoryId = 3; //领地id
+  string Position = 4; //位置
+  string Rotation = 5; //旋转
+}
+
+//装置数据
+message FacilityData {
+  FacilityType FType = 1; //装置类型
+  bytes Data = 2; //装置数据
+}
+
+//皮肤数据
+message ClothData {
+  int32 ClothId = 1; //皮肤id
+  string Category = 2; //售卖分类
+  int32 Part = 3; //皮肤部位
+  int32 Sort = 4; //排序
+  repeated PriceInfo Price = 5; //价格信息
+}
+//皮肤商城商品数据结构体
+message ShoppingData {
+  int32 ShoppingId = 1; //商品id
+  int32 ItemType = 2; //商品种类
+  int32 Category = 3; //商品子分类
+  int32 Sort = 4; //排序
+  int32 Cycle = 5; //商品刷新周期
+  int32 Limit = 6; //商品限购数量
+  repeated PriceInfo Price = 7; //价格信息
+  ShoppingItemInfo Item = 8; //商品物品
+}
+//商城物品信息
+message ShoppingItemInfo{
+  int32 ItemId = 1; //物品id
+  int32 Amount = 2; //数量
+  int32 ValidTimeTime = 3; //有效时间
+}
+//价格信息
+message PriceInfo {
+  int32 CurrencyId = 1; //货币id
+  int32 Discount = 2; //折扣
+  int32 OriginPrice = 3; //原价
+}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  //...
+  CHARACTER_ID_NOT_EXIST = 10; //角色id不存在
+  CHARACTER_SEX_NOT_ALLOWED = 11; //角色性别不允许
+  CHARACTER_NO_PERMISSION_CREATE = 12; //角色无权限创建
+  SCENE_PRESET_TOKEN_EMPTY = 13; //场景预设token为空
+  SCENE_PRESET_TOKEN_ERROR = 14; //场景预设token错误
+  CHARACTER_PERSIST_DATA_EMPTY = 15; //角色持久化数据为空
+  CHARACTER_PERSIST_DATA_ERROR = 16; //角色持久化数据错误
+  CHARACTER_GENERATE_UUID_ERROR = 17; //生成角色uuid错误
+  CHARACTER_AID_EXIST = 18; //角色存档id已存在
+  CHARACTER_AID_NOT_EXIST = 19; //角色存档id不存在
+  CHARACTER_AID_DATA_ERROR = 20; //角色存档数据错误
+  SELECTED_CHARACTER_AID_NOT_EXIST = 21; //选取角色存档id不存在
+  SELECTED_CHARACTER_DATA_EMPTY = 22; //选取角色存档数据为空
+  CHARACTER_AID_DATA_EXPIRED = 23; //角色存档数据过期
+  REPAIRBAY_AID_DATA_EXPIRED = 24; //维修仓存档数据过期
+  CHARACTER_LIMIT_EXCEEDED = 25;  // 角色创建数量已达上限
+  CLOTH_PLAYER_NOT_OWNED = 26; //玩家皮肤未拥有
+  CLOTH_NOT_EXIST = 27; //皮肤不存在
+  CLOTH_PLAYER_ALREADY_OWNED = 28; //玩家已拥有皮肤
+  CLOTH_NOT_ADAPT_CHARACTER = 29; //皮肤不适配角色
+  CLOTH_NOT_ADAPT_EQUIP = 30; //皮肤不适配装备
+  CLOTH_PRICE_CONFIG_ERROR = 31; //皮肤价格配置错误
+  CLOTH_NOT_CREATE_GIVE = 32; //皮肤未创建赠送
+  CHARACTER_CLOTH_DATA_EMPTY = 33; //角色皮肤数据为空
+  CHARACTER_CLOTH_DATA_ERROR = 34; //角色皮肤数据错误
+  SHOP_ITEM_EMPTY = 35; //商城物品为空
+  SHOP_ITEM_OFF_SALE = 36; //商城物品已下架
+  SHOP_ITEM_PRICE_EMPTY = 37; //商城物品价格信息为空
+}
+
+//角色种族
+enum CharacterRace {
+  CR_UNKNOWN = 0; //未知
+  Human = 1; //人类
+  Animal = 2; //兽族
+}
+
+//角色删除原因
+enum CharacterReason{
+  CRE_UNKNOWN = 0; //未知
+  BEAtkDeath = 1; //被攻击死亡
+}
+
+//装置类型
+enum FacilityType {
+  AllFacility = 0; //所有装置
+  RepairBay = 1; //维修仓
+  CulturePoll = 2; //培养池
+}
+
+//角色状态
+enum CharacterState {
+  CS_DEATH = 0; //死亡
+  CS_ALIVE = 1; //存活
+}

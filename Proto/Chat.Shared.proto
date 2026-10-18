@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package Chat;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Chat";
+option csharp_namespace = "Shared.Proto.Chat";
+
+
+/** **************** message **************** **/
+
+message Empty {}
+
+/** **************** push message **************** **/
+
+//事件类型
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  //...
+  EVENT_CHAT_SYNC = 1; //聊天事件同步
+}
+//聊天消息
+message ChatMsg {
+  ChatSender Sender = 1; //玩家id
+  ChannelType ChannelType = 2; //聊天频道类型
+  string Message = 3; //消息
+  int64 ChatTime = 4 [jstype = JS_STRING]; //时间
+}
+//聊天发送者
+message ChatSender {
+  int64 PlayerId = 1 [jstype = JS_STRING]; //玩家id
+  string Name = 2; //玩家名称
+  string ShortName = 3; //团队简称
+}
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  //...
+  CHAT_BANNED = 10; //聊天被封禁
+  CHAT_TIME_LIMIT = 11; //聊天时间限制
+  CHAT_LENGTH_OVER_LIMIT = 12; //聊天长度超过限制
+  PLAYER_NOT_IN_TROOP = 13; //玩家不在团队里
+  TROOP_NOT_EXIST = 14; //团队不存在
+  PLAYER_NOT_IN_TEAM = 15; //玩家不在小队里
+  TEAM_NOT_EXIST = 16; //小队不存在
+  CHAT_HORN_GOODS_NOT_ENOUGH = 17; //喇叭道具不足
+}
+
+//频道类型
+enum ChannelType {
+  CT_UNKNOWN = 0; //未知
+  GAME_SERVER_CHAT = 1; //服内聊天
+  GAME_TROOP_CHAT = 2; //团队聊天
+  LOCAL_CHAT = 3; //本地聊天
+  GAME_TEAM_CHAT = 4; //小队聊天
+  SYSTEM_CHAT = 5; //系统消息
+  HORN_CHAT = 6; //喇叭消息
+  NEARBY_CHAT = 7; //附近消息
+}

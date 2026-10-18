@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package Tracking;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Tracking";
+option csharp_namespace = "Shared.Proto.Tracking";
+
+/** **************** message **************** **/
+
+message Empty {}
+
+/** **************** push message **************** **/
+
+/** **************** enum **************** **/
+
+enum RespCode {
+  /** ========= common ========= **/
+  FAILURE = 0; //失败
+  SUCCESS  = 1; //成功
+  INVALID_PARAM = 2; //参数错误
+  DB_OPERATE_FAILURE = 3; //数据操作失败
+  SERVER_CIRCUIT_FAILURE = 4; //服务熔断失败
+  EVENT_DATA_EXPIRED = 5; //事件过期
+  TX_CREATE_FAILURE = 6; //事务操作失败
+  OPERATE_LOCK_FAILURE = 7; //操作加锁失败
+  //...
+}
+
+// 官网埋点事件类型
+//	tips: HTTP JSON 可传枚举名（EVENT_PAGE_VIEW）或数字；PV 统计只计 EVENT_PAGE_VIEW
+enum EventType {
+  EVENT_UNKNOWN = 0;
+  EVENT_PAGE_VIEW = 1;     // 页面浏览，用于 PV
+  EVENT_CLICK = 2;         // 点击
+  EVENT_DOWNLOAD = 3;      // 下载
+  EVENT_REGISTER = 4;      // 注册
+  EVENT_LOGIN = 5;         // 登录
+  EVENT_PRE_REGISTER = 6;  // 预约
+}

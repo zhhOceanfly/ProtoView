@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package Pay;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Pay";
+option csharp_namespace = "Shared.Proto.Pay";
+
+import "MetaInf.proto";
+import "google/api/annotations.proto";
+
+message BaseNotifyReq {
+  string ConfigTag = 1;
+  string RawText = 2;
+}
+
+// 支付通知处理结果。
+message BaseNotifyResp {
+  string message = 1;
+  int32 code = 2;
+}
+
+// 支付对外 HTTP 接口。
+service ApiService {
+  // 支付渠道通知；HTTP body 为渠道原始密文文本。
+  rpc ReqBaseNotify(BaseNotifyReq) returns (BaseNotifyResp) {
+    option (MetaInf.Meta) = {
+      RequestBodyMode: BODY_MODE_RAW_TEXT,
+      AuthConfig: { AuthOption: NO_AUTH },
+      NotTracing: true,
+    };
+    option (google.api.http) = {
+      post: "/pay/base/notify"
+      body: "RawText"
+    };
+  };
+}

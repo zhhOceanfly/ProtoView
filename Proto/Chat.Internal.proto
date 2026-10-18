@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package Chat;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Chat";
+option csharp_namespace = "Shared.Proto.Chat";
+
+import "MetaInf.proto";
+import "Chat.Shared.proto";
+
+/** **************** service **************** **/
+
+// 内部服务定义
+service InternalService {
+  //内部发送系统消息
+  rpc ReqInternalSendSystemChat(SendSystemChatReq) returns (SendSystemChatResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      }
+    };
+  };
+  //内部发送喇叭消息
+  rpc ReqInternalSendHornChat(SendHornChatReq) returns (SendHornChatResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      }
+    };
+  };
+  //内部发送附近消息
+  rpc ReqInternalSendNearbyChat(SendNearbyChatReq) returns (SendNearbyChatResp){
+    option (MetaInf.Meta) = {
+      SessionConfig: {
+        GameMod: {}
+      }
+    };
+  };
+}
+
+/** **************** message **************** **/
+
+//内部发送系统消息请求体
+message SendSystemChatReq {
+  int64 GameServerId = 1 [jstype = JS_STRING]; //游戏服id
+  string Message = 2; //消息
+  repeated int64 PlayerIds = 3 [jstype = JS_STRING]; //目标玩家id列表，空则全服广播
+}
+//内部发送系统消息响应体
+message SendSystemChatResp {
+  RespCode Result = 1; //结果
+}
+
+//内部发送喇叭消息请求体
+message SendHornChatReq {
+  string Message = 1; //消息
+  int32 GoodsId = 2; //喇叭道具id
+}
+//内部发送喇叭消息响应体
+message SendHornChatResp {
+  RespCode Result = 1; //结果
+  int32 LeftTime = 2; //聊天剩余等待时间
+}
+
+//内部发送附近消息请求体
+message SendNearbyChatReq {
+  string Message = 1; //消息
+  repeated int64 PlayerIds = 2 [jstype = JS_STRING]; //接收者玩家id列表，发送者会被服务端并入
+}
+//内部发送附近消息响应体
+message SendNearbyChatResp {
+  RespCode Result = 1; //结果
+  int32 LeftTime = 2; //聊天剩余等待时间
+}

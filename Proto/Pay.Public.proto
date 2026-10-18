@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package Pay;
+option go_package = "gitea.zhenyueyouguang.com/team2/Mountain.Server/src/Shared/Proto/Pay";
+option csharp_namespace = "Shared.Proto.Pay";
+
+//import "MetaInf.proto";
+//import "Pay.Shared.proto";
+
+/** **************** service **************** **/
+
+// 服务定义
+service PublicService {
+}
+
+/** **************** message **************** **/
