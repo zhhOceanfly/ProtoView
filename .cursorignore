@@ -1,0 +1,4 @@
+bin/
+dist/
+__debug_bin*
+coverage/

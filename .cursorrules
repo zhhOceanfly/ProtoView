@@ -1,0 +1,7 @@
+When generating a Git commit message for this repository, you MUST follow this style (see also .cursor/rules/ide/commit-message.mdc):
+
+- Prefer Simplified Chinese for the description; keep English only for Conventional Commits type and proper nouns (API/type/file names when needed).
+- Format: `<type>: <简短中文说明>` — e.g. `fix: 更新 InviteTeamPlayerReq，增加 TeamId 字段`
+- Do NOT write pure-English messages like `fix: update Xxx message structure to include Yyy`.
+- Keep one short line (~50 chars); distill intent, do not restate the diff.
+- Types: feat / fix / refactor / docs / chore, etc.
