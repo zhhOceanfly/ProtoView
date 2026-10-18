@@ -160,7 +160,7 @@ function renderHome(catalog: Catalog, canBack: boolean): string {
   return shell({
     canBack,
     crumbs: `<span>全部 package</span>`,
-    title: "Proto",
+    title: "ProtoView",
     lead: "按 package 浏览 service、接口、message 和 enum。类型名称可以点进去，再从引用处跳回来。",
     extra: err,
     body: `<div class="section"><input class="search" placeholder="筛选 package" />

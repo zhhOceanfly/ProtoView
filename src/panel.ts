@@ -34,7 +34,7 @@ export class ProtoPanel {
 
   private ensure(): void {
     if (this.panel) return;
-    this.panel = vscode.window.createWebviewPanel("protoview.preview", "Proto", {
+    this.panel = vscode.window.createWebviewPanel("protoview.preview", "ProtoView", {
       viewColumn: vscode.ViewColumn.Beside,
       preserveFocus: true,
     }, {
@@ -76,7 +76,7 @@ export class ProtoPanel {
     this.currentId = id;
     if (!this.panel || !this.catalog || !this.ready) return;
     const item = this.catalog.byId.get(id);
-    const title = item && "name" in item ? item.name : "Proto";
+    const title = item && "name" in item ? item.name : "ProtoView";
     this.panel.title = title;
     this.panel.webview.postMessage({
       type: "html",

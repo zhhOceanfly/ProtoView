@@ -4,6 +4,8 @@
   "description": "按 package / service 浏览 Protobuf，并在接口、message、enum 之间跳转",
   "version": "0.1.0",
   "publisher": "local",
+  "icon": "media/icon.png",
+  "keywords": ["protobuf", "proto", "grpc", "protoview"],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -19,31 +21,31 @@
       {
         "command": "protoview.show",
         "title": "在预览中打开",
-        "category": "Proto"
+        "category": "ProtoView"
       },
       {
         "command": "protoview.openSource",
         "title": "跳转到源码",
         "icon": "$(go-to-file)",
-        "category": "Proto"
+        "category": "ProtoView"
       },
       {
         "command": "protoview.refresh",
         "title": "重新解析",
         "icon": "$(refresh)",
-        "category": "Proto"
+        "category": "ProtoView"
       },
       {
         "command": "protoview.showAtCursor",
         "title": "预览光标所在定义",
-        "category": "Proto"
+        "category": "ProtoView"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "protoview",
-          "title": "Proto",
+          "title": "ProtoView",
           "icon": "media/icon.svg"
         }
       ]
@@ -52,7 +54,7 @@
       "protoview": [
         {
           "id": "protoview.explorer",
-          "name": "Packages"
+          "name": "ProtoView"
         }
       ]
     },

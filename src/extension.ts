@@ -76,7 +76,7 @@ async function reload(tree: ProtoTree, panel: ProtoPanel, status: vscode.StatusB
   if (!folders.length) {
     catalog = buildCatalog([], []);
     tree.update(catalog, false, showGoogle());
-    status.text = "$(symbol-namespace) Proto 未打开文件夹";
+    status.text = "$(symbol-namespace) ProtoView 未打开文件夹";
     status.tooltip = "调试窗口没有工作区，ProtoView 无法读取 .proto";
     void vscode.window.showWarningMessage("ProtoView 没有打开工作区。请停止调试后重新按 F5，或在这个窗口里打开含 .proto 的文件夹。");
     return;
@@ -100,7 +100,7 @@ async function reload(tree: ProtoTree, panel: ProtoPanel, status: vscode.StatusB
   tree.update(catalog, false, showGoogle());
   panel.refresh(catalog);
   const visible = catalog.packages.filter((pkg) => showGoogle() || !pkg.wellKnown).length;
-  status.text = `$(symbol-namespace) Proto ${visible}`;
+  status.text = `$(symbol-namespace) ProtoView ${visible}`;
   status.tooltip = errors.length ? `${errors.length} 个文件解析失败，见输出 ProtoView` : "打开 Proto 侧边栏";
   if (errors.length) output.show(true);
 }
