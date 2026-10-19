@@ -1,6 +1,8 @@
 # ProtoView
 
-在 VS Code / Cursor 中浏览与调试 Protobuf / gRPC：按 `package → service → 接口` 组织侧边栏，支持类型跳转、源码定位，并提供 **ProtoView Client**（发请求、Auth、压测、链路调试）。
+在 VS Code / Cursor 中浏览与调试 Protobuf：按 `package → service → 接口` 组织侧边栏，支持类型跳转、源码定位，并提供 **ProtoView Client**（gRPC / HTTP 发请求、Auth、压测、链路调试）。
+
+当前版本：**0.1.1**
 
 ## 功能概览
 
@@ -29,10 +31,11 @@
 - **接口树**：筛选、展开/收起、亮暗色主题
 - **环境**：多环境 host，保存在工作区 `.protoview/environments.json`
 - **Message / Metadata / Auth / Docs**：样例生成、格式化、Auth 合并进 Metadata、Docs 跳转源码
-- **真实 gRPC 调用**：由扩展宿主进程发起（明文 / TLS）
+- **协议**：每个接口在环境左侧选择 gRPC 或 HTTP；HTTP 再选方法与路径
+- **真实调用**：gRPC 或 HTTP 均由扩展宿主进程发起（明文 / TLS）
 - **grpcurl**：一键生成命令
-- **压测**：轻量并发压测；可选本机 `ghz` 路径
-- **链路调试**：画布拖拽接口、连线、变量提取（含嵌套响应字段）、运行与压测历史查看
+- **压测**：轻量并发对 gRPC / HTTP 都可用；`ghz` 仅在 gRPC 时显示
+- **链路调试**：画布拖拽接口、连线、变量提取；节点内选择协议与环境；可查看运行与压测历史
 
 ## 快速开始
 

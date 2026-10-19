@@ -2,6 +2,21 @@
 
 本文件记录 ProtoView 的版本变更。扩展详情页的「更改日志」标签会读取它。
 
+## [0.1.1] — 2026-10-19
+
+### 新增
+
+- Client 每个接口可在环境左侧选择 **gRPC / HTTP**；HTTP 可再选 GET、POST、PUT、PATCH、DELETE，并填写路径
+- HTTP 真实请求与轻量压测（GET/DELETE 走 query，其余发 JSON；Metadata 作为 Header）
+- 仅 gRPC 显示 ghz 压测
+- 链路节点编辑顶部可设置协议、HTTP 方法、路径和环境；运行与压测按节点自己的配置发送
+- 活动栏与商店图标改为单色 **PV** 字标
+
+### 调整
+
+- 链路调试顶栏不再放全局环境，环境改到每个节点
+- 补充 `repository` / `homepage`，便于 Marketplace 与 Open VSX 认领
+
 ## [0.1.0] — 2026-10-19
 
 首个面向 Marketplace 的发布版本。

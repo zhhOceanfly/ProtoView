@@ -119,7 +119,8 @@
     world.innerHTML = flow.nodes.map((node) => {
       const hit = api()?.findRpc?.(node.rpcId);
       const title = hit ? hit.rpc.name : (node.name || node.rpcId || "未知接口");
-      const sub = hit ? `${hit.pkg.name}.${hit.service.name}` : (node.package || "");
+      const proto = node.protocol === "http" ? `HTTP ${node.httpMethod || "POST"}` : "gRPC";
+      const sub = `${proto} · ${hit ? `${hit.pkg.name}.${hit.service.name}` : (node.package || "")}`;
       const status = node.result?.ok === true ? "ok" : node.result?.ok === false ? "fail" : "";
       const badge = node.result
         ? `<div class="flow-node-result ${status}">${esc(node.result.status || "")} · ${node.result.ms ?? "-"}ms</div>`
@@ -196,6 +197,10 @@
           metadata: [{ name: "", value: "" }],
           extracts: {},
           history: [],
+          protocol: "grpc",
+          httpMethod: hit?.rpc.httpVerb || "POST",
+          httpPath: hit?.rpc.httpPath || "/",
+          envId: api()?.getActiveEnvId?.() || "",
           result: null,
         });
         save();
@@ -575,12 +580,38 @@
       : `<div class="flow-msg-empty">无响应字段</div>`;
   }
 
+  function renderNodeTransport(node, hit) {
+    const protocol = node.protocol === "http" ? "http" : "grpc";
+    const protoEl = $("flowNodeProtocol");
+    const methodEl = $("flowNodeHttpMethod");
+    const pathEl = $("flowNodeHttpPath");
+    const envEl = $("flowNodeEnv");
+    if (protoEl) protoEl.value = protocol;
+    if (methodEl) methodEl.value = node.httpMethod || hit?.rpc.httpVerb || "POST";
+    if (pathEl) pathEl.value = node.httpPath || hit?.rpc.httpPath || "/";
+    if (envEl) {
+      const envs = api()?.listEnvs?.() || [];
+      const selected = node.envId || api()?.getActiveEnvId?.() || "";
+      envEl.innerHTML = envs.map((env) => `<option value="${esc(env.id)}"${env.id === selected ? " selected" : ""}>${esc(env.name)}</option>`).join("")
+        || `<option value="">未配置环境</option>`;
+      if (selected) envEl.value = selected;
+    }
+    syncNodeTransportUi();
+  }
+
+  function syncNodeTransportUi() {
+    const http = $("flowNodeProtocol")?.value === "http";
+    $("flowNodeMethodWrap")?.classList.toggle("hidden", !http);
+    $("flowNodePathWrap")?.classList.toggle("hidden", !http);
+  }
+
   function openEdit(nodeId) {
     const node = flow.nodes.find((n) => n.id === nodeId);
     const hit = node ? api()?.findRpc?.(node.rpcId) : null;
     if (!node || !hit) return;
     flow.editNodeId = nodeId;
     $("flowEditTitle").textContent = `编辑 · ${hit.rpc.name}`;
+    renderNodeTransport(node, hit);
     renderFlowMessage(node, hit);
     renderFlowMeta(node);
     renderFlowExtract(node, hit);
@@ -658,6 +689,10 @@
       if (key && val) extracts[key] = val;
     }
     node.extracts = extracts;
+    node.protocol = $("flowNodeProtocol")?.value === "http" ? "http" : "grpc";
+    node.httpMethod = $("flowNodeHttpMethod")?.value || "POST";
+    node.httpPath = $("flowNodeHttpPath")?.value || "/";
+    node.envId = $("flowNodeEnv")?.value || node.envId || "";
     $("flowEditModal").classList.remove("show");
     flow.editNodeId = null;
     save();
@@ -803,13 +838,19 @@
         if (!name) continue;
         metadata[name] = interpolate(row.value, vars);
       }
+      const protocol = node.protocol === "http" ? "http" : "grpc";
       const result = await client.invokeOnce({
+        protocol,
+        httpMethod: node.httpMethod || hit.rpc.httpVerb || "POST",
+        httpPath: interpolate(node.httpPath || hit.rpc.httpPath || "/", vars),
+        host: client.resolveHost?.(node.envId) || "",
         package: hit.pkg.name,
         service: hit.service.name,
         method: hit.rpc.name,
         file: hit.rpc.file,
         body: buildBody(node.message, vars),
         metadata,
+        tls: false,
       });
       node.result = {
         ok: result.ok,
@@ -1040,6 +1081,7 @@
     });
     $("closeFlowEdit")?.addEventListener("click", () => $("flowEditModal").classList.remove("show"));
     $("saveFlowEditBtn")?.addEventListener("click", saveEdit);
+    $("flowNodeProtocol")?.addEventListener("change", syncNodeTransportUi);
     $("flowMsgBody")?.addEventListener("click", handleMsgTreeClick);
     $("flowAddMetaBtn")?.addEventListener("click", () => {
       const node = flow.nodes.find((n) => n.id === flow.editNodeId);

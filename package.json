@@ -1,7 +1,7 @@
 {
   "name": "protoview",
   "displayName": "ProtoView",
-  "description": "浏览 Protobuf / 调试 gRPC：侧边栏导航、Client 发请求、Auth、压测与链路调试",
+  "description": "浏览 Protobuf，并用 gRPC / HTTP 调试接口：侧边栏导航、Client、Auth、压测与链路调试",
   "version": "0.1.1",
   "publisher": "zoceanfly",
   "license": "MIT",

@@ -1,5 +1,6 @@
 import { Catalog } from "./catalog";
 import { GrpcInvokeRequest, GrpcInvokeResult, invokeGrpc } from "./grpcInvoke";
+import { invokeHttp } from "./httpInvoke";
 
 export interface StressOptions {
   id: string;
@@ -70,10 +71,10 @@ export async function runStress(
     while (!job.cancel) {
       const index = next++;
       if (index >= total) return;
-      const result: GrpcInvokeResult = await invokeGrpc(catalog, {
-        ...base,
-        id: `${options.id}-${index}`,
-      });
+      const payload = { ...base, id: `${options.id}-${index}` };
+      const result: GrpcInvokeResult = (payload as GrpcInvokeRequest & { protocol?: string }).protocol === "http"
+        ? await invokeHttp(payload)
+        : await invokeGrpc(catalog, payload);
       samples.push({
         index,
         ok: result.ok,

@@ -82,6 +82,9 @@
       message: els.messageEditor.value,
       metadata: state.metadata,
       auth: state.auth,
+      protocol: $("protocolSelect")?.value || "grpc",
+      httpMethod: $("httpMethodSelect")?.value || "POST",
+      httpPath: $("httpPath")?.value || "",
     };
     saveDrafts();
   }
@@ -171,8 +174,6 @@
   function renderEnvSelect() {
     const html = envOptionsHtml();
     els.envSelect.innerHTML = html;
-    const flowEnv = $("flowEnvSelect");
-    if (flowEnv) flowEnv.innerHTML = html;
     const env = activeEnv();
     if (env && document.activeElement !== els.address) els.address.value = env.host || "";
     fillEnvForm();
@@ -185,10 +186,17 @@
     const env = activeEnv();
     els.address.value = env?.host || "";
     els.envSelect.value = id;
-    const flowEnv = $("flowEnvSelect");
-    if (flowEnv) flowEnv.value = id;
     fillEnvForm();
     persistEnvs();
+  }
+
+  function syncProtocolUi() {
+    const http = ($("protocolSelect")?.value || "grpc") === "http";
+    $("httpMethodSelect")?.classList.toggle("hidden", !http);
+    $("httpPath")?.classList.toggle("hidden", !http);
+    document.querySelector('[data-stress-mode="ghz"]')?.classList.toggle("hidden", http);
+    if (http && state.stressMode === "ghz") setStressMode("light");
+    if (els.address) els.address.placeholder = http ? "HTTP host:port 或 https://host" : "gRPC host:port";
   }
 
   function fillEnvForm() {
@@ -305,13 +313,20 @@
         ? draft.metadata
         : [{ name: "", value: "", description: "" }];
       state.auth = normalizeAuth(draft.auth);
+      if ($("protocolSelect")) $("protocolSelect").value = draft.protocol === "http" ? "http" : "grpc";
+      if ($("httpMethodSelect")) $("httpMethodSelect").value = draft.httpMethod || rpc.httpVerb || "POST";
+      if ($("httpPath")) $("httpPath").value = draft.httpPath || rpc.httpPath || "";
     } else {
       els.messageEditor.value = generateMessage(rpc);
       state.metadata = [{ name: "", value: "", description: "" }];
       state.auth = defaultAuth();
+      if ($("protocolSelect")) $("protocolSelect").value = "grpc";
+      if ($("httpMethodSelect")) $("httpMethodSelect").value = rpc.httpVerb || "POST";
+      if ($("httpPath")) $("httpPath").value = rpc.httpPath || "";
     }
     state.messageDirty = false;
     state.docsNav = [];
+    syncProtocolUi();
     renderMetadata();
     renderAuth();
     renderRpcInfo();
@@ -895,7 +910,12 @@
   });
   els.filter.addEventListener("input", renderTree);
   els.envSelect.addEventListener("change", () => applyEnvId(els.envSelect.value));
-  $("flowEnvSelect")?.addEventListener("change", () => applyEnvId($("flowEnvSelect").value));
+  $("protocolSelect")?.addEventListener("change", () => {
+    syncProtocolUi();
+    persistCurrentDraft();
+  });
+  $("httpMethodSelect")?.addEventListener("change", persistCurrentDraft);
+  $("httpPath")?.addEventListener("change", persistCurrentDraft);
   els.address.addEventListener("change", () => {
     const env = activeEnv();
     if (!env) return;
@@ -1163,9 +1183,15 @@
       showInvokeResult({ ok: false, status: "INVALID", method: `${rpc.package}.${rpc.service}/${rpc.name}`, host, error: `Message 不是合法 JSON：${error.message}` });
       return;
     }
+    const protocol = $("protocolSelect")?.value === "http" ? "http" : "grpc";
+    const httpMethod = $("httpMethodSelect")?.value || "POST";
+    const httpPath = $("httpPath")?.value || rpc.httpPath || "/";
     const payload = {
       id: String(Date.now()),
       time: new Date().toLocaleString(),
+      protocol,
+      httpMethod,
+      httpPath,
       host,
       package: rpc.package,
       service: rpc.service,
@@ -1190,7 +1216,10 @@
       return;
     }
     setRespBadge("wait", "发送中…");
-    els.responseView.innerHTML = `<div class="resp-empty">正在请求 ${esc(host || "(未配置)")} · ${esc(rpc.package)}.${esc(rpc.service)}/${esc(rpc.name)}</div>`;
+    const label = protocol === "http"
+      ? `${httpMethod} ${httpPath}`
+      : `${rpc.package}.${rpc.service}/${rpc.name}`;
+    els.responseView.innerHTML = `<div class="resp-empty">正在请求 ${esc(host || "(未配置)")} · ${esc(label)}</div>`;
     vscode.postMessage({ type: "invoke", payload });
   });
 
@@ -1203,6 +1232,9 @@
       return { error: `Message 不是合法 JSON：${error.message}` };
     }
     return {
+      protocol: $("protocolSelect")?.value === "http" ? "http" : "grpc",
+      httpMethod: $("httpMethodSelect")?.value || rpc.httpVerb || "POST",
+      httpPath: $("httpPath")?.value || rpc.httpPath || "/",
       host: els.address.value.trim() || activeEnv()?.host || "",
       package: rpc.package,
       service: rpc.service,
@@ -1235,7 +1267,7 @@
 
   function buildGhzArgs() {
     const base = currentInvokeBase();
-    if (!base || base.error) return null;
+    if (!base || base.error || base.protocol === "http") return null;
     const rpc = state.selected;
     const concurrency = Math.max(1, Number($("ghzConcurrency").value || 20));
     const total = Math.max(1, Number($("ghzTotal").value || 200));
@@ -1398,7 +1430,7 @@
         return;
       }
       const id = `flow-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const host = els.address.value.trim() || activeEnv()?.host || "";
+      const host = partial?.host || els.address.value.trim() || activeEnv()?.host || "";
       const handler = (event) => {
         const data = event.data;
         if (!data || data.type !== "invokeResult" || data.id !== id) return;
@@ -1431,6 +1463,12 @@
     invokeOnce,
     getSelectedRpcId: () => state.selected?.id || "",
     getSelectedRpcLabel: () => state.selected?.name || "",
+    listEnvs: () => state.envs.map((env) => ({ id: env.id, name: env.name, host: env.host || "" })),
+    getActiveEnvId: () => state.activeEnvId,
+    resolveHost(envId) {
+      const env = state.envs.find((item) => item.id === envId) || activeEnv();
+      return env?.host || "";
+    },
   };
 
   window.addEventListener("message", (event) => {

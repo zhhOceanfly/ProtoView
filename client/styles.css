@@ -135,11 +135,27 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   flex-wrap: wrap;
 }
 .flow-hint { color: var(--muted); font-size: 12px; min-width: 0; }
-.flow-env-select {
+.http-path { flex: 0 1 180px; min-width: 120px; font-family: var(--mono); }
+.flow-node-transport {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+.flow-node-transport label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
   min-width: 110px;
-  max-width: 160px;
-  height: 32px;
-  padding: 4px 8px;
+}
+.flow-node-transport select,
+.flow-node-transport input {
+  border: 1px solid var(--border);
+  background: var(--input);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--text);
 }
 .flow-drawer-mask {
   position: absolute;

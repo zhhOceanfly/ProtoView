@@ -30,6 +30,18 @@
 
     <main class="main" id="mainClient">
       <div class="topbar">
+        <select class="pill" id="protocolSelect" title="协议">
+          <option value="grpc">gRPC</option>
+          <option value="http">HTTP</option>
+        </select>
+        <select class="pill hidden" id="httpMethodSelect" title="HTTP 方法">
+          <option>GET</option>
+          <option selected>POST</option>
+          <option>PUT</option>
+          <option>PATCH</option>
+          <option>DELETE</option>
+        </select>
+        <input class="pill hidden http-path" id="httpPath" placeholder="/path" title="HTTP 路径" />
         <select class="pill" id="envSelect" title="环境"></select>
         <button class="btn" id="envConfigBtn" type="button">环境配置</button>
         <input class="pill addr" id="address" placeholder="gRPC host:port" />
@@ -177,7 +189,6 @@
         <div class="spacer"></div>
         <button class="btn" id="flowAddSelectedBtn" type="button">添加选中接口</button>
         <button class="btn" id="flowClearBtn" type="button">清空画布</button>
-        <select class="pill flow-env-select" id="flowEnvSelect" title="环境"></select>
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
         <button class="btn" id="flowStressBtn" type="button">压测</button>
         <button class="btn" id="flowCloseBtn" type="button">返回 Client</button>
@@ -228,7 +239,30 @@
         <button class="icon-btn" id="closeFlowEdit" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note">请求字段值支持 <code>{{变量名}}</code>；响应字段可填写「提取变量」供后续节点使用（如写入 Metadata）。</p>
+        <div class="flow-node-transport">
+          <label>协议
+            <select id="flowNodeProtocol">
+              <option value="grpc">gRPC</option>
+              <option value="http">HTTP</option>
+            </select>
+          </label>
+          <label id="flowNodeMethodWrap" class="hidden">方法
+            <select id="flowNodeHttpMethod">
+              <option>GET</option>
+              <option>POST</option>
+              <option>PUT</option>
+              <option>PATCH</option>
+              <option>DELETE</option>
+            </select>
+          </label>
+          <label id="flowNodePathWrap" class="hidden">路径
+            <input id="flowNodeHttpPath" placeholder="/path" />
+          </label>
+          <label>环境
+            <select id="flowNodeEnv"></select>
+          </label>
+        </div>
+        <p class="stress-note">请求字段值支持 <code>{{变量名}}</code>；响应字段可填写「提取变量」供后续节点使用（如写入 Metadata / Header）。</p>
         <h4 class="flow-edit-h">Message</h4>
         <div id="flowMsgBody" class="flow-msg-tree"></div>
         <h4 class="flow-edit-h">Metadata</h4>
