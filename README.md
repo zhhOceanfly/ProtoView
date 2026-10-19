@@ -52,15 +52,16 @@
 
 ```bash
 npm install
-npm run compile          # 编译 TypeScript → out/
-npm run watch            # 监听编译
-npm run package          # 编译并打出 protoview-x.y.z.vsix（含生产依赖）
-npm run package:precheck # 仅检查即将打进包的文件列表
+npm run compile           # 编译 TypeScript → out/
+npm run watch             # 监听编译
+npm run package           # 编译并打出 protoview-x.y.z.vsix（含生产依赖）
+npm run package:precheck  # 预览将打进包的文件
+npm run package:fresh     # 删除旧 vsix 后重新打包
 ```
 
 本地调试：按 F5（「运行 ProtoView」）打开 Extension Development Host。
 
-### 发布到 Marketplace
+### 发布到 VS Code Marketplace
 
 1. 在 [Marketplace 管理页](https://marketplace.visualstudio.com/manage) 创建 Publisher（本扩展 `publisher` 为 `zoceanfly`）
 2. **方式 A（推荐，无需 PAT）**：`npm run package` 后，在管理页上传生成的 `.vsix`
@@ -69,9 +70,30 @@ npm run package:precheck # 仅检查即将打进包的文件列表
 ```bash
 npx vsce login zoceanfly
 npm run publish
+# 或 npm run publish:patch / publish:minor
 ```
 
-扩展页形如：`https://marketplace.visualstudio.com/items?itemName=zoceanfly.protoview`
+扩展页：`https://marketplace.visualstudio.com/items?itemName=zoceanfly.protoview`
+
+### 发布到 Open VSX（让 Cursor 能搜到）
+
+Cursor 默认走 [Open VSX](https://open-vsx.org/)，需单独发布（与 VS Code 商店无关）。
+
+1. 登录 https://open-vsx.org → Profile **签署** Eclipse Open VSX Publisher Agreement  
+2. [Access Tokens](https://open-vsx.org/user-settings/tokens) 创建 Token（**只放在环境变量里，不要写进仓库**）  
+3. 本机（推荐 Node 20）：
+
+```bash
+nvm use 20.18.0
+export OVSX_PAT=ovsxat_你的token   # PowerShell: $env:OVSX_PAT="ovsxat_你的token"
+
+npm run openvsx:namespace          # 首次创建命名空间 zoceanfly（只需一次）
+npm run publish:openvsx            # 打包并发布到 Open VSX
+```
+
+脚本说明见 `scripts/openvsx-publish.js`。发布后页面：  
+`https://open-vsx.org/extension/zoceanfly/protoview`  
+Cursor 索引可能有延迟；也可在 Cursor 里用「从 VSIX 安装」。
 
 仅内部分发时，对方可用「从 VSIX 安装…」安装 `protoview-*.vsix`。
 

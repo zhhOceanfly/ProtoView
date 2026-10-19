@@ -1,3 +1,6 @@
 node_modules/
 out/
 *.vsix
+.env
+.env.*
+!.env.example

@@ -5,6 +5,14 @@
   "version": "0.1.0",
   "publisher": "zoceanfly",
   "license": "MIT",
+  "homepage": "https://github.com/zhhOceanfly/ProtoView",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhhOceanfly/ProtoView.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zhhOceanfly/ProtoView/issues"
+  },
   "icon": "media/icon.png",
   "galleryBanner": {
     "color": "#0f172a",
@@ -183,11 +191,13 @@
     "watch": "tsc -w -p ./",
     "clean:vsix": "node -e \"const fs=require('fs');for(const f of fs.readdirSync('.'))if(f.endsWith('.vsix'))fs.unlinkSync(f)\"",
     "package:precheck": "vsce ls --tree",
-    "package": "npm run compile && vsce package --allow-missing-repository",
+    "package": "npm run compile && vsce package",
     "package:fresh": "npm run clean:vsix && npm run package",
-    "publish": "npm run compile && vsce publish --allow-missing-repository",
-    "publish:patch": "npm run compile && vsce publish patch --allow-missing-repository",
-    "publish:minor": "npm run compile && vsce publish minor --allow-missing-repository"
+    "publish": "npm run compile && vsce publish",
+    "publish:patch": "npm run compile && vsce publish patch",
+    "publish:minor": "npm run compile && vsce publish minor",
+    "openvsx:namespace": "node scripts/openvsx-publish.js namespace",
+    "publish:openvsx": "npm run package && node scripts/openvsx-publish.js publish"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
@@ -195,6 +205,7 @@
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^2.32.0",
+    "ovsx": "^0.10.1",
     "typescript": "^5.5.0"
   },
   "dependencies": {
