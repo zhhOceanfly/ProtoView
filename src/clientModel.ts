@@ -26,6 +26,10 @@ export interface ClientRpc {
   file: string;
   path: string;
   line: number;
+  httpVerb?: string;
+  httpPath?: string;
+  badges: { text: string; warn?: boolean }[];
+  source: string;
 }
 
 export interface ClientService {
@@ -99,6 +103,10 @@ export function toClientCatalog(catalog: Catalog, sourceLabel: string, showGoogl
           file: rpc.relPath,
           path: rpc.file,
           line: rpc.line,
+          httpVerb: rpc.httpVerb,
+          httpPath: rpc.httpPath,
+          badges: rpc.badges ?? [],
+          source: rpc.source || "",
         })),
       })),
     }))

@@ -19,13 +19,16 @@
             <button class="btn ai-btn" id="aiBtn" type="button" title="AI"><span class="ai-spark">✦</span>AI</button>
           </div>
         </div>
-        <div class="side-meta" id="sourceMeta">独立模式</div>
+        <div class="side-meta-row">
+          <div class="side-meta" id="sourceMeta">独立模式</div>
+          <button class="btn side-flow-btn primary" id="flowBtn" type="button" title="链路调试">链路调试</button>
+        </div>
         <input class="side-search" id="filter" placeholder="筛选 package / service / 接口" />
       </div>
       <div class="tree" id="tree"></div>
     </aside>
 
-    <main class="main">
+    <main class="main" id="mainClient">
       <div class="topbar">
         <select class="pill" id="envSelect" title="环境"></select>
         <button class="btn" id="envConfigBtn" type="button">环境配置</button>
@@ -41,6 +44,7 @@
         <button class="tab" data-tab="metadata" type="button">Metadata</button>
         <button class="tab" data-tab="auth" type="button">Auth</button>
         <button class="tab" data-tab="docs" type="button">Docs</button>
+        <button class="tab" data-tab="stress" type="button">压测</button>
         <button class="tab" data-tab="history" type="button">History</button>
       </div>
 
@@ -56,7 +60,12 @@
         <section class="pane request-pane" id="requestPane">
           <div class="pane-body">
             <div class="view active" id="view-message">
-              <textarea class="editor" id="messageEditor" spellcheck="false">{}</textarea>
+              <div class="message-layout">
+                <aside class="rpc-info" id="rpcInfo">
+                  <div class="rpc-info-empty">选择左侧接口后显示定义与说明。</div>
+                </aside>
+                <textarea class="editor" id="messageEditor" spellcheck="false">{}</textarea>
+              </div>
             </div>
             <div class="view" id="view-metadata">
               <div class="meta-wrap">
@@ -100,6 +109,45 @@
             <div class="view" id="view-docs">
               <div class="docs" id="docsView"><div class="doc-empty">选择左侧接口后显示注释与请求/响应字段。</div></div>
             </div>
+            <div class="view" id="view-stress">
+              <div class="stress-panel">
+                <div class="stress-head">
+                  <div class="stress-modes" id="stressModes">
+                    <button class="btn stress-mode active" type="button" data-stress-mode="light">轻量压测</button>
+                    <button class="btn stress-mode" type="button" data-stress-mode="ghz">ghz</button>
+                  </div>
+                  <p class="stress-note" id="stressNote">复用当前 Message / Auth / Metadata，在插件进程内有限并发调用。</p>
+                </div>
+                <div class="stress-light" id="stressLight">
+                  <div class="stress-form">
+                    <label>并发 <input id="stressConcurrency" type="number" min="1" max="10" value="2" /></label>
+                    <label>总请求 <input id="stressTotal" type="number" min="1" max="200" value="20" /></label>
+                    <button class="btn primary" id="stressStartBtn" type="button">开始压测</button>
+                    <button class="btn" id="stressStopBtn" type="button" disabled>停止</button>
+                  </div>
+                  <div class="stress-progress-wrap">
+                    <div class="stress-progress-bar"><i id="stressProgressBar"></i></div>
+                    <div class="stress-progress-text" id="stressProgressText">未开始</div>
+                  </div>
+                </div>
+                <div class="stress-ghz hidden" id="stressGhz">
+                  <p class="stress-note">指定本机 <code>ghz</code> 可执行文件路径；留空则使用 PATH 中的 <code>ghz</code>。</p>
+                  <div class="stress-form">
+                    <label class="stress-path">ghz 路径
+                      <input id="ghzPath" type="text" placeholder="例如 C:\\tools\\ghz.exe 或 /usr/local/bin/ghz" />
+                    </label>
+                    <label>并发 <input id="ghzConcurrency" type="number" min="1" max="200" value="20" /></label>
+                    <label>总请求 <input id="ghzTotal" type="number" min="1" max="100000" value="200" /></label>
+                    <button class="btn" id="copyGhzBtn" type="button">复制 ghz 命令</button>
+                    <button class="btn primary" id="runGhzBtn" type="button">尝试运行 ghz</button>
+                  </div>
+                  <textarea id="ghzCommand" class="stress-cmd" rows="8" readonly></textarea>
+                </div>
+                <div class="stress-result" id="stressResult">
+                  <div class="stress-empty">压测结果会显示在这里。</div>
+                </div>
+              </div>
+            </div>
             <div class="view" id="view-history">
               <div class="history" id="historyView">发送记录会显示在这里（当前为本地会话历史，无数据库）。</div>
             </div>
@@ -121,6 +169,94 @@
         </section>
       </div>
     </main>
+
+    <main class="main flow-main hidden" id="mainFlow">
+      <div class="flow-topbar">
+        <strong>链路调试</strong>
+        <span class="flow-hint">按住左侧接口拖到画布松手 · 双击也可添加 · 右键节点编辑</span>
+        <div class="spacer"></div>
+        <button class="btn" id="flowAddSelectedBtn" type="button">添加选中接口</button>
+        <button class="btn" id="flowClearBtn" type="button">清空画布</button>
+        <select class="pill flow-env-select" id="flowEnvSelect" title="环境"></select>
+        <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
+        <button class="btn" id="flowStressBtn" type="button">压测</button>
+        <button class="btn" id="flowCloseBtn" type="button">返回 Client</button>
+      </div>
+      <div class="flow-stage" id="flowStage">
+        <div class="flow-empty" id="flowEmpty">从左侧拖入接口，或点「添加选中接口」</div>
+        <svg class="flow-edges" id="flowEdges"></svg>
+        <div class="flow-world" id="flowWorld"></div>
+      </div>
+      <div class="flow-menu hidden" id="flowMenu" style="display:none">
+        <button type="button" data-flow-act="edit">编辑</button>
+        <button type="button" data-flow-act="view-resp">查看响应</button>
+        <button type="button" data-flow-act="delete">删除</button>
+      </div>
+      <div class="flow-drawer-mask" id="flowStressDrawer">
+        <aside class="flow-drawer" role="dialog" aria-label="链路压测">
+          <div class="flow-drawer-head">
+            <strong>链路压测</strong>
+            <button class="icon-btn" id="flowStressClose" type="button" title="关闭">✕</button>
+          </div>
+          <div class="flow-drawer-body">
+            <p class="stress-note">按拓扑顺序重复跑整条链路（轻量并发，无 ghz）。复用节点 Message / Metadata / 变量提取。</p>
+            <div class="stress-form">
+              <label>并发 <input id="flowStressConcurrency" type="number" min="1" max="5" value="1" /></label>
+              <label>总次数 <input id="flowStressTotal" type="number" min="1" max="100" value="10" /></label>
+            </div>
+            <div class="flow-drawer-actions">
+              <button class="btn primary" id="flowStressStartBtn" type="button">开始压测</button>
+              <button class="btn" id="flowStressStopBtn" type="button" disabled>停止</button>
+            </div>
+            <div class="stress-progress-wrap">
+              <div class="stress-progress-bar"><i id="flowStressProgressBar"></i></div>
+              <div class="stress-progress-text" id="flowStressProgressText">未开始</div>
+            </div>
+            <div class="stress-result" id="flowStressResult">
+              <div class="stress-empty">压测结果会显示在这里。</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-mask" id="flowEditModal">
+    <div class="modal flow-edit-modal">
+      <div class="modal-head">
+        <span id="flowEditTitle">编辑节点</span>
+        <button class="icon-btn" id="closeFlowEdit" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="stress-note">请求字段值支持 <code>{{变量名}}</code>；响应字段可填写「提取变量」供后续节点使用（如写入 Metadata）。</p>
+        <h4 class="flow-edit-h">Message</h4>
+        <div id="flowMsgBody" class="flow-msg-tree"></div>
+        <h4 class="flow-edit-h">Metadata</h4>
+        <table class="meta-table flow-edit-table">
+          <thead><tr><th>Name</th><th>Value（可用 {{var}}）</th><th></th></tr></thead>
+          <tbody id="flowMetaBody"></tbody>
+        </table>
+        <button class="btn" id="flowAddMetaBtn" type="button">添加 Metadata</button>
+        <h4 class="flow-edit-h">响应提取变量 <span class="flow-edit-h-sub">嵌套字段可展开，填写变量名供后续 {{var}} 引用</span></h4>
+        <div id="flowExtractBody" class="flow-extract-tree"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" id="saveFlowEditBtn" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="flowHistoryModal">
+    <div class="modal flow-history-modal">
+      <div class="modal-head">
+        <span id="flowHistoryTitle">响应历史</span>
+        <button class="icon-btn" id="closeFlowHistory" type="button">✕</button>
+      </div>
+      <div class="modal-body flow-history-layout">
+        <div class="flow-history-list" id="flowHistoryList"></div>
+        <pre class="flow-history-detail" id="flowHistoryDetail">选择左侧一条记录查看</pre>
+      </div>
+    </div>
   </div>
 
   <div class="modal-mask" id="envModal">
@@ -205,5 +341,6 @@
   </div>
 
   <script src="./app.js"></script>
+  <script src="./flow.js"></script>
 </body>
 </html>

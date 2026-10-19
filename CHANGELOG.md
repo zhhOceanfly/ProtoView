@@ -20,3 +20,5 @@
 - Client 响应区改为状态条 + JSON 块；VS Code 内由插件进程发送真实 gRPC
 - Client Auth：None / Bearer / Basic / API Key / OAuth Token / WSSE，发送与 grpcurl 合并注入 Metadata
 - Client Docs「跳转到源码」；编辑器内 Proto 格式化、类型补全、转到定义
+- Client Message 左侧接口说明/定义；压测 Tab（轻量自建 + ghz 命令/运行）
+- 压测可配置本机 ghz 路径；链路调试无限画布（拖拽/连线/变量/运行结果着色）

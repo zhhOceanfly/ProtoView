@@ -18,6 +18,9 @@
     history: [],
     drafts: loadDrafts(),
     messageDirty: false,
+    stressMode: "light",
+    stressId: "",
+    ghzLog: "",
   };
 
   const $ = (id) => document.getElementById(id);
@@ -29,10 +32,12 @@
     address: $("address"),
     methodLabel: $("methodLabel"),
     messageEditor: $("messageEditor"),
+    rpcInfo: $("rpcInfo"),
     metaBody: $("metaBody"),
     docsView: $("docsView"),
     historyView: $("historyView"),
     responseView: $("responseView"),
+    stressResult: $("stressResult"),
     sendBtn: $("sendBtn"),
     toolbar: $("toolbar"),
     toolbarHint: $("toolbarHint"),
@@ -157,14 +162,33 @@
     }
   }
 
-  function renderEnvSelect() {
-    els.envSelect.innerHTML = state.envs
+  function envOptionsHtml() {
+    return state.envs
       .map((env) => `<option value="${esc(env.id)}"${env.id === state.activeEnvId ? " selected" : ""}>${esc(env.name)}</option>`)
       .join("");
+  }
+
+  function renderEnvSelect() {
+    const html = envOptionsHtml();
+    els.envSelect.innerHTML = html;
+    const flowEnv = $("flowEnvSelect");
+    if (flowEnv) flowEnv.innerHTML = html;
     const env = activeEnv();
     if (env && document.activeElement !== els.address) els.address.value = env.host || "";
     fillEnvForm();
     renderEnvList();
+  }
+
+  function applyEnvId(id) {
+    if (!id) return;
+    state.activeEnvId = id;
+    const env = activeEnv();
+    els.address.value = env?.host || "";
+    els.envSelect.value = id;
+    const flowEnv = $("flowEnvSelect");
+    if (flowEnv) flowEnv.value = id;
+    fillEnvForm();
+    persistEnvs();
   }
 
   function fillEnvForm() {
@@ -225,7 +249,7 @@
         for (const rpc of rpcs) {
           const active = state.selected?.id === rpc.id ? " active" : "";
           html += `<div>
-            <button class="node-row${active}" type="button" data-rpc="${esc(rpc.id)}">
+            <button class="node-row${active}" type="button" data-rpc="${esc(rpc.id)}" title="在链路调试中按住拖到画布">
               <span class="caret"></span>
               <span class="kind">⇢</span>
               <span class="label">${esc(rpc.name)}</span>
@@ -290,9 +314,40 @@
     state.docsNav = [];
     renderMetadata();
     renderAuth();
+    renderRpcInfo();
     paintDocs();
+    refreshGhzCommand();
     renderTree();
     setTab(state.tab);
+  }
+
+  function renderRpcInfo() {
+    const el = els.rpcInfo;
+    if (!el) return;
+    const rpc = state.selected;
+    if (!rpc) {
+      el.innerHTML = `<div class="rpc-info-empty">选择左侧接口后显示定义与说明。</div>`;
+      return;
+    }
+    const chips = [];
+    if (rpc.httpVerb) chips.push(`<span class="rpc-info-chip">${esc(rpc.httpVerb)} ${esc(rpc.httpPath || "")}</span>`);
+    for (const badge of rpc.badges || []) {
+      chips.push(`<span class="rpc-info-chip${badge.warn ? " warn" : ""}">${esc(badge.text)}</span>`);
+    }
+    const source = rpc.source
+      ? `<details class="rpc-info-def" open><summary>接口定义</summary><pre>${esc(rpc.source)}</pre></details>`
+      : "";
+    el.innerHTML = `
+      <h3 class="rpc-info-title">${esc(rpc.name)}</h3>
+      <p class="rpc-info-lead">${esc(rpc.comment || "无注释")}</p>
+      <p class="rpc-info-meta">${esc(rpc.package)}.${esc(rpc.service)} · ${esc(rpc.file || "")}${rpc.line ? `:${rpc.line}` : ""}</p>
+      ${chips.length ? `<div class="rpc-info-chips">${chips.join("")}</div>` : ""}
+      <div class="rpc-info-row"><span>请求</span><code>${esc(rpc.request)}</code></div>
+      <div class="rpc-info-row"><span>响应</span><code>${esc(rpc.response)}</code></div>
+      <div class="rpc-info-row"><span>字段</span><code>${(rpc.requestFields || []).length} 个请求字段</code></div>
+      ${source}
+      ${rpc.path ? `<button class="btn" type="button" style="margin-top:10px" data-src="${esc(rpc.path)}" data-line="${rpc.line || 1}">跳转到源码</button>` : ""}
+    `;
   }
 
   function sampleValue(field, depth = 0, seen = new Set()) {
@@ -742,13 +797,19 @@
     $("formatMsgBtn").hidden = !messageTools;
     $("clearMsgBtn").hidden = !messageTools;
     els.toolbarHint.textContent = tab === "message"
-      ? "根据请求 message 字段生成 / 格式化 JSON"
+      ? "左侧为接口说明，右侧编辑请求 JSON"
       : tab === "metadata"
         ? "表格编辑 metadata，支持 Bulk Edit"
         : tab === "auth"
           ? "鉴权写入 Metadata；与表格同名键时以 Auth 为准"
-          : "";
+          : tab === "stress"
+            ? "轻量压测或 ghz；结果在下方面板查看"
+            : "";
     if (tab === "auth") renderAuth();
+    if (tab === "stress") {
+      setStressMode(state.stressMode);
+      refreshGhzCommand();
+    }
   }
 
   function persistEnvs() {
@@ -833,19 +894,25 @@
     setRespBadge("ok", "grpcurl 命令已复制");
   });
   els.filter.addEventListener("input", renderTree);
-  els.envSelect.addEventListener("change", () => {
-    state.activeEnvId = els.envSelect.value;
-    const env = activeEnv();
-    els.address.value = env?.host || "";
-    fillEnvForm();
-    persistEnvs();
-  });
+  els.envSelect.addEventListener("change", () => applyEnvId(els.envSelect.value));
+  $("flowEnvSelect")?.addEventListener("change", () => applyEnvId($("flowEnvSelect").value));
   els.address.addEventListener("change", () => {
     const env = activeEnv();
     if (!env) return;
     env.host = els.address.value.trim();
     fillEnvForm();
     persistEnvs();
+  });
+  function openSourceFromUi(src) {
+    const file = src.getAttribute("data-src");
+    const line = Number(src.getAttribute("data-line") || 1);
+    if (vscode) vscode.postMessage({ type: "openSource", file, line });
+    else setRespBadge("err", "独立浏览器模式无法打开 VS Code 源码");
+  }
+
+  els.rpcInfo.addEventListener("click", (event) => {
+    const src = event.target.closest("[data-src]");
+    if (src) openSourceFromUi(src);
   });
   els.docsView.addEventListener("click", (event) => {
     const back = event.target.closest("[data-doc-back]");
@@ -856,16 +923,17 @@
     }
     const src = event.target.closest("[data-src]");
     if (src) {
-      const file = src.getAttribute("data-src");
-      const line = Number(src.getAttribute("data-line") || 1);
-      if (vscode) vscode.postMessage({ type: "openSource", file, line });
-      else setRespBadge("err", "独立浏览器模式无法打开 VS Code 源码");
+      openSourceFromUi(src);
       return;
     }
     const link = event.target.closest("[data-type]");
     if (link) openType(link.getAttribute("data-type"));
   });
   els.tree.addEventListener("click", (event) => {
+    if (window.__protoviewFlowDragged) {
+      window.__protoviewFlowDragged = false;
+      return;
+    }
     const toggle = event.target.closest("[data-toggle]");
     if (toggle) {
       const key = toggle.getAttribute("data-toggle");
@@ -877,6 +945,79 @@
     const rpc = event.target.closest("[data-rpc]");
     if (rpc) selectRpc(rpc.getAttribute("data-rpc"));
   });
+  els.tree.addEventListener("dblclick", (event) => {
+    const rpc = event.target.closest("[data-rpc]");
+    if (!rpc) return;
+    const rpcId = rpc.getAttribute("data-rpc");
+    const label = rpc.querySelector(".label")?.textContent || rpcId;
+    placeFlowRpc(rpcId, label);
+  });
+
+  // ProcessOn-style: press on sidebar RPC, drag onto canvas, release to place
+  let flowDrag = null;
+  function isFlowMode() {
+    return document.getElementById("app")?.classList.contains("flow-mode");
+  }
+  function placeFlowRpc(rpcId, label, clientX, clientY) {
+    if (!rpcId) return;
+    if (window.ProtoViewFlow?.addAtScreen && Number.isFinite(clientX) && Number.isFinite(clientY)) {
+      window.ProtoViewFlow.addAtScreen(rpcId, clientX, clientY, label);
+      return;
+    }
+    if (window.ProtoViewFlow?.addNode) {
+      window.ProtoViewFlow.addNode(rpcId, undefined, undefined, label);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("protoview-flow-add", {
+      detail: { rpcId, label, clientX, clientY },
+    }));
+  }
+  document.addEventListener("mousedown", (event) => {
+    if (!isFlowMode() || event.button !== 0) return;
+    const rpc = event.target.closest?.("[data-rpc]");
+    if (!rpc || !els.tree.contains(rpc)) return;
+    flowDrag = {
+      rpcId: rpc.getAttribute("data-rpc"),
+      label: rpc.querySelector(".label")?.textContent || rpc.getAttribute("data-rpc"),
+      x: event.clientX,
+      y: event.clientY,
+      active: false,
+      ghost: null,
+    };
+  }, true);
+  document.addEventListener("mousemove", (event) => {
+    if (!flowDrag) return;
+    const dist = Math.hypot(event.clientX - flowDrag.x, event.clientY - flowDrag.y);
+    if (!flowDrag.active && dist > 6) {
+      flowDrag.active = true;
+      flowDrag.ghost = document.createElement("div");
+      flowDrag.ghost.className = "flow-drag-ghost";
+      flowDrag.ghost.innerHTML = `<span class="flow-node-icon">⇢</span><strong></strong>`;
+      flowDrag.ghost.querySelector("strong").textContent = flowDrag.label;
+      document.body.appendChild(flowDrag.ghost);
+      document.getElementById("flowStage")?.classList.add("drop-target");
+    }
+    if (flowDrag.ghost) {
+      flowDrag.ghost.style.left = `${event.clientX + 14}px`;
+      flowDrag.ghost.style.top = `${event.clientY + 14}px`;
+    }
+  }, true);
+  document.addEventListener("mouseup", (event) => {
+    if (!flowDrag) return;
+    const drag = flowDrag;
+    flowDrag = null;
+    document.getElementById("flowStage")?.classList.remove("drop-target");
+    if (drag.ghost) drag.ghost.remove();
+    if (!drag.active) return;
+    window.__protoviewFlowDragged = true;
+    const stage = document.getElementById("flowStage");
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+      return;
+    }
+    placeFlowRpc(drag.rpcId, drag.label, event.clientX, event.clientY);
+  }, true);
   $("tabs").addEventListener("click", (event) => {
     const tab = event.target.closest("[data-tab]");
     if (tab) setTab(tab.getAttribute("data-tab"));
@@ -1053,6 +1194,245 @@
     vscode.postMessage({ type: "invoke", payload });
   });
 
+  function currentInvokeBase() {
+    const rpc = state.selected;
+    if (!rpc) return null;
+    let body = {};
+    try { body = JSON.parse(els.messageEditor.value || "{}"); }
+    catch (error) {
+      return { error: `Message 不是合法 JSON：${error.message}` };
+    }
+    return {
+      host: els.address.value.trim() || activeEnv()?.host || "",
+      package: rpc.package,
+      service: rpc.service,
+      method: rpc.name,
+      file: rpc.file,
+      body,
+      metadata: requestMetadata(),
+      tls: $("tlsCheck").checked,
+    };
+  }
+
+  function setStressMode(mode) {
+    state.stressMode = mode === "ghz" ? "ghz" : "light";
+    for (const btn of document.querySelectorAll("[data-stress-mode]")) {
+      btn.classList.toggle("active", btn.getAttribute("data-stress-mode") === state.stressMode);
+    }
+    $("stressLight").classList.toggle("hidden", state.stressMode !== "light");
+    $("stressGhz").classList.toggle("hidden", state.stressMode !== "ghz");
+    $("stressNote").textContent = state.stressMode === "light"
+      ? "复用当前 Message / Auth / Metadata，在插件进程内有限并发调用（并发≤10，总数≤200）。"
+      : "高并发请用本机 ghz。可复制命令，或尝试由插件 spawn（需 PATH 中有 ghz）。";
+    if (state.stressMode === "ghz") refreshGhzCommand();
+  }
+
+  function refreshGhzCommand() {
+    const area = $("ghzCommand");
+    if (!area) return;
+    area.value = buildGhzCommand();
+  }
+
+  function buildGhzArgs() {
+    const base = currentInvokeBase();
+    if (!base || base.error) return null;
+    const rpc = state.selected;
+    const concurrency = Math.max(1, Number($("ghzConcurrency").value || 20));
+    const total = Math.max(1, Number($("ghzTotal").value || 200));
+    const method = `${rpc.package}.${rpc.service}/${rpc.name}`;
+    const args = [
+      "--insecure",
+      "-c", String(concurrency),
+      "-n", String(total),
+      "-d", JSON.stringify(base.body),
+    ];
+    for (const [name, value] of Object.entries(base.metadata || {})) {
+      args.push("-m", `${name}: ${value}`);
+    }
+    if (rpc.path || rpc.file) {
+      args.push("-proto", rpc.path || rpc.file);
+      const importPath = (rpc.path || rpc.file).replace(/[\\/][^\\/]+$/, "") || ".";
+      args.push("-i", importPath);
+    }
+    args.push(base.host || "127.0.0.1:50051", method);
+    return args;
+  }
+
+  function ghzBinary() {
+    return ($("ghzPath")?.value || "").trim() || "ghz";
+  }
+
+  function buildGhzCommand() {
+    const args = buildGhzArgs();
+    if (!args) return "# 请先选择接口并填写合法 Message JSON";
+    return `${shellQuote(ghzBinary())} ${args.map((part) => shellQuote(part)).join(" ")}`;
+  }
+
+  function setStressRunning(running) {
+    $("stressStartBtn").disabled = running;
+    $("stressStopBtn").disabled = !running;
+    $("runGhzBtn").disabled = running;
+  }
+
+  function showStressProgress(data) {
+    const pct = data.total ? Math.round((data.done / data.total) * 100) : 0;
+    $("stressProgressBar").style.width = `${pct}%`;
+    $("stressProgressText").textContent = `${data.done}/${data.total} · 成功 ${data.ok} · 失败 ${data.fail}`;
+  }
+
+  function showStressResult(data) {
+    setStressRunning(false);
+    if (data.error) {
+      els.stressResult.innerHTML = `<div class="stress-empty stress-fail">${esc(data.error)}</div>`;
+      return;
+    }
+    const stats = [
+      ["总数", data.total],
+      ["成功", data.ok],
+      ["失败", data.fail],
+      ["耗时", `${data.durationMs} ms`],
+      ["RPS", data.rps],
+      ["平均", `${data.avgMs} ms`],
+      ["P50", `${data.p50Ms} ms`],
+      ["P95", `${data.p95Ms} ms`],
+      ["P99", `${data.p99Ms} ms`],
+      ["最小", `${data.minMs} ms`],
+      ["最大", `${data.maxMs} ms`],
+    ].map(([label, value]) => `<div class="stress-stat"><b>${esc(String(value))}</b><span>${esc(label)}</span></div>`).join("");
+    const rows = (data.samples || []).map((item) => `<tr>
+      <td>#${item.index + 1}</td>
+      <td class="${item.ok ? "stress-ok" : "stress-fail"}">${esc(item.status)}</td>
+      <td>${item.ms} ms</td>
+      <td>${esc(item.error || "")}</td>
+    </tr>`).join("");
+    els.stressResult.innerHTML = `
+      <div class="stress-stats">${stats}</div>
+      ${data.cancelled ? `<p class="stress-note">已停止，以下为已完成样本。</p>` : ""}
+      <table class="stress-samples">
+        <thead><tr><th>#</th><th>状态</th><th>延迟</th><th>错误</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4">无样本</td></tr>`}</tbody>
+      </table>
+      <p class="stress-note" style="margin-top:8px">仅展示前 50 条样本明细。</p>
+    `;
+    setRespBadge(data.fail ? "err" : "ok", `压测完成 · RPS ${data.rps}`);
+  }
+
+  $("stressModes").addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-stress-mode]");
+    if (btn) setStressMode(btn.getAttribute("data-stress-mode"));
+  });
+  $("stressConcurrency").addEventListener("change", () => {
+    const n = Math.min(10, Math.max(1, Number($("stressConcurrency").value || 1)));
+    $("stressConcurrency").value = String(n);
+  });
+  $("stressTotal").addEventListener("change", () => {
+    const n = Math.min(200, Math.max(1, Number($("stressTotal").value || 1)));
+    $("stressTotal").value = String(n);
+  });
+  $("ghzConcurrency").addEventListener("change", refreshGhzCommand);
+  $("ghzTotal").addEventListener("change", refreshGhzCommand);
+  const GHZ_PATH_KEY = "protoview.client.ghzPath";
+  try { $("ghzPath").value = localStorage.getItem(GHZ_PATH_KEY) || ""; } catch { /* ignore */ }
+  $("ghzPath").addEventListener("change", () => {
+    localStorage.setItem(GHZ_PATH_KEY, $("ghzPath").value.trim());
+    refreshGhzCommand();
+  });
+  $("ghzPath").addEventListener("input", refreshGhzCommand);
+  $("stressStartBtn").addEventListener("click", () => {
+    const base = currentInvokeBase();
+    if (!base) return;
+    if (base.error) {
+      els.stressResult.innerHTML = `<div class="stress-empty stress-fail">${esc(base.error)}</div>`;
+      return;
+    }
+    if (!vscode) {
+      els.stressResult.innerHTML = `<div class="stress-empty stress-fail">请在 VS Code 中打开 ProtoView Client 进行压测。</div>`;
+      return;
+    }
+    state.stressId = `stress-${Date.now()}`;
+    setStressRunning(true);
+    $("stressProgressBar").style.width = "0%";
+    $("stressProgressText").textContent = "准备中…";
+    els.stressResult.innerHTML = `<div class="stress-empty">压测进行中…</div>`;
+    vscode.postMessage({
+      type: "stress",
+      payload: {
+        ...base,
+        id: state.stressId,
+        concurrency: Number($("stressConcurrency").value || 1),
+        total: Number($("stressTotal").value || 1),
+      },
+    });
+  });
+  $("stressStopBtn").addEventListener("click", () => {
+    if (state.stressId && vscode) vscode.postMessage({ type: "stressCancel", id: state.stressId });
+  });
+  $("copyGhzBtn").addEventListener("click", async () => {
+    refreshGhzCommand();
+    const text = $("ghzCommand").value;
+    try { await navigator.clipboard.writeText(text); }
+    catch { $("ghzCommand").select(); document.execCommand("copy"); }
+    setRespBadge("ok", "ghz 命令已复制");
+  });
+  $("runGhzBtn").addEventListener("click", () => {
+    const args = buildGhzArgs();
+    if (!args) {
+      els.stressResult.innerHTML = `<div class="stress-empty stress-fail">请先选择接口并填写合法 Message</div>`;
+      return;
+    }
+    if (!vscode) {
+      els.stressResult.innerHTML = `<div class="stress-empty stress-fail">请在 VS Code 中运行 ghz。</div>`;
+      return;
+    }
+    state.stressId = `ghz-${Date.now()}`;
+    state.ghzLog = "";
+    setStressRunning(true);
+    els.stressResult.innerHTML = `<pre class="stress-log" id="ghzLogView"></pre>`;
+    vscode.postMessage({ type: "runGhz", payload: { id: state.stressId, args, binary: ghzBinary() } });
+  });
+
+  function invokeOnce(partial) {
+    return new Promise((resolve) => {
+      if (!vscode) {
+        resolve({ ok: false, status: "UNAVAILABLE", ms: 0, error: "需要 VS Code Client" });
+        return;
+      }
+      const id = `flow-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const host = els.address.value.trim() || activeEnv()?.host || "";
+      const handler = (event) => {
+        const data = event.data;
+        if (!data || data.type !== "invokeResult" || data.id !== id) return;
+        window.removeEventListener("message", handler);
+        resolve(data);
+      };
+      window.addEventListener("message", handler);
+      vscode.postMessage({
+        type: "invoke",
+        payload: {
+          id,
+          host,
+          tls: $("tlsCheck").checked,
+          ...partial,
+        },
+      });
+    });
+  }
+
+  window.ProtoViewClient = {
+    findRpc,
+    getType(typeId) {
+      if (!typeId) return undefined;
+      return state.catalog.types?.[typeId];
+    },
+    sampleField(field) {
+      try { return sampleValue(field); }
+      catch { return ""; }
+    },
+    invokeOnce,
+    getSelectedRpcId: () => state.selected?.id || "",
+    getSelectedRpcLabel: () => state.selected?.name || "",
+  };
+
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data) return;
@@ -1060,6 +1440,22 @@
     if (data.type === "invokeResult") {
       if (state.pendingInvoke && data.id && data.id !== state.pendingInvoke) return;
       showInvokeResult(data);
+    }
+    if (data.type === "stressProgress" && data.id === state.stressId) showStressProgress(data);
+    if (data.type === "stressResult" && (!data.id || data.id === state.stressId)) showStressResult(data);
+    if (data.type === "ghzProgress" && data.id === state.stressId) {
+      state.ghzLog += data.text || "";
+      const view = $("ghzLogView");
+      if (view) {
+        view.textContent = state.ghzLog;
+        view.scrollTop = view.scrollHeight;
+      }
+    }
+    if (data.type === "ghzResult" && data.id === state.stressId) {
+      state.ghzLog += data.text || "";
+      setStressRunning(false);
+      els.stressResult.innerHTML = `<pre class="stress-log">${esc(state.ghzLog)}</pre>`;
+      setRespBadge(data.ok ? "ok" : "err", data.ok ? "ghz 完成" : "ghz 失败/未安装");
     }
   });
 
@@ -1297,7 +1693,9 @@
   setTab("message");
   renderMetadata();
   renderAuth();
+  renderRpcInfo();
   initSplitLayout();
+  setStressMode("light");
 
   if (!vscode) {
     loadLocalEnvs();
