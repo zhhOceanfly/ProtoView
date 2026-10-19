@@ -460,6 +460,86 @@ export function findSymbolAt(catalog: Catalog, filePath: string, line: number): 
   return best?.id;
 }
 
+export interface SourceLocation {
+  file: string;
+  line: number;
+}
+
+/** Resolve go-to-definition for the identifier under cursor (type / rpc / service / enum). */
+export function findDefinitionAt(
+  catalog: Catalog,
+  filePath: string,
+  line: number,
+  word: string,
+): SourceLocation | undefined {
+  const token = word.replace(/^\./, "").trim();
+  if (!token) return undefined;
+  const filePkg = packageOfFile(catalog, filePath);
+
+  for (const pkg of catalog.packages) {
+    for (const message of pkg.messages) {
+      for (const field of message.fields) {
+        if (normalize(message.file) !== normalize(filePath) || field.line !== line) continue;
+        for (const linked of [field.value, field.key]) {
+          if (!linked?.navId) continue;
+          if (linked.text === token || linked.text.endsWith(`.${token}`) || token.endsWith(`.${linked.text}`)) {
+            const hit = catalog.byId.get(linked.navId);
+            if (hit && "line" in hit && "file" in hit) return { file: hit.file, line: hit.line };
+          }
+        }
+      }
+    }
+    for (const service of pkg.services) {
+      for (const rpc of service.rpcs) {
+        if (normalize(rpc.file) !== normalize(filePath) || line < rpc.line || line > rpc.endLine) continue;
+        for (const linked of [rpc.request, rpc.response]) {
+          if (!linked.navId) continue;
+          if (linked.text === token || linked.text.endsWith(`.${token}`)) {
+            const hit = catalog.byId.get(linked.navId);
+            if (hit && "line" in hit && "file" in hit) return { file: hit.file, line: hit.line };
+          }
+        }
+        if (rpc.name === token) return { file: rpc.file, line: rpc.line };
+      }
+      if (service.name === token && normalize(service.file) === normalize(filePath)) {
+        return { file: service.file, line: service.line };
+      }
+    }
+  }
+
+  const candidates: { loc: SourceLocation; score: number }[] = [];
+  for (const item of catalog.byId.values()) {
+    if ("messages" in item && "services" in item) continue;
+    if (!("name" in item) || !("file" in item) || !("line" in item)) continue;
+    const name = "fullName" in item && typeof item.fullName === "string" ? item.fullName : item.name;
+    if (item.name !== token && name !== token && !name.endsWith(`.${token}`)) continue;
+    let score = 0;
+    if (item.name === token) score += 2;
+    if ("package" in item && item.package === filePkg) score += 3;
+    if (normalize(item.file) === normalize(filePath)) score += 1;
+    candidates.push({ loc: { file: item.file, line: item.line }, score });
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  if (candidates[0]) return candidates[0].loc;
+
+  const enclosing = findSymbolAt(catalog, filePath, line);
+  if (!enclosing) return undefined;
+  const hit = catalog.byId.get(enclosing);
+  if (hit && "file" in hit && "line" in hit) return { file: hit.file, line: hit.line };
+  return undefined;
+}
+
+function packageOfFile(catalog: Catalog, filePath: string): string | undefined {
+  const target = normalize(filePath);
+  for (const pkg of catalog.packages) {
+    if (pkg.files.some((file) => normalize(file.path) === target)) return pkg.name;
+    for (const service of pkg.services) {
+      if (normalize(service.file) === target) return pkg.name;
+    }
+  }
+  return undefined;
+}
+
 function addUsage(map: Map<string, { usages: Usage[] }>, id: string | undefined, usage: Usage): void {
   if (!id) return;
   const target = map.get(id);

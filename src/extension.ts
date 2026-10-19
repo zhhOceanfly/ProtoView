@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { Catalog, buildCatalog, findSymbolAt } from "./catalog";
+import { ClientPanel } from "./clientPanel";
 import { openSource, ProtoPanel } from "./panel";
 import { ProtoParseError, parseProto } from "./parser";
 import {
@@ -12,18 +13,24 @@ import {
   sourceCacheDir,
   syncGitSource,
 } from "./source";
+import { registerLanguageFeatures } from "./language";
 import { ProtoNode, ProtoTree } from "./tree";
 
 let catalog: Catalog | undefined;
 let sourceConfig: ProtoSourceConfig;
 let extensionContext: vscode.ExtensionContext;
+let clientPanel: ClientPanel;
 const output = vscode.window.createOutputChannel("ProtoView");
 
 export function activate(context: vscode.ExtensionContext): void {
   extensionContext = context;
   sourceConfig = loadSourceConfig(context);
+  clientPanel = new ClientPanel(context.extensionUri);
 
   const tree = new ProtoTree(undefined, true, showGoogle(), sourceConfig);
+  clientPanel.setRefreshHandler(() => {
+    void reload(tree, panel, status, sourceConfig.mode === "git");
+  });
   const view = vscode.window.createTreeView("protoview.explorer", {
     treeDataProvider: tree,
     showCollapseAll: true,
@@ -56,6 +63,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("protoview.syncGitSource", () => void reload(tree, panel, status, true)),
     vscode.commands.registerCommand("protoview.showGitLog", () => showGitLog()),
     vscode.commands.registerCommand("protoview.openGitTemp", () => void openGitTemp()),
+    vscode.commands.registerCommand("protoview.openClient", () => {
+      if (!catalog) {
+        void vscode.window.showWarningMessage("请先完成 Proto 解析，再打开 ProtoView Client。");
+        return;
+      }
+      clientPanel.open(catalog, sourceLabel(), showGoogle());
+    }),
     vscode.commands.registerCommand("protoview.showAtCursor", () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !catalog) return;
@@ -89,6 +103,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (sourceConfig.mode === "workspace") void reload(tree, panel, status, false);
     }),
   );
+
+  registerLanguageFeatures(context, () => catalog);
 
   void reload(tree, panel, status, sourceConfig.mode === "git");
 }
@@ -295,6 +311,7 @@ async function parseEntries(
   catalog = buildCatalog(files, errors);
   tree.update(catalog, false, showGoogle(), sourceConfig);
   panel.refresh(catalog);
+  clientPanel.refresh(catalog, sourceLabel(), showGoogle());
   const visible = catalog.packages.filter((pkg) => showGoogle() || !pkg.wellKnown).length;
   const modeLabel = sourceConfig.mode === "git" ? "Git" : "工作区";
   status.text = `$(symbol-namespace) ProtoView ${visible}`;
@@ -332,6 +349,14 @@ async function openGitTemp(): Promise<void> {
     // ignore open failures; path is already copied
   }
   void vscode.window.showInformationMessage(`临时目录已复制：${temp}`);
+}
+
+function sourceLabel(): string {
+  if (sourceConfig.mode === "git") {
+    return `Git · ${sourceConfig.gitBranch || "main"} · ${sourceConfig.gitUrl || "未配置"}`;
+  }
+  const folder = vscode.workspace.workspaceFolders?.[0]?.name;
+  return folder ? `工作区 · ${folder}` : "工作区自动识别";
 }
 
 function showGoogle(): boolean {

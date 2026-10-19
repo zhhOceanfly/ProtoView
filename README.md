@@ -11,6 +11,17 @@
 
 点「模式」可切换；Git 模式下可点「Git 地址」「分支」编辑，点「重新拉取」同步最新代码。私有仓库依赖本机已配置好的 Git 凭据。
 
+## ProtoView Client
+
+侧边栏在「Proto 来源」**下面单独一项**：**打开 ProtoView Client**。
+
+- 左侧：当前来源下全部 service / 接口
+- 右侧：环境、地址、Message / Metadata（参考 Bruno 布局）
+- 环境写入工作区 `.protoview/environments.json`（**不用数据库**）
+- UI 在仓库 `client/` 目录，也可单独用静态服务器打开（独立部署时可通过 `window.__PROTOVIEW_BOOTSTRAP__` 注入数据）
+
+当前先打通界面与环境配置；真实 gRPC 发送下一步再接。
+
 ## 本地运行
 
 ```bash

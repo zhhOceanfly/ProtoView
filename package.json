@@ -5,14 +5,23 @@
   "version": "0.1.0",
   "publisher": "zoceanfly",
   "icon": "media/icon.png",
-  "keywords": ["protobuf", "proto", "grpc", "protoview"],
+  "keywords": [
+    "protobuf",
+    "proto",
+    "grpc",
+    "protoview"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Programming Languages", "Other"],
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
   "activationEvents": [
     "onView:protoview.explorer",
     "onCommand:protoview.show",
+    "onCommand:protoview.openClient",
     "workspaceContains:**/*.proto"
   ],
   "main": "./out/extension.js",
@@ -70,6 +79,25 @@
         "command": "protoview.openGitTemp",
         "title": "打开 Git 临时目录",
         "category": "ProtoView"
+      },
+      {
+        "command": "protoview.openClient",
+        "title": "打开 ProtoView Client",
+        "icon": "$(window)",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.formatDocument",
+        "title": "格式化 Proto",
+        "category": "ProtoView"
+      }
+    ],
+    "languages": [
+      {
+        "id": "protobuf",
+        "aliases": ["Protocol Buffers", "protobuf", "proto"],
+        "extensions": [".proto"],
+        "configuration": "./language-configuration.json"
       }
     ],
     "viewsContainers": {
@@ -109,8 +137,20 @@
           "command": "protoview.showAtCursor",
           "when": "resourceExtname == .proto",
           "group": "navigation"
+        },
+        {
+          "command": "protoview.formatDocument",
+          "when": "resourceExtname == .proto",
+          "group": "1_modification"
         }
       ]
+    },
+    "configurationDefaults": {
+      "[protobuf]": {
+        "editor.defaultFormatter": "zoceanfly.protoview",
+        "editor.formatOnSave": false,
+        "editor.wordBasedSuggestions": "off"
+      }
     },
     "configuration": {
       "title": "ProtoView",
@@ -131,5 +171,9 @@
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/proto-loader": "^0.8.1"
   }
 }

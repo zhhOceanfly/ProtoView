@@ -73,20 +73,35 @@ export class ProtoTree implements vscode.TreeDataProvider<ProtoNode> {
   private rebuild(): void {
     this.byNav.clear();
     const sourceRoot = this.sourceSection();
+    const clientEntry = this.clientEntry();
     if (this.loading) {
       const node = new ProtoNode("loading", "正在解析 Proto…", undefined, vscode.TreeItemCollapsibleState.None);
       node.iconPath = new vscode.ThemeIcon("loading~spin");
-      this.roots = [sourceRoot, node];
+      this.roots = [sourceRoot, clientEntry, node];
       return;
     }
     const packages = (this.catalog?.packages ?? []).filter((pkg) => this.showGoogle || !pkg.wellKnown);
     if (!packages.length) {
       const node = new ProtoNode("empty", "没有找到 .proto", "home", vscode.TreeItemCollapsibleState.None);
       node.iconPath = new vscode.ThemeIcon("info");
-      this.roots = [sourceRoot, node];
+      this.roots = [sourceRoot, clientEntry, node];
       return;
     }
-    this.roots = [sourceRoot, ...packages.map((pkg) => this.packageNode(pkg))];
+    this.roots = [sourceRoot, clientEntry, ...packages.map((pkg) => this.packageNode(pkg))];
+  }
+
+  private clientEntry(): ProtoNode {
+    const node = new ProtoNode(
+      "client-entry",
+      "打开 ProtoView Client",
+      undefined,
+      vscode.TreeItemCollapsibleState.None,
+    );
+    node.iconPath = new vscode.ThemeIcon("window");
+    node.description = "接口调试台";
+    node.tooltip = "左侧浏览全部 service/接口，右侧配置环境与请求（可独立部署，暂不使用数据库）";
+    node.command = { command: "protoview.openClient", title: "打开 ProtoView Client" };
+    return node;
   }
 
   private sourceSection(): ProtoNode {
