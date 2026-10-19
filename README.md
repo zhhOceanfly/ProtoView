@@ -2,6 +2,15 @@
 
 在 VS Code / Cursor 里浏览 Protobuf。工作区中的 `.proto` 会按 `package` 归类，其下再按 `service`、接口展开。点开接口可以看到请求和响应 message，类型、message、enum 之间可以互相跳转，也能回到源码。
 
+## Proto 来源
+
+侧边栏最上方是 **Proto 来源**：
+
+- **工作区自动识别**（默认）：扫描当前打开项目里的 `.proto`
+- **自定义 Git**：填写仓库地址和分支后，会自动 `git clone/fetch` 到系统临时目录（如 `%TEMP%/protoview-git/...`），再从那里解析
+
+点「模式」可切换；Git 模式下可点「Git 地址」「分支」编辑，点「重新拉取」同步最新代码。私有仓库依赖本机已配置好的 Git 凭据。
+
 ## 本地运行
 
 ```bash

@@ -3,7 +3,7 @@
   "displayName": "ProtoView",
   "description": "按 package / service 浏览 Protobuf，并在接口、message、enum 之间跳转",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "zoceanfly",
   "icon": "media/icon.png",
   "keywords": ["protobuf", "proto", "grpc", "protoview"],
   "engines": {
@@ -38,6 +38,37 @@
       {
         "command": "protoview.showAtCursor",
         "title": "预览光标所在定义",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.toggleSourceMode",
+        "title": "切换 Proto 来源",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.editGitUrl",
+        "title": "编辑 Git 地址",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.editGitBranch",
+        "title": "编辑 Git 分支",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.syncGitSource",
+        "title": "同步 Git Proto 来源",
+        "icon": "$(cloud-download)",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.showGitLog",
+        "title": "查看 Git 拉取日志",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.openGitTemp",
+        "title": "打开 Git 临时目录",
         "category": "ProtoView"
       }
     ],

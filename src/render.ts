@@ -1,3 +1,4 @@
+import { AI_PAGE_CSS, renderAiPage } from "./aiPage";
 import {
   Catalog,
   EnumView,
@@ -10,7 +11,13 @@ import {
   Usage,
 } from "./catalog";
 
-export function renderPage(catalog: Catalog, id: string, canBack: boolean): string {
+export function renderPage(
+  catalog: Catalog,
+  id: string,
+  canBack: boolean,
+  assets: { qrUrl?: string } = {},
+): string {
+  if (id === "ai") return renderAiPage(canBack, assets.qrUrl ?? "");
   if (!id || id === "home") return renderHome(catalog, canBack);
   const item = catalog.byId.get(id);
   if (!item) return renderHome(catalog, canBack);
@@ -143,6 +150,7 @@ tr:hover td { background: color-mix(in srgb, var(--vscode-list-hoverBackground) 
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 860px) { .pair { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } }
 .empty { padding: 28px 8px; color: var(--vscode-descriptionForeground); }
+${AI_PAGE_CSS}
 `;
 
 function renderHome(catalog: Catalog, canBack: boolean): string {
@@ -347,6 +355,7 @@ function shell(opts: {
   const source = opts.source
     ? `<button class="btn" data-src="${encodeURIComponent(opts.source.file)}" data-line="${opts.source.line}">跳转到源码</button>`
     : "";
+  const ai = `<button class="btn ai-btn" data-nav="ai" type="button"><span class="ai-spark">✦</span>AI</button>`;
   return `<div class="page">
     <div class="top">
       <div>
@@ -355,7 +364,7 @@ function shell(opts: {
         ${opts.lead ? `<p class="lead">${esc(opts.lead)}</p>` : ""}
         ${opts.extra ?? ""}
       </div>
-      <div class="actions">${back}${source}</div>
+      <div class="actions">${back}${source}${ai}</div>
     </div>
     ${opts.body}
   </div>`;

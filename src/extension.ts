@@ -1,20 +1,34 @@
+import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { Catalog, buildCatalog, findSymbolAt } from "./catalog";
 import { openSource, ProtoPanel } from "./panel";
 import { ProtoParseError, parseProto } from "./parser";
+import {
+  ProtoSourceConfig,
+  collectProtoFiles,
+  loadSourceConfig,
+  saveSourceConfig,
+  sourceCacheDir,
+  syncGitSource,
+} from "./source";
 import { ProtoNode, ProtoTree } from "./tree";
 
 let catalog: Catalog | undefined;
+let sourceConfig: ProtoSourceConfig;
+let extensionContext: vscode.ExtensionContext;
 const output = vscode.window.createOutputChannel("ProtoView");
 
 export function activate(context: vscode.ExtensionContext): void {
-  const tree = new ProtoTree(undefined, true, showGoogle());
+  extensionContext = context;
+  sourceConfig = loadSourceConfig(context);
+
+  const tree = new ProtoTree(undefined, true, showGoogle(), sourceConfig);
   const view = vscode.window.createTreeView("protoview.explorer", {
     treeDataProvider: tree,
     showCollapseAll: true,
   });
-  const panel = new ProtoPanel((id) => {
+  const panel = new ProtoPanel(context.extensionUri, (id) => {
     const node = tree.nodeFor(id);
     if (node) void view.reveal(node, { select: true, focus: false, expand: true });
   });
@@ -35,7 +49,13 @@ export function activate(context: vscode.ExtensionContext): void {
       const target = node?.source ?? view.selection[0]?.source;
       if (target) void openSource(target.file, target.line);
     }),
-    vscode.commands.registerCommand("protoview.refresh", () => void reload(tree, panel, status)),
+    vscode.commands.registerCommand("protoview.refresh", () => void reload(tree, panel, status, true)),
+    vscode.commands.registerCommand("protoview.toggleSourceMode", () => void toggleSourceMode(tree, panel, status)),
+    vscode.commands.registerCommand("protoview.editGitUrl", () => void editGitUrl(tree, panel, status)),
+    vscode.commands.registerCommand("protoview.editGitBranch", () => void editGitBranch(tree, panel, status)),
+    vscode.commands.registerCommand("protoview.syncGitSource", () => void reload(tree, panel, status, true)),
+    vscode.commands.registerCommand("protoview.showGitLog", () => showGitLog()),
+    vscode.commands.registerCommand("protoview.openGitTemp", () => void openGitTemp()),
     vscode.commands.registerCommand("protoview.showAtCursor", () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !catalog) return;
@@ -48,7 +68,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("protoview.showGoogle")) {
-        tree.update(catalog, false, showGoogle());
+        tree.update(catalog, false, showGoogle(), sourceConfig);
       }
     }),
   );
@@ -56,53 +76,262 @@ export function activate(context: vscode.ExtensionContext): void {
   const watcher = vscode.workspace.createFileSystemWatcher("**/*.proto");
   let timer: NodeJS.Timeout | undefined;
   const schedule = () => {
+    if (sourceConfig.mode !== "workspace") return;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => void reload(tree, panel, status), 250);
+    timer = setTimeout(() => void reload(tree, panel, status, false), 250);
   };
   watcher.onDidChange(schedule);
   watcher.onDidCreate(schedule);
   watcher.onDidDelete(schedule);
   context.subscriptions.push(
     watcher,
-    vscode.workspace.onDidChangeWorkspaceFolders(() => void reload(tree, panel, status)),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      if (sourceConfig.mode === "workspace") void reload(tree, panel, status, false);
+    }),
   );
 
-  void reload(tree, panel, status);
+  void reload(tree, panel, status, sourceConfig.mode === "git");
 }
 
-async function reload(tree: ProtoTree, panel: ProtoPanel, status: vscode.StatusBarItem): Promise<void> {
-  tree.update(catalog, true, showGoogle());
-  const folders = vscode.workspace.workspaceFolders ?? [];
-  if (!folders.length) {
-    catalog = buildCatalog([], []);
-    tree.update(catalog, false, showGoogle());
-    status.text = "$(symbol-namespace) ProtoView 未打开文件夹";
-    status.tooltip = "调试窗口没有工作区，ProtoView 无法读取 .proto";
-    void vscode.window.showWarningMessage("ProtoView 没有打开工作区。请停止调试后重新按 F5，或在这个窗口里打开含 .proto 的文件夹。");
+async function toggleSourceMode(
+  tree: ProtoTree,
+  panel: ProtoPanel,
+  status: vscode.StatusBarItem,
+): Promise<void> {
+  const pick = await vscode.window.showQuickPick(
+    [
+      {
+        label: "工作区自动识别",
+        description: "扫描当前打开项目中的 .proto",
+        mode: "workspace" as const,
+      },
+      {
+        label: "自定义 Git 来源",
+        description: "填写仓库地址和分支，拉取到系统临时目录",
+        mode: "git" as const,
+      },
+    ],
+    { title: "选择 Proto 来源", placeHolder: "Proto 来源" },
+  );
+  if (!pick) return;
+  sourceConfig = { ...sourceConfig, mode: pick.mode, lastError: "" };
+  await saveSourceConfig(extensionContext, sourceConfig);
+  if (pick.mode === "git" && !sourceConfig.gitUrl) {
+    await editGitUrl(tree, panel, status);
     return;
   }
-  const root = folders[0].uri.fsPath;
+  await reload(tree, panel, status, pick.mode === "git");
+}
+
+async function editGitUrl(
+  tree: ProtoTree,
+  panel: ProtoPanel,
+  status: vscode.StatusBarItem,
+): Promise<void> {
+  const value = await vscode.window.showInputBox({
+    title: "Proto Git 地址",
+    prompt: "支持 https / ssh，例如 https://github.com/org/repo.git",
+    value: sourceConfig.gitUrl,
+    ignoreFocusOut: true,
+    validateInput: (text) => {
+      const url = text.trim();
+      if (!url) return "地址不能为空";
+      if (!/^https?:\/\/|^git@|^ssh:\/\//i.test(url)) return "请输入有效的 Git 地址";
+      return undefined;
+    },
+  });
+  if (value === undefined) return;
+  sourceConfig = {
+    ...sourceConfig,
+    mode: "git",
+    gitUrl: value.trim(),
+    localPath: "",
+    lastError: "",
+    lastSyncedAt: 0,
+  };
+  await saveSourceConfig(extensionContext, sourceConfig);
+  if (!sourceConfig.gitBranch) {
+    await editGitBranch(tree, panel, status);
+    return;
+  }
+  await reload(tree, panel, status, true);
+}
+
+async function editGitBranch(
+  tree: ProtoTree,
+  panel: ProtoPanel,
+  status: vscode.StatusBarItem,
+): Promise<void> {
+  const value = await vscode.window.showInputBox({
+    title: "Proto Git 分支",
+    prompt: "例如 main、master、develop",
+    value: sourceConfig.gitBranch || "main",
+    ignoreFocusOut: true,
+    validateInput: (text) => (text.trim() ? undefined : "分支不能为空"),
+  });
+  if (value === undefined) return;
+  sourceConfig = {
+    ...sourceConfig,
+    mode: "git",
+    gitBranch: value.trim(),
+    lastError: "",
+  };
+  await saveSourceConfig(extensionContext, sourceConfig);
+  await reload(tree, panel, status, true);
+}
+
+async function reload(
+  tree: ProtoTree,
+  panel: ProtoPanel,
+  status: vscode.StatusBarItem,
+  syncGit: boolean,
+): Promise<void> {
+  tree.update(catalog, true, showGoogle(), sourceConfig);
+  status.text = "$(sync~spin) ProtoView 加载中";
+
+  try {
+    if (sourceConfig.mode === "git") {
+      if (syncGit || !sourceConfig.localPath) {
+        output.appendLine("");
+        output.show(true);
+        sourceConfig = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "ProtoView 正在拉取 Git Proto…",
+            cancellable: false,
+          },
+          async () => syncGitSource(sourceConfig, (line) => output.appendLine(line)),
+        );
+        await saveSourceConfig(extensionContext, sourceConfig);
+        if (sourceConfig.lastError) {
+          catalog = buildCatalog([], [{ file: "git", message: sourceConfig.lastError }]);
+          tree.update(catalog, false, showGoogle(), sourceConfig);
+          panel.refresh(catalog);
+          status.text = "$(error) ProtoView Git 失败";
+          status.tooltip = `${sourceConfig.lastError}\n临时目录: ${sourceConfig.localPath || sourceCacheDir(sourceConfig.gitUrl)}`;
+          const temp = sourceConfig.localPath || sourceCacheDir(sourceConfig.gitUrl);
+          const action = await vscode.window.showErrorMessage(
+            `ProtoView 拉取失败：${sourceConfig.lastError}`,
+            "查看日志",
+            "复制临时目录",
+          );
+          if (action === "查看日志") showGitLog();
+          if (action === "复制临时目录" && temp) {
+            await vscode.env.clipboard.writeText(temp);
+            void vscode.window.showInformationMessage(`已复制：${temp}`);
+          }
+          return;
+        }
+      }
+      await loadFromDirectory(sourceConfig.localPath, tree, panel, status, sourceConfig.localPath);
+      return;
+    }
+
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (!folders.length) {
+      catalog = buildCatalog([], []);
+      tree.update(catalog, false, showGoogle(), sourceConfig);
+      status.text = "$(symbol-namespace) ProtoView 未打开文件夹";
+      status.tooltip = "工作区模式下需要打开含 .proto 的文件夹";
+      void vscode.window.showWarningMessage("ProtoView 工作区模式需要先打开文件夹；也可切换到 Git 来源。");
+      return;
+    }
+    await loadFromWorkspace(folders[0].uri.fsPath, tree, panel, status);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    catalog = buildCatalog([], [{ file: "reload", message }]);
+    tree.update(catalog, false, showGoogle(), sourceConfig);
+    status.text = "$(error) ProtoView 失败";
+    status.tooltip = message;
+    output.appendLine(message);
+    output.show(true);
+  }
+}
+
+async function loadFromWorkspace(
+  root: string,
+  tree: ProtoTree,
+  panel: ProtoPanel,
+  status: vscode.StatusBarItem,
+): Promise<void> {
   const uris = await vscode.workspace.findFiles("**/*.proto", "**/{node_modules,.git,out}/**");
+  const entries = uris.map((uri) => ({
+    path: uri.fsPath,
+    relPath: path.relative(root, uri.fsPath),
+  }));
+  await parseEntries(entries, tree, panel, status);
+}
+
+async function loadFromDirectory(
+  root: string,
+  tree: ProtoTree,
+  panel: ProtoPanel,
+  status: vscode.StatusBarItem,
+  labelRoot: string,
+): Promise<void> {
+  const entries = await collectProtoFiles(root);
+  output.appendLine(`Git 来源：${labelRoot}，共 ${entries.length} 个 .proto`);
+  await parseEntries(entries, tree, panel, status);
+}
+
+async function parseEntries(
+  entries: { path: string; relPath: string }[],
+  tree: ProtoTree,
+  panel: ProtoPanel,
+  status: vscode.StatusBarItem,
+): Promise<void> {
   const errors: { file: string; message: string }[] = [];
   const files = [];
-  for (const uri of uris) {
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    const relPath = root ? path.relative(root, uri.fsPath) : uri.fsPath;
+  for (const entry of entries) {
     try {
-      files.push(parseProto(Buffer.from(bytes).toString("utf8"), uri.fsPath, relPath));
+      const text = await fs.readFile(entry.path, "utf8");
+      files.push(parseProto(text, entry.path, entry.relPath));
     } catch (error) {
       const message = error instanceof ProtoParseError || error instanceof Error ? error.message : String(error);
-      errors.push({ file: relPath, message });
-      output.appendLine(`${relPath}: ${message}`);
+      errors.push({ file: entry.relPath, message });
+      output.appendLine(`${entry.relPath}: ${message}`);
     }
   }
   catalog = buildCatalog(files, errors);
-  tree.update(catalog, false, showGoogle());
+  tree.update(catalog, false, showGoogle(), sourceConfig);
   panel.refresh(catalog);
   const visible = catalog.packages.filter((pkg) => showGoogle() || !pkg.wellKnown).length;
+  const modeLabel = sourceConfig.mode === "git" ? "Git" : "工作区";
   status.text = `$(symbol-namespace) ProtoView ${visible}`;
-  status.tooltip = errors.length ? `${errors.length} 个文件解析失败，见输出 ProtoView` : "打开 Proto 侧边栏";
+  status.tooltip = errors.length
+    ? `${modeLabel} · ${errors.length} 个文件解析失败，见输出 ProtoView`
+    : `${modeLabel} · 打开 ProtoView 侧边栏`;
   if (errors.length) output.show(true);
+}
+
+function showGitLog(): void {
+  output.appendLine("");
+  output.appendLine("======== 最近一次 Git 同步日志 ========");
+  if (sourceConfig.lastLog) {
+    for (const line of sourceConfig.lastLog.split(/\r?\n/)) output.appendLine(line);
+  } else {
+    output.appendLine("(还没有同步记录，请先点击「重新拉取」)");
+  }
+  const temp = sourceConfig.localPath || (sourceConfig.gitUrl ? sourceCacheDir(sourceConfig.gitUrl) : "");
+  if (temp) output.appendLine(`临时目录: ${temp}`);
+  output.appendLine("======== 日志结束 ========");
+  output.show(true);
+}
+
+async function openGitTemp(): Promise<void> {
+  const temp = sourceConfig.localPath || (sourceConfig.gitUrl ? sourceCacheDir(sourceConfig.gitUrl) : "");
+  if (!temp) {
+    void vscode.window.showWarningMessage("请先填写 Git 地址，同步后才会生成临时目录。");
+    return;
+  }
+  await vscode.env.clipboard.writeText(temp);
+  try {
+    await fs.mkdir(temp, { recursive: true });
+    await vscode.env.openExternal(vscode.Uri.file(temp));
+  } catch {
+    // ignore open failures; path is already copied
+  }
+  void vscode.window.showInformationMessage(`临时目录已复制：${temp}`);
 }
 
 function showGoogle(): boolean {
