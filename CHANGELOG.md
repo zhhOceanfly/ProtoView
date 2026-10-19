@@ -2,23 +2,39 @@
 
 本文件记录 ProtoView 的版本变更。扩展详情页的「更改日志」标签会读取它。
 
-## [0.1.0] — 2026-03-23
+## [0.1.0] — 2026-10-19
 
-### 新增
+首个面向 Marketplace 的发布版本。
 
-- 按 `package` → `service` → 接口浏览工作区中的 `.proto`
-- 接口预览：请求/响应 message、字段跳转、enum 跳转
-- 识别 `MetaInf.Meta` 拦截器标签（Timeout、Auth、JwtSources、SessionConfig、LimitConfig 等）
-- 接口名旁「定义」按钮，悬停展示完整 rpc 原文
-- 侧边栏显示接口注释；支持跳转源码与重新解析
-- 预览页「AI」入口：随机背景乐、山海解谜，通关后显示爱心与赞赏二维码
-- ProtoView 商店图标（带 proto 字样）
-- Proto 来源：默认工作区自动识别，或填写 Git 地址/分支拉取到系统临时目录后解析
-- 独立入口「打开 ProtoView Client」：侧边栏浏览全部接口 + 环境/地址配置（文件存储，无 SQLite）
-- Client 完善：package/service/接口树、亮暗色、刷新、Message 自动生成/格式化、Metadata 表格、顶部环境配置
-- Client 侧边栏全部展开/收起、生成 grpcurl、Docs 按预览页排版请求/响应字段
-- Client 响应区改为状态条 + JSON 块；VS Code 内由插件进程发送真实 gRPC
-- Client Auth：None / Bearer / Basic / API Key / OAuth Token / WSSE，发送与 grpcurl 合并注入 Metadata
-- Client Docs「跳转到源码」；编辑器内 Proto 格式化、类型补全、转到定义
-- Client Message 左侧接口说明/定义；压测 Tab（轻量自建 + ghz 命令/运行）
-- 压测可配置本机 ghz 路径；链路调试无限画布（拖拽/连线/变量/运行结果着色）
+### Proto 浏览
+
+- 按 `package → service → 接口` 浏览工作区 / Git 来源中的 `.proto`
+- 接口预览：请求/响应 message、字段与 enum 跳转、跳转源码
+- 识别 `MetaInf.Meta` 等拦截器标签（Timeout、Auth、JwtSources 等）
+- 侧边栏注释展示；接口「定义」悬停查看完整 rpc 原文
+- Proto 来源：工作区自动识别，或 Git 地址/分支拉取到临时目录
+- `.proto` 语言支持：格式化、补全、转到定义
+
+### ProtoView Client
+
+- 独立 Client：接口树、环境配置（`.protoview/environments.json`）、亮暗色
+- Message 样例生成/格式化；左侧接口说明；Metadata 表格
+- Auth：None / Bearer / Basic / API Key / OAuth Token / WSSE，发送与 grpcurl 注入 Metadata
+- Docs 排版请求/响应字段，支持跳转源码
+- 真实 gRPC 调用（扩展宿主进程）；响应区状态条 + JSON
+- 生成 grpcurl 命令；可调节 Request/Response 分栏
+- 压测：轻量并发；可选本机 ghz 路径与运行
+
+### 链路调试
+
+- 无限画布：从左侧拖入/双击添加接口节点，缩放平移、端口连线
+- 节点编辑：嵌套 Message / repeated 增删；Metadata；响应提取变量（嵌套展开，如 `TokenInfo.AccessToken`）
+- 运行链路：变量 `{{name}}` 传递；成功/失败着色
+- 右键「查看响应」：运行与压测调用历史
+- 顶栏环境选择；右侧轻量链路压测抽屉（无 ghz）
+- 「链路调试」入口按钮渐变特效
+
+### 其它
+
+- 预览页 AI 小游戏入口与赞赏二维码
+- 商店图标与打包脚本（`npm run package`）

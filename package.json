@@ -1,21 +1,29 @@
 {
   "name": "protoview",
   "displayName": "ProtoView",
-  "description": "按 package / service 浏览 Protobuf，并在接口、message、enum 之间跳转",
+  "description": "浏览 Protobuf / 调试 gRPC：侧边栏导航、Client 发请求、Auth、压测与链路调试",
   "version": "0.1.0",
   "publisher": "zoceanfly",
+  "license": "MIT",
   "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  },
   "keywords": [
     "protobuf",
     "proto",
     "grpc",
-    "protoview"
+    "protoview",
+    "grpcurl",
+    "api"
   ],
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Programming Languages",
+    "Testing",
     "Other"
   ],
   "activationEvents": [
@@ -95,8 +103,14 @@
     "languages": [
       {
         "id": "protobuf",
-        "aliases": ["Protocol Buffers", "protobuf", "proto"],
-        "extensions": [".proto"],
+        "aliases": [
+          "Protocol Buffers",
+          "protobuf",
+          "proto"
+        ],
+        "extensions": [
+          ".proto"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -164,12 +178,23 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -w -p ./"
+    "watch": "tsc -w -p ./",
+    "clean:vsix": "node -e \"const fs=require('fs');for(const f of fs.readdirSync('.'))if(f.endsWith('.vsix'))fs.unlinkSync(f)\"",
+    "package:precheck": "vsce ls --tree",
+    "package": "npm run compile && vsce package --allow-missing-repository",
+    "package:fresh": "npm run clean:vsix && npm run package",
+    "publish": "npm run compile && vsce publish --allow-missing-repository",
+    "publish:patch": "npm run compile && vsce publish patch --allow-missing-repository",
+    "publish:minor": "npm run compile && vsce publish minor --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^2.32.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {

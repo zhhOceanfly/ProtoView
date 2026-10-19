@@ -1,91 +1,85 @@
 # ProtoView
 
-在 VS Code / Cursor 里浏览 Protobuf。工作区中的 `.proto` 会按 `package` 归类，其下再按 `service`、接口展开。点开接口可以看到请求和响应 message，类型、message、enum 之间可以互相跳转，也能回到源码。
+在 VS Code / Cursor 中浏览与调试 Protobuf / gRPC：按 `package → service → 接口` 组织侧边栏，支持类型跳转、源码定位，并提供 **ProtoView Client**（发请求、Auth、压测、链路调试）。
 
-## Proto 来源
+## 功能概览
 
-侧边栏最上方是 **Proto 来源**：
+### Proto 浏览
 
-- **工作区自动识别**（默认）：扫描当前打开项目里的 `.proto`
-- **自定义 Git**：填写仓库地址和分支后，会自动 `git clone/fetch` 到系统临时目录（如 `%TEMP%/protoview-git/...`），再从那里解析
+- 按 `package` / `service` / RPC 浏览工作区或 Git 仓库中的 `.proto`
+- 接口预览：请求/响应 message、字段与 enum 互跳、跳转源码
+- 识别常见拦截器标签（Timeout、Auth、Jwt 等）
+- Proto 语言：格式化、补全、转到定义
 
-点「模式」可切换；Git 模式下可点「Git 地址」「分支」编辑，点「重新拉取」同步最新代码。私有仓库依赖本机已配置好的 Git 凭据。
+### Proto 来源
 
-## ProtoView Client
+侧边栏顶部可切换：
 
-侧边栏在「Proto 来源」**下面单独一项**：**打开 ProtoView Client**。
+| 模式 | 说明 |
+| --- | --- |
+| 工作区自动识别（默认） | 扫描当前工程内 `.proto` |
+| 自定义 Git | 填写仓库地址与分支，clone/fetch 到系统临时目录后解析 |
 
-- 左侧：当前来源下全部 service / 接口
-- 右侧：环境、地址、Message / Metadata（参考 Bruno 布局）
-- 环境写入工作区 `.protoview/environments.json`（**不用数据库**）
-- UI 在仓库 `client/` 目录，也可单独用静态服务器打开（独立部署时可通过 `window.__PROTOVIEW_BOOTSTRAP__` 注入数据）
+私有仓库依赖本机已配置的 Git 凭据。
 
-当前先打通界面与环境配置；真实 gRPC 发送下一步再接。
+### ProtoView Client
 
-## 本地运行
+侧边栏「打开 ProtoView Client」：
+
+- **接口树**：筛选、展开/收起、亮暗色主题
+- **环境**：多环境 host，保存在工作区 `.protoview/environments.json`
+- **Message / Metadata / Auth / Docs**：样例生成、格式化、Auth 合并进 Metadata、Docs 跳转源码
+- **真实 gRPC 调用**：由扩展宿主进程发起（明文 / TLS）
+- **grpcurl**：一键生成命令
+- **压测**：轻量并发压测；可选本机 `ghz` 路径
+- **链路调试**：画布拖拽接口、连线、变量提取（含嵌套响应字段）、运行与压测历史查看
+
+## 快速开始
+
+1. 安装扩展后打开含 `.proto` 的工作区（或配置 Git 来源）
+2. 活动栏打开 **ProtoView** 侧边栏
+3. 点击接口预览，或打开 **ProtoView Client** 调试
+
+### 设置
+
+| 设置项 | 说明 |
+| --- | --- |
+| `protoview.showGoogle` | 是否在树中显示 `google.*` 标准包（默认关闭；关闭时仍会解析以便跳转） |
+
+## 开发与打包
+
+要求：**Node.js 18+**（推荐 **20.x**；Node 22 下全局 `@vscode/vsce@4` 可能报错）。
 
 ```bash
 npm install
-npm run compile
+npm run compile          # 编译 TypeScript → out/
+npm run watch            # 监听编译
+npm run package          # 编译并打出 protoview-x.y.z.vsix（含生产依赖）
+npm run package:precheck # 仅检查即将打进包的文件列表
 ```
 
-用「运行 ProtoView」启动调试（F5）。新窗口会打开当前工程，活动栏或面板里出现 **ProtoView**。
+本地调试：按 F5（「运行 ProtoView」）打开 Extension Development Host。
 
-## 图标
+### 发布到 Marketplace
 
-- `media/icon.png`：商店和扩展详情里的图标。
-- `media/icon.svg`：活动栏使用的单色图标，会跟着主题变色。
-
-## package.json 各项是做什么的
-
-| 字段 | 作用 |
-| --- | --- |
-| `name` | 扩展 ID 的后半段，只能用小写和连字符。商店地址里是 `publisher.name`，这里是 `protoview`。 |
-| `displayName` | 商店和扩展列表里给人看的名字，搜索时主要匹配它。 |
-| `description` | 商店简介，一句话说明做什么。 |
-| `version` | 语义化版本。每次发布都要比商店里已有版本更高。 |
-| `publisher` | 发布者 ID。现在的 `local` 只能本地调试；发布前要改成你在 Marketplace 里创建的发布者 ID。 |
-| `icon` | 商店图标，指向 `media/icon.png`（至少 128×128）。 |
-| `keywords` | 商店搜索关键词。 |
-| `engines.vscode` | 能安装这个扩展的最低 VS Code 版本。 |
-| `categories` | 商店分类。 |
-| `activationEvents` | 何时加载扩展：打开 ProtoView 视图、执行相关命令，或工作区里存在 `.proto`。 |
-| `main` | 扩展入口，编译后的 `out/extension.js`。 |
-| `contributes.commands` | 命令面板里的命令。`category` 为 `ProtoView` 时，显示成「ProtoView: …」。 |
-| `contributes.viewsContainers` | 活动栏上的 ProtoView 入口。`title` 是标签文字，`icon` 是活动栏图标。 |
-| `contributes.views` | 这个入口里的树。拖到面板后，标签名也来自容器的 `title`。 |
-| `contributes.menus` | 刷新按钮、树节点右键「跳转到源码」、编辑器右键「预览光标所在定义」。 |
-| `contributes.configuration` | 设置项 `protoview.showGoogle`：是否在树里显示 `google.*` 标准包。 |
-| `scripts` | `compile` 编译 TypeScript，`watch` 持续编译。 |
-
-`id`（例如 `protoview.explorer`）是程序内部标识，不要随意改，菜单和激活事件都靠它。
-
-## 发布到商店，让别人能搜到
-
-1. 打开 [Visual Studio Marketplace 管理页](https://marketplace.visualstudio.com/manage)，用微软账号创建一个 **Publisher**。记下发布者 ID。
-2. 把 `package.json` 里的 `publisher` 改成这个 ID。`displayName` 保持 `ProtoView`，别人在扩展商店搜这个名字就能找到。
-3. 在 [Azure DevOps](https://dev.azure.com/) 创建一个个人访问令牌（Personal Access Token），组织选 All accessible organizations，权限勾选 **Marketplace → Manage**。
-4. 安装发布工具并登录：
+1. 在 [Marketplace 管理页](https://marketplace.visualstudio.com/manage) 创建 Publisher（本扩展 `publisher` 为 `zoceanfly`）
+2. **方式 A（推荐，无需 PAT）**：`npm run package` 后，在管理页上传生成的 `.vsix`
+3. **方式 B**：创建 [Azure DevOps PAT](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)（Marketplace → Manage），再执行：
 
 ```bash
-npm install -g @vscode/vsce
-vsce login <你的发布者ID>
+npx vsce login zoceanfly
+npm run publish
 ```
 
-5. 确认已经 `npm run compile`，然后发布：
+扩展页形如：`https://marketplace.visualstudio.com/items?itemName=zoceanfly.protoview`
 
-```bash
-vsce publish
-```
+仅内部分发时，对方可用「从 VSIX 安装…」安装 `protoview-*.vsix`。
 
-`vsce` 会按 `.vscodeignore` 打包。源码、`Proto` 示例和 `node_modules` 不会打进去，`out/`、`media/` 和本说明会打进去。
+### 图标
 
-只想先发给同事、不公开到商店时，可以：
+- `media/icon.png`：商店与扩展详情（≥128×128 PNG）
+- `media/icon.svg`：活动栏单色图标（随主题变色）
 
-```bash
-vsce package
-```
+## 许可
 
-得到 `protoview-0.1.0.vsix`。对方在 VS Code 里选择「从 VSIX 安装…」即可，不需要上架。
-
-发布之后，扩展页地址形如 `https://marketplace.visualstudio.com/items?itemName=<publisher>.protoview`。更新时把 `version` 加一，再执行一次 `vsce publish`。
+MIT License（仓库根目录 `LICENSE` 文件）。
