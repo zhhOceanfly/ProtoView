@@ -77,7 +77,7 @@ npm run compile
 npm run dev:cli          # CLI 开发：改 client/ 刷新浏览器，改 .ts 自动重启
 ```
 
-按 **F5** 启动扩展调试。打包与发布（Marketplace / Open VSX / npm）见 **[Publish.md](Publish.md)**。
+按 **F5**（「运行 ProtoView」）启动扩展调试。若已安装商店版，调试配置会禁用 `zoceanfly.protoview`，避免和开发版冲突。打包与发布见 **[Publish.md](Publish.md)**。
 
 ## 许可
 

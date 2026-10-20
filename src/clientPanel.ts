@@ -44,6 +44,10 @@ export class ClientPanel {
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
+  private post(message: Record<string, unknown>): void {
+    void this.panel?.webview.postMessage(message);
+  }
+
   setRefreshHandler(handler: () => void): void {
     this.onRefresh = handler;
   }
@@ -88,7 +92,12 @@ export class ClientPanel {
       this.panel = undefined;
       this.ready = false;
     });
-    this.panel.webview.onDidReceiveMessage(async (message: {
+    this.bindMessages(this.panel.webview);
+    this.panel.webview.html = this.htmlFor(this.panel.webview);
+  }
+
+  private bindMessages(webview: vscode.Webview): void {
+    webview.onDidReceiveMessage(async (message: {
       type?: string;
       payload?: ClientEnvFile & GrpcInvokeRequest & {
         protocol?: string;
@@ -121,7 +130,7 @@ export class ClientPanel {
           openLabel: "选择",
         });
         if (uris?.[0]) {
-          this.panel.webview.postMessage({ type: "pickedProtoDir", path: uris[0].fsPath });
+          this.post({ type: "pickedProtoDir", path: uris[0].fsPath });
         }
         return;
       }
@@ -137,7 +146,7 @@ export class ClientPanel {
             : { All: ["*"] },
         });
         if (uris?.[0]) {
-          this.panel.webview.postMessage({ type: "pickedGhzBinary", path: uris[0].fsPath });
+          this.post({ type: "pickedGhzBinary", path: uris[0].fsPath });
         }
         return;
       }
@@ -160,7 +169,7 @@ export class ClientPanel {
       }
       if (message.type === "importFlow" && this.panel) {
         const data = await importFlowFile();
-        if (data) this.panel.webview.postMessage({ type: "flowImportData", payload: data });
+        if (data) this.post({ type: "flowImportData", payload: data });
         return;
       }
       if (message.type === "saveEnvs" && message.payload) {
@@ -174,7 +183,7 @@ export class ClientPanel {
       }
       if (message.type === "invoke" && message.payload && this.catalog && this.panel) {
         const result = await dispatchInvoke(this.catalog, message.payload);
-        this.panel.webview.postMessage({ type: "invokeResult", ...result });
+        this.post({ type: "invokeResult", ...result });
         return;
       }
       if (message.type === "stressCancel" && message.id) {
@@ -183,7 +192,7 @@ export class ClientPanel {
       }
       if (message.type === "stress" && message.payload && this.catalog && this.panel) {
         if (this.stressRunning) {
-          this.panel.webview.postMessage({
+          this.post({
             type: "stressResult",
             id: message.payload.id,
             error: "已有压测在进行中",
@@ -201,9 +210,9 @@ export class ClientPanel {
               concurrency: Number(message.payload.concurrency || 1),
               total: Number(message.payload.total || 1),
             },
-            (progress) => this.panel?.webview.postMessage({ ...progress, type: "stressProgress" }),
+            (progress) => this.post({ ...progress, type: "stressProgress" }),
           );
-          this.panel.webview.postMessage({ ...summary, type: "stressResult" });
+          this.post({ ...summary, type: "stressResult" });
         } finally {
           this.stressRunning = false;
         }
@@ -217,22 +226,21 @@ export class ClientPanel {
         );
       }
     });
-    this.panel.webview.html = this.html();
   }
 
   private async runGhz(args: string[], id: string, binary = "ghz"): Promise<void> {
     if (!this.panel) return;
     const cmd = (binary || "ghz").trim() || "ghz";
-    this.panel.webview.postMessage({ type: "ghzProgress", id, text: `运行: ${cmd} ${args.join(" ")}\n` });
+    this.post({ type: "ghzProgress", id, text: `运行: ${cmd} ${args.join(" ")}\n` });
     await new Promise<void>((resolve) => {
       const child = spawn(cmd, args, { shell: true, windowsHide: true });
       const push = (chunk: Buffer) => {
-        this.panel?.webview.postMessage({ type: "ghzProgress", id, text: chunk.toString() });
+        this.post({ type: "ghzProgress", id, text: chunk.toString() });
       };
       child.stdout.on("data", push);
       child.stderr.on("data", push);
       child.on("error", (error) => {
-        this.panel?.webview.postMessage({
+        this.post({
           type: "ghzResult",
           id,
           ok: false,
@@ -241,7 +249,7 @@ export class ClientPanel {
         resolve();
       });
       child.on("close", (code) => {
-        this.panel?.webview.postMessage({
+        this.post({
           type: "ghzResult",
           id,
           ok: code === 0,
@@ -256,7 +264,7 @@ export class ClientPanel {
     if (!this.panel || !this.catalog) return;
     const envs = await loadEnvFile();
     const qr = this.panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "donate-wechat.png"));
-    this.panel.webview.postMessage({
+    this.post({
       type: "bootstrap",
       catalog: toClientCatalog(this.catalog, this.sourceLabel, this.showGoogle),
       envs,
@@ -265,8 +273,7 @@ export class ClientPanel {
     });
   }
 
-  private html(): string {
-    const webview = this.panel!.webview;
+  private htmlFor(webview: vscode.Webview): string {
     const nonce = Math.random().toString(36).slice(2);
     const styles = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "styles.css"));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "app.js"));
@@ -310,6 +317,7 @@ export class ClientPanel {
       </div>
       <div class="tree" id="tree"></div>
     </aside>
+    <button class="sidebar-rail" id="sidebarToggleBtn" type="button" title="收起侧栏" aria-label="收起侧栏">⟨</button>
     <main class="main" id="mainClient">
       <div class="topbar">
         <select class="pill" id="protocolSelect" title="协议">

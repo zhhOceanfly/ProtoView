@@ -2,8 +2,12 @@
   const isVsCodeWebview = typeof acquireVsCodeApi === "function";
   const vscode = isVsCodeWebview ? acquireVsCodeApi() : createWsBridge();
   const THEME_KEY = "protoview.client.theme";
+  const SIDEBAR_BREAKPOINT = 960;
   const DRAFT_KEY = "protoview.client.drafts";
   const SPLIT_KEY = "protoview.client.split";
+  /** null=跟宽度走；true/false=手动覆盖（窗口跨过断点后清除） */
+  let sidebarManual = null;
+  let sidebarWasNarrow = null;
 
   /** Browser / CLI: talk to local Node host over WebSocket (same message protocol as the extension). */
   function createWsBridge() {
@@ -176,6 +180,52 @@
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem(THEME_KEY, next);
     els.themeBtn.textContent = next === "light" ? "☾" : "◐";
+  }
+
+  function isSidebarCollapsed() {
+    return document.getElementById("app")?.classList.contains("sidebar-collapsed");
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    const app = document.getElementById("app");
+    if (!app) return;
+    app.classList.toggle("sidebar-collapsed", Boolean(collapsed));
+    const toggle = $("sidebarToggleBtn");
+    if (toggle) {
+      toggle.textContent = collapsed ? "⟩" : "⟨";
+      toggle.title = collapsed ? "展开侧栏" : "收起侧栏";
+      toggle.setAttribute("aria-label", toggle.title);
+    }
+  }
+
+  function appWidth() {
+    return document.getElementById("app")?.clientWidth || window.innerWidth || 0;
+  }
+
+  function syncSidebarByWidth() {
+    const narrow = appWidth() < SIDEBAR_BREAKPOINT;
+    if (sidebarWasNarrow !== null && sidebarWasNarrow !== narrow) {
+      sidebarManual = null;
+    }
+    sidebarWasNarrow = narrow;
+    const collapsed = sidebarManual !== null ? sidebarManual : narrow;
+    setSidebarCollapsed(collapsed);
+  }
+
+  function initSidebarCollapsed() {
+    syncSidebarByWidth();
+    const app = document.getElementById("app");
+    if (!app || typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", syncSidebarByWidth);
+      return;
+    }
+    const ro = new ResizeObserver(() => syncSidebarByWidth());
+    ro.observe(app);
+  }
+
+  function toggleSidebar() {
+    sidebarManual = !isSidebarCollapsed();
+    setSidebarCollapsed(sidebarManual);
   }
 
   function esc(value) {
@@ -1165,7 +1215,9 @@
 
   // events
   initTheme();
+  initSidebarCollapsed();
   els.themeBtn.addEventListener("click", toggleTheme);
+  $("sidebarToggleBtn")?.addEventListener("click", toggleSidebar);
   $("aiBtn").addEventListener("click", openAi);
   $("closeAiBtn").addEventListener("click", closeAi);
   $("aiShuffle").addEventListener("click", () => {

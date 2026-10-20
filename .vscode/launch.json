@@ -5,12 +5,28 @@
       "name": "运行 ProtoView",
       "type": "extensionHost",
       "request": "launch",
+      "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extension=zoceanfly.protoview",
         "${workspaceFolder}"
       ],
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
-      "preLaunchTask": "compile"
+      "preLaunchTask": "compile",
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "name": "运行 ProtoView（跳过编译）",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extension=zoceanfly.protoview",
+        "${workspaceFolder}"
+      ],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "internalConsoleOptions": "openOnSessionStart"
     }
   ]
 }

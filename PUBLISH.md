@@ -25,7 +25,8 @@
 | `npm run dev:cli` | CLI 开发模式：tsc watch + 直连 `client/`，改代码自动重启 |
 | `npm run publish:cli` | 构建并 `npm publish` CLI 包 |
 
-本地调试扩展：按 **F5**（「运行 ProtoView」）打开 Extension Development Host。
+本地调试扩展：按 **F5**（「运行 ProtoView」）打开 Extension Development Host。  
+若本机已从商店安装过 ProtoView，开发宿主会与已安装版冲突；`.vscode/launch.json` 已加 `--disable-extension=zoceanfly.protoview`，只在调试窗口里禁用商店版，不影响你日常用的 Cursor 主窗口。仍异常时可在主窗口暂时禁用/卸载商店版再 F5。
 
 `packages/**` 已写入 [.vscodeignore](.vscodeignore)，打 VSIX 时不会打进 CLI 产物。
 

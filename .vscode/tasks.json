@@ -6,7 +6,13 @@
       "script": "compile",
       "label": "compile",
       "group": { "kind": "build", "isDefault": true },
-      "problemMatcher": ["$tsc"]
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": false
+      }
     },
     {
       "type": "npm",
