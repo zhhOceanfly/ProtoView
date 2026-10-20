@@ -17,7 +17,8 @@ function parseArgs(argv: string[]): CliArgs {
     git: "",
     branch: "main",
     port: 3920,
-    open: true,
+    // 开发 watch 会反复重启进程；默认不弹浏览器，避免每次开新标签
+    open: process.env.PROTOVIEW_DEV !== "1",
     showGoogle: false,
     help: false,
   };
@@ -29,6 +30,7 @@ function parseArgs(argv: string[]): CliArgs {
     else if (a === "--branch" || a === "-b") args.branch = argv[++i] || "main";
     else if (a === "--port") args.port = Math.max(1, Number(argv[++i] || 3920) || 3920);
     else if (a === "--no-open") args.open = false;
+    else if (a === "--open") args.open = true;
     else if (a === "--show-google") args.showGoogle = true;
     else if (!a.startsWith("-")) args.proto = path.resolve(a);
   }
@@ -46,7 +48,8 @@ Options:
   --git, -g <url>       Use Git repo as proto source (clone to temp dir)
   --branch, -b <name>   Git branch (default: main)
   --port <n>            HTTP port (default: 3920)
-  --no-open             Do not open browser
+  --no-open             Do not open browser (default in npm run dev:cli)
+  --open                Open browser on start
   --show-google         Include google.* packages in tree
   -h, --help            Show help
 

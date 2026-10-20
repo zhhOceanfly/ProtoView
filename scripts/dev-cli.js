@@ -124,8 +124,16 @@ const serverArgs = passthrough.length
   ? passthrough
   : ["--proto", process.cwd(), "--port", "3920"];
 
+// 开发模式默认不自动开浏览器（node --watch 每次重启都会再弹一个标签）
+if (!serverArgs.includes("--open") && !serverArgs.includes("--no-open")) {
+  serverArgs.push("--no-open");
+}
+
+const portArg = serverArgs.findIndex((a) => a === "--port");
+const port = portArg >= 0 ? serverArgs[portArg + 1] : "3920";
 console.log("[dev-cli] serving frontend from", clientDir);
 console.log("[dev-cli] 改 client/ 后浏览器刷新即可；改 .ts 会自动编译并重启服务");
+console.log(`[dev-cli] 请手动打开 http://127.0.0.1:${port}/ （默认不自动弹浏览器；需要时加 --open）`);
 console.log("[dev-cli] starting:", "protoview", serverArgs.join(" "));
 
 run(
