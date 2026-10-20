@@ -1,5 +1,8 @@
 node_modules/
 out/
+packages/cli/dist/
+packages/cli/public/
+client/donate-wechat.png
 *.vsix
 .env
 .env.*

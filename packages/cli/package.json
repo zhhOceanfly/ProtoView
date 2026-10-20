@@ -1,0 +1,54 @@
+{
+  "name": "@zoceanfly/protoview",
+  "version": "0.1.0",
+  "description": "ProtoView Client CLI：本地启动浏览器调试 gRPC / HTTP / SSE / WebSocket（Rider / 任意 IDE 可用）",
+  "license": "MIT",
+  "author": "zoceanfly",
+  "homepage": "https://github.com/zhhOceanfly/ProtoView",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhhOceanfly/ProtoView.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/zhhOceanfly/ProtoView/issues"
+  },
+  "keywords": [
+    "protobuf",
+    "proto",
+    "grpc",
+    "protoview",
+    "client",
+    "rider"
+  ],
+  "bin": {
+    "protoview": "bin/protoview.js"
+  },
+  "main": "dist/cli.js",
+  "files": [
+    "bin",
+    "dist",
+    "public",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-cli.js",
+    "dev": "node ../../scripts/dev-cli.js",
+    "start": "node bin/protoview.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/proto-loader": "^0.8.1",
+    "ws": "^8.18.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}

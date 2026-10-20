@@ -15,7 +15,9 @@ import { openSource } from "./panel";
 import { ProtoSourceConfig } from "./source";
 
 export interface ClientSourceState {
-  mode: "workspace" | "git";
+  /** Client 弹层：directory | git（侧边栏仍用 workspace | git） */
+  mode: "directory" | "git";
+  dirPath: string;
   gitUrl: string;
   gitBranch: string;
   localPath: string;
@@ -29,7 +31,8 @@ export class ClientPanel {
   private sourceLabel = "工作区";
   private showGoogle = false;
   private sourceState: ClientSourceState = {
-    mode: "workspace",
+    mode: "directory",
+    dirPath: "",
     gitUrl: "",
     gitBranch: "main",
     localPath: "",
@@ -109,10 +112,40 @@ export class ClientPanel {
         this.onRefresh?.();
         return;
       }
+      if (message.type === "pickProtoDir" && this.panel) {
+        const uris = await vscode.window.showOpenDialog({
+          title: "选择 Proto 目录",
+          canSelectFiles: false,
+          canSelectFolders: true,
+          canSelectMany: false,
+          openLabel: "选择",
+        });
+        if (uris?.[0]) {
+          this.panel.webview.postMessage({ type: "pickedProtoDir", path: uris[0].fsPath });
+        }
+        return;
+      }
+      if (message.type === "pickGhzBinary" && this.panel) {
+        const uris = await vscode.window.showOpenDialog({
+          title: "选择本机 ghz 可执行文件",
+          canSelectFiles: true,
+          canSelectFolders: false,
+          canSelectMany: false,
+          openLabel: "选择",
+          filters: process.platform === "win32"
+            ? { Executable: ["exe", "cmd", "bat"], All: ["*"] }
+            : { All: ["*"] },
+        });
+        if (uris?.[0]) {
+          this.panel.webview.postMessage({ type: "pickedGhzBinary", path: uris[0].fsPath });
+        }
+        return;
+      }
       if (message.type === "setSource" && message.payload && this.onSetSource) {
-        const mode = message.payload.mode === "git" ? "git" : "workspace";
+        const mode = message.payload.mode === "git" ? "git" : "directory";
         const next: ClientSourceState = {
           mode,
+          dirPath: String(message.payload.dirPath || "").trim(),
           gitUrl: String(message.payload.gitUrl || "").trim(),
           gitBranch: String(message.payload.gitBranch || "main").trim() || "main",
           localPath: this.sourceState.localPath,
@@ -394,7 +427,10 @@ export class ClientPanel {
                   <p class="stress-note">指定本机 <code>ghz</code> 可执行文件路径；留空则使用 PATH 中的 <code>ghz</code>。</p>
                   <div class="stress-form">
                     <label class="stress-path">ghz 路径
-                      <input id="ghzPath" type="text" placeholder="例如 C:\\tools\\ghz.exe 或 /usr/local/bin/ghz" />
+                      <div class="source-dir-row">
+                        <input id="ghzPath" type="text" placeholder="留空则用 PATH 中的 ghz" />
+                        <button class="btn" id="pickGhzPathBtn" type="button" title="选择本机 ghz 可执行文件">浏览</button>
+                      </div>
                     </label>
                     <label>并发 <input id="ghzConcurrency" type="number" min="1" max="200" value="20" /></label>
                     <label>总请求 <input id="ghzTotal" type="number" min="1" max="100000" value="200" /></label>
@@ -548,10 +584,19 @@ export class ClientPanel {
         <button class="icon-btn" id="closeSourceModal" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note">与侧边栏「Proto 来源」相同：工作区扫描本地 .proto；Git 会拉取到系统临时目录。</p>
+        <p class="stress-note">在此选择本地目录或 Git；侧边栏「Proto 来源」仍可单独使用工作区 / Git。</p>
         <div class="source-mode-row">
-          <label class="source-mode-opt"><input type="radio" name="sourceMode" value="workspace" /> 工作区自动识别</label>
+          <label class="source-mode-opt"><input type="radio" name="sourceMode" value="directory" /> 自定义目录</label>
           <label class="source-mode-opt"><input type="radio" name="sourceMode" value="git" /> 自定义 Git 来源</label>
+        </div>
+        <div id="sourceDirFields" class="source-git-fields">
+          <label>目录路径
+            <div class="source-dir-row">
+              <input id="sourceDirPath" placeholder="例如 D:\\proto 或 /home/me/api" />
+              <button class="btn" id="pickSourceDirBtn" type="button" title="选择文件夹">浏览</button>
+            </div>
+          </label>
+          <p class="stress-note" id="sourceDirHint">扫描该目录下全部 .proto（含子目录）。</p>
         </div>
         <div id="sourceGitFields" class="source-git-fields hidden">
           <label>Git 地址<input id="sourceGitUrl" placeholder="https://github.com/org/repo.git" /></label>
@@ -650,7 +695,8 @@ export class ClientPanel {
 
 function toClientSource(config: ProtoSourceConfig): ClientSourceState {
   return {
-    mode: config.mode === "git" ? "git" : "workspace",
+    mode: config.mode === "git" ? "git" : "directory",
+    dirPath: config.dirPath || "",
     gitUrl: config.gitUrl || "",
     gitBranch: config.gitBranch || "main",
     localPath: config.localPath || "",

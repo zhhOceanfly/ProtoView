@@ -85,15 +85,67 @@
       void notify("画布为空，没有可导出的节点");
       return;
     }
-    if (!api()?.postHost?.("exportFlow", snapshot)) {
-      void notify("请在 VS Code 中打开 ProtoView Client 再导出");
-    }
+    // VS Code webview：交给扩展保存对话框；CLI / 浏览器：直接下载 JSON
+    if (api()?.isVsCodeHost?.() && api()?.postHost?.("exportFlow", snapshot)) return;
+    downloadJson(snapshot, `protoview-flow-${flowStamp()}.json`);
+    void notify("已导出链路配置");
   }
 
   function requestImportFlow() {
-    if (!api()?.postHost?.("importFlow")) {
-      void notify("请在 VS Code 中打开 ProtoView Client 再导入");
-    }
+    if (api()?.isVsCodeHost?.() && api()?.postHost?.("importFlow")) return;
+    pickJsonFile().then((data) => {
+      if (data) importData(data);
+    }).catch((error) => {
+      void notify(`导入失败：${error.message || error}`);
+    });
+  }
+
+  function downloadJson(data, filename) {
+    const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function pickJsonFile() {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/json,.json";
+      input.style.display = "none";
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        input.remove();
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            resolve(JSON.parse(String(reader.result || "")));
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = () => reject(new Error("读取文件失败"));
+        reader.readAsText(file, "utf-8");
+      });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
+  function flowStamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
   }
 
   function importData(raw) {

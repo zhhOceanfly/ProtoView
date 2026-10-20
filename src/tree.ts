@@ -110,6 +110,7 @@ export class ProtoTree implements vscode.TreeDataProvider<ProtoNode> {
       gitUrl: "",
       gitBranch: "main",
       localPath: "",
+      dirPath: "",
       lastError: "",
       lastLog: "",
       lastSyncedAt: 0,

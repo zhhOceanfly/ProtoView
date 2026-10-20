@@ -33,15 +33,26 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   clientPanel.setSourceHandler(async (next) => {
     const prevUrl = sourceConfig.gitUrl;
-    sourceConfig = {
-      ...sourceConfig,
-      mode: next.mode,
-      gitUrl: next.gitUrl,
-      gitBranch: next.gitBranch || "main",
-      lastError: "",
-      localPath: next.mode === "git" && next.gitUrl === prevUrl ? sourceConfig.localPath : "",
-      lastSyncedAt: next.mode === "git" && next.gitUrl === prevUrl ? sourceConfig.lastSyncedAt : 0,
-    };
+    if (next.mode === "git") {
+      sourceConfig = {
+        ...sourceConfig,
+        mode: "git",
+        gitUrl: next.gitUrl,
+        gitBranch: next.gitBranch || "main",
+        dirPath: "",
+        lastError: "",
+        localPath: next.gitUrl === prevUrl ? sourceConfig.localPath : "",
+        lastSyncedAt: next.gitUrl === prevUrl ? sourceConfig.lastSyncedAt : 0,
+      };
+    } else {
+      // Client「自定义目录」：侧边栏模式仍记为 workspace，用 dirPath 覆盖扫描根
+      sourceConfig = {
+        ...sourceConfig,
+        mode: "workspace",
+        dirPath: next.dirPath || "",
+        lastError: "",
+      };
+    }
     await saveSourceConfig(extensionContext, sourceConfig);
     await reload(tree, panel, status, next.mode === "git");
   });
@@ -144,7 +155,13 @@ async function toggleSourceMode(
     { title: "选择 Proto 来源", placeHolder: "Proto 来源" },
   );
   if (!pick) return;
-  sourceConfig = { ...sourceConfig, mode: pick.mode, lastError: "" };
+  sourceConfig = {
+    ...sourceConfig,
+    mode: pick.mode,
+    lastError: "",
+    // 侧边栏切回工作区时清除 Client 自定义目录覆盖
+    dirPath: pick.mode === "workspace" ? "" : sourceConfig.dirPath,
+  };
   await saveSourceConfig(extensionContext, sourceConfig);
   if (pick.mode === "git" && !sourceConfig.gitUrl) {
     await editGitUrl(tree, panel, status);
@@ -176,6 +193,7 @@ async function editGitUrl(
     mode: "git",
     gitUrl: value.trim(),
     localPath: "",
+    dirPath: "",
     lastError: "",
     lastSyncedAt: 0,
   };
@@ -254,6 +272,11 @@ async function reload(
         }
       }
       await loadFromDirectory(sourceConfig.localPath, tree, panel, status, sourceConfig.localPath);
+      return;
+    }
+
+    if (sourceConfig.dirPath?.trim()) {
+      await loadFromDirectory(sourceConfig.dirPath.trim(), tree, panel, status, sourceConfig.dirPath.trim());
       return;
     }
 
@@ -368,6 +391,9 @@ async function openGitTemp(): Promise<void> {
 function sourceLabel(): string {
   if (sourceConfig.mode === "git") {
     return `Git · ${sourceConfig.gitBranch || "main"} · ${sourceConfig.gitUrl || "未配置"}`;
+  }
+  if (sourceConfig.dirPath?.trim()) {
+    return `目录 · ${path.basename(sourceConfig.dirPath.trim())}`;
   }
   const folder = vscode.workspace.workspaceFolders?.[0]?.name;
   return folder ? `工作区 · ${folder}` : "工作区自动识别";

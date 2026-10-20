@@ -197,7 +197,10 @@
     "publish:patch": "npm run compile && vsce publish patch",
     "publish:minor": "npm run compile && vsce publish minor",
     "openvsx:namespace": "node scripts/openvsx-publish.js namespace",
-    "publish:openvsx": "npm run package && node scripts/openvsx-publish.js publish"
+    "publish:openvsx": "npm run package && node scripts/openvsx-publish.js publish",
+    "build:cli": "node scripts/build-cli.js",
+    "dev:cli": "node scripts/dev-cli.js",
+    "publish:cli": "npm run build:cli && npm publish --access public --prefix packages/cli"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

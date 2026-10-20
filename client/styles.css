@@ -148,6 +148,20 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   display: grid;
   gap: 10px;
 }
+.source-dir-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.source-dir-row input { flex: 1; min-width: 0; }
+.source-dir-row .btn {
+  flex: 0 0 auto;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+}
 .side-flow-btn.primary {
   background: linear-gradient(120deg, #2563eb, #0891b2);
   border-color: transparent;
@@ -642,7 +656,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-confirm-mask { z-index: 60; }
 .flow-confirm-modal { width: min(360px, 92vw); }
 .stress-path { flex: 1 1 100%; }
-.stress-path input { width: min(520px, 100%); }
+.stress-path .source-dir-row { max-width: min(560px, 100%); }
+.stress-path .source-dir-row input { width: 100%; flex: 1; }
 .side-tools { display: flex; gap: 6px; }
 .side-search {
   width: 100%;

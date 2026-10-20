@@ -11,11 +11,13 @@
 - WebSocket：握手后发送 Message，收集服务端文本帧
 - Client 左上角「自定义源」：弹层内配置工作区 / Git（不走 VS Code QuickPick），Git 仍拉取到系统临时目录
 - 链路调试顶栏「压测」旁增加导入 / 导出，保存节点、连线与协议等配置为 JSON
+- npm 包 **`@zoceanfly/protoview`**：CLI 本地起服务，浏览器打开 Client（Rider 等可用）
 
 ### 调整
 
 - 去掉 AI 页背景音乐与「音乐」按钮
 - 商店图标去掉半透明描边，改为实心圆角字标
+- 抽离无 vscode 依赖的 `hostCore` / `sourceCore`，扩展与 CLI 共用解析与调用
 
 ## [0.1.2] — 2026-10-19
 

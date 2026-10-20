@@ -1,8 +1,59 @@
 (() => {
-  const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
+  const isVsCodeWebview = typeof acquireVsCodeApi === "function";
+  const vscode = isVsCodeWebview ? acquireVsCodeApi() : createWsBridge();
   const THEME_KEY = "protoview.client.theme";
   const DRAFT_KEY = "protoview.client.drafts";
   const SPLIT_KEY = "protoview.client.split";
+
+  /** Browser / CLI: talk to local Node host over WebSocket (same message protocol as the extension). */
+  function createWsBridge() {
+    if (typeof WebSocket === "undefined" || !location.host) return null;
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${location.host}/ws`;
+    let socket = null;
+    const queue = [];
+    let closed = false;
+
+    function connect() {
+      if (closed) return;
+      try {
+        socket = new WebSocket(url);
+      } catch {
+        return;
+      }
+      socket.addEventListener("open", () => {
+        while (queue.length && socket?.readyState === WebSocket.OPEN) {
+          socket.send(queue.shift());
+        }
+      });
+      socket.addEventListener("message", (event) => {
+        try {
+          const data = JSON.parse(String(event.data || ""));
+          window.dispatchEvent(new MessageEvent("message", { data }));
+        } catch { /* ignore bad frames */ }
+      });
+      socket.addEventListener("close", () => {
+        socket = null;
+        if (!closed) setTimeout(connect, 1500);
+      });
+      socket.addEventListener("error", () => {
+        try { socket?.close(); } catch { /* ignore */ }
+      });
+    }
+
+    connect();
+    return {
+      postMessage(msg) {
+        const text = JSON.stringify(msg || {});
+        if (socket && socket.readyState === WebSocket.OPEN) socket.send(text);
+        else queue.push(text);
+      },
+      dispose() {
+        closed = true;
+        try { socket?.close(); } catch { /* ignore */ }
+      },
+    };
+  }
 
   const state = {
     catalog: { packages: [], types: {}, sourceLabel: "独立模式" },
@@ -22,7 +73,8 @@
     stressId: "",
     ghzLog: "",
     source: {
-      mode: "workspace",
+      mode: "directory",
+      dirPath: "",
       gitUrl: "",
       gitBranch: "main",
       localPath: "",
@@ -886,8 +938,10 @@
       state.activeEnvId = data.envs.activeEnvId || state.envs[0].id;
     }
     if (data.source && typeof data.source === "object") {
+      const mode = data.source.mode === "git" ? "git" : "directory";
       state.source = {
-        mode: data.source.mode === "git" ? "git" : "workspace",
+        mode,
+        dirPath: data.source.dirPath || data.source.localPath || "",
         gitUrl: data.source.gitUrl || "",
         gitBranch: data.source.gitBranch || "main",
         localPath: data.source.localPath || "",
@@ -906,17 +960,147 @@
   }
 
   function syncSourceModalUi() {
-    const mode = document.querySelector('input[name="sourceMode"]:checked')?.value || "workspace";
+    const mode = document.querySelector('input[name="sourceMode"]:checked')?.value || "directory";
     $("sourceGitFields")?.classList.toggle("hidden", mode !== "git");
+    $("sourceDirFields")?.classList.toggle("hidden", mode !== "directory");
+    const pickBtn = $("pickSourceDirBtn");
+    if (pickBtn) pickBtn.classList.toggle("hidden", !vscode);
+  }
+
+  function bytesToBase64(bytes) {
+    const chunk = 0x8000;
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  async function collectProtosFromDirHandle(dirHandle, prefix, out) {
+    for await (const [name, handle] of dirHandle.entries()) {
+      const rel = prefix ? `${prefix}/${name}` : name;
+      if (handle.kind === "directory") {
+        await collectProtosFromDirHandle(handle, rel, out);
+      } else if (handle.kind === "file" && /\.proto$/i.test(name)) {
+        const file = await handle.getFile();
+        out.push({ path: rel.replace(/\\/g, "/"), content: await file.text() });
+      }
+    }
+  }
+
+  /** CLI：浏览器原生选目录（无完整路径，上传 .proto 到宿主临时目录） */
+  async function pickProtoDirViaBrowser() {
+    if (!vscode) return;
+    const files = [];
+    let label = "";
+    try {
+      if (typeof showDirectoryPicker === "function") {
+        const root = await showDirectoryPicker({ mode: "read" });
+        label = root.name || "proto";
+        await collectProtosFromDirHandle(root, "", files);
+      } else {
+        await new Promise((resolve, reject) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.multiple = true;
+          input.setAttribute("webkitdirectory", "");
+          input.style.display = "none";
+          input.addEventListener("change", async () => {
+            try {
+              const list = Array.from(input.files || []);
+              input.remove();
+              for (const file of list) {
+                if (!/\.proto$/i.test(file.name)) continue;
+                const rel = String(file.webkitRelativePath || file.name).replace(/\\/g, "/");
+                if (!label) label = rel.split("/")[0] || file.name;
+                files.push({ path: rel, content: await file.text() });
+              }
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          });
+          input.addEventListener("cancel", () => {
+            input.remove();
+            resolve();
+          });
+          document.body.appendChild(input);
+          input.click();
+        });
+      }
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      setRespBadge("err", (error && error.message) || "选择目录失败");
+      return;
+    }
+    if (!files.length) {
+      setRespBadge("err", "目录中未找到 .proto 文件");
+      return;
+    }
+    setRespBadge("wait", `正在导入 ${files.length} 个 .proto…`);
+    vscode.postMessage({
+      type: "uploadProtoDir",
+      payload: { name: label || "proto", files },
+    });
+  }
+
+  async function pickGhzViaBrowser() {
+    if (!vscode) return;
+    try {
+      let file;
+      if (typeof showOpenFilePicker === "function") {
+        const handles = await showOpenFilePicker({
+          multiple: false,
+          excludeAcceptAllOption: false,
+        });
+        file = await handles[0].getFile();
+      } else {
+        file = await new Promise((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.style.display = "none";
+          input.addEventListener("change", () => {
+            const f = input.files?.[0];
+            input.remove();
+            resolve(f || null);
+          });
+          input.addEventListener("cancel", () => {
+            input.remove();
+            resolve(null);
+          });
+          document.body.appendChild(input);
+          input.click();
+        });
+      }
+      if (!file) return;
+      setRespBadge("wait", "正在导入 ghz…");
+      const buf = new Uint8Array(await file.arrayBuffer());
+      vscode.postMessage({
+        type: "uploadGhzBinary",
+        payload: { name: file.name, base64: bytesToBase64(buf) },
+      });
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      setRespBadge("err", (error && error.message) || "选择文件失败");
+    }
   }
 
   function fillSourceModal() {
-    const mode = state.source.mode === "git" ? "git" : "workspace";
+    const mode = state.source.mode === "git" ? "git" : "directory";
     for (const input of document.querySelectorAll('input[name="sourceMode"]')) {
       input.checked = input.value === mode;
     }
+    if ($("sourceDirPath")) $("sourceDirPath").value = state.source.dirPath || "";
     if ($("sourceGitUrl")) $("sourceGitUrl").value = state.source.gitUrl || "";
     if ($("sourceGitBranch")) $("sourceGitBranch").value = state.source.gitBranch || "main";
+    const dirHint = $("sourceDirHint");
+    if (dirHint) {
+      dirHint.textContent = state.source.dirPath
+        ? `当前：${state.source.dirPath}`
+        : (isVsCodeWebview
+          ? "填写或浏览选择含 .proto 的目录。"
+          : "浏览用浏览器选目录（导入 .proto）；也可直接填本机绝对路径。");
+    }
     const hint = $("sourceGitHint");
     if (hint) {
       const parts = [];
@@ -933,9 +1117,16 @@
   }
 
   function applySourceFromModal() {
-    const mode = document.querySelector('input[name="sourceMode"]:checked')?.value === "git" ? "git" : "workspace";
+    const mode = document.querySelector('input[name="sourceMode"]:checked')?.value === "git" ? "git" : "directory";
+    const dirPath = ($("sourceDirPath")?.value || "").trim();
     const gitUrl = ($("sourceGitUrl")?.value || "").trim();
     const gitBranch = ($("sourceGitBranch")?.value || "main").trim() || "main";
+    if (mode === "directory") {
+      if (!dirPath) {
+        setRespBadge("err", "请填写目录路径");
+        return;
+      }
+    }
     if (mode === "git") {
       if (!gitUrl) {
         setRespBadge("err", "请填写 Git 地址");
@@ -946,19 +1137,19 @@
         return;
       }
     }
-    state.source = { ...state.source, mode, gitUrl, gitBranch, lastError: "" };
+    state.source = { ...state.source, mode, dirPath, gitUrl, gitBranch, lastError: "" };
     closeModal(els.sourceModal);
     if (!vscode) {
       els.sourceMeta.textContent = mode === "git"
         ? `Git · ${gitBranch} · ${gitUrl}`
-        : "工作区自动识别";
-      setRespBadge("wait", "独立模式仅更新显示；请在扩展内打开 Client 才会真正拉取");
+        : `目录 · ${dirPath}`;
+      setRespBadge("wait", "未连接宿主：请用扩展打开 Client，或运行 npx @zoceanfly/protoview");
       return;
     }
-    setRespBadge("wait", mode === "git" ? "正在应用 Git 来源…" : "正在切换到工作区…");
+    setRespBadge("wait", mode === "git" ? "正在应用 Git 来源…" : "正在加载目录…");
     vscode.postMessage({
       type: "setSource",
-      payload: { mode, gitUrl, gitBranch },
+      payload: { mode, dirPath, gitUrl, gitBranch },
     });
   }
 
@@ -990,6 +1181,11 @@
   $("sourceConfigBtn")?.addEventListener("click", openSourceModal);
   $("closeSourceModal")?.addEventListener("click", () => closeModal(els.sourceModal));
   $("applySourceBtn")?.addEventListener("click", applySourceFromModal);
+  $("pickSourceDirBtn")?.addEventListener("click", () => {
+    if (!vscode) return;
+    if (isVsCodeWebview) vscode.postMessage({ type: "pickProtoDir" });
+    else void pickProtoDirViaBrowser();
+  });
   for (const input of document.querySelectorAll('input[name="sourceMode"]')) {
     input.addEventListener("change", syncSourceModalUi);
   }
@@ -1479,11 +1675,19 @@
   $("ghzTotal").addEventListener("change", refreshGhzCommand);
   const GHZ_PATH_KEY = "protoview.client.ghzPath";
   try { $("ghzPath").value = localStorage.getItem(GHZ_PATH_KEY) || ""; } catch { /* ignore */ }
-  $("ghzPath").addEventListener("change", () => {
-    localStorage.setItem(GHZ_PATH_KEY, $("ghzPath").value.trim());
+  function setGhzPath(value) {
+    const path = String(value || "").trim();
+    if ($("ghzPath")) $("ghzPath").value = path;
+    try { localStorage.setItem(GHZ_PATH_KEY, path); } catch { /* ignore */ }
     refreshGhzCommand();
+  }
+  $("ghzPath")?.addEventListener("change", () => setGhzPath($("ghzPath").value));
+  $("ghzPath")?.addEventListener("input", refreshGhzCommand);
+  $("pickGhzPathBtn")?.addEventListener("click", () => {
+    if (!vscode) return;
+    if (isVsCodeWebview) vscode.postMessage({ type: "pickGhzBinary" });
+    else void pickGhzViaBrowser();
   });
-  $("ghzPath").addEventListener("input", refreshGhzCommand);
   $("stressStartBtn").addEventListener("click", () => {
     const base = currentInvokeBase();
     if (!base) return;
@@ -1580,6 +1784,7 @@
       vscode.postMessage(payload === undefined ? { type } : { type, payload });
       return true;
     },
+    isVsCodeHost: () => isVsCodeWebview,
     getSelectedRpcId: () => state.selected?.id || "",
     getSelectedRpcLabel: () => state.selected?.name || "",
     listEnvs: () => state.envs.map((env) => ({ id: env.id, name: env.name, host: env.host || "" })),
@@ -1613,6 +1818,23 @@
       setStressRunning(false);
       els.stressResult.innerHTML = `<pre class="stress-log">${esc(state.ghzLog)}</pre>`;
       setRespBadge(data.ok ? "ok" : "err", data.ok ? "ghz 完成" : "ghz 失败/未安装");
+    }
+    if (data.type === "pickedProtoDir" && data.path) {
+      if ($("sourceDirPath")) $("sourceDirPath").value = String(data.path);
+      const dirHint = $("sourceDirHint");
+      if (dirHint) {
+        dirHint.textContent = data.label
+          ? `已选择：${data.label}（${data.count || "?"} 个 .proto）`
+          : `已选择：${data.path}`;
+      }
+      setRespBadge("ok", data.label ? `已导入 ${data.count || ""} 个 .proto`.trim() : "已选择目录");
+    }
+    if (data.type === "pickedGhzBinary" && data.path) {
+      setGhzPath(data.path);
+      setRespBadge("ok", "已选择 ghz");
+    }
+    if (data.type === "toast" && data.text) {
+      setRespBadge(data.level === "err" ? "err" : "ok", String(data.text));
     }
   });
 

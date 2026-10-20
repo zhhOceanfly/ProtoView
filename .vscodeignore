@@ -11,6 +11,7 @@ tsconfig.json
 **/*.map
 Proto/**
 scripts/**
+packages/**
 *.vsix
 agent-transcripts/**
 **/.DS_Store
