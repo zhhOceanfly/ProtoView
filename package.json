@@ -3,6 +3,7 @@
   "displayName": "ProtoView",
   "description": "浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口：侧边栏导航、Client、Auth、压测与链路调试",
   "version": "0.1.3",
+  "private": true,
   "publisher": "zoceanfly",
   "license": "MIT",
   "homepage": "https://github.com/zhhOceanfly/ProtoView",
@@ -200,7 +201,7 @@
     "publish:openvsx": "npm run package && node scripts/openvsx-publish.js publish",
     "build:cli": "node scripts/build-cli.js",
     "dev:cli": "node scripts/dev-cli.js",
-    "publish:cli": "npm run build:cli && npm publish --access public --prefix packages/cli"
+    "publish:cli": "npm run build:cli && npm publish ./packages/cli --access public --registry https://registry.npmjs.org/"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

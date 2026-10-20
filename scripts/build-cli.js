@@ -1,5 +1,5 @@
 /**
- * Build @zoceanfly/protoview CLI package:
+ * Build @zhhoceanfly/protoview CLI package:
  * 1) compile root TypeScript (shared core)
  * 2) compile packages/cli
  * 3) copy out/*.js → packages/cli/dist/core

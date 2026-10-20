@@ -1,5 +1,5 @@
 {
-  "name": "@zoceanfly/protoview",
+  "name": "@zhhoceanfly/protoview",
   "version": "0.1.3",
   "description": "ProtoView Client CLI：本地启动浏览器调试 gRPC / HTTP / SSE / WebSocket（Rider / 任意 IDE 可用）",
   "license": "MIT",

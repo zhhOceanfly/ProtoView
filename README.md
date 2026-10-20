@@ -2,9 +2,9 @@
 
 在 VS Code / Cursor 中浏览与调试 Protobuf：按 `package → service → 接口` 组织侧边栏，支持类型跳转、源码定位，并提供 **ProtoView Client**（gRPC / HTTP / SSE / WebSocket 发请求、Auth、压测、链路调试）。
 
-Rider 等环境可用 npm CLI：`npx @zoceanfly/protoview` 在浏览器打开同一套 Client。
+Rider 等环境可用 npm CLI：`npx @zhhoceanfly/protoview` 在浏览器打开同一套 Client。
 
-当前扩展版本：**0.1.3** · CLI：`@zoceanfly/protoview@0.1.0`
+当前扩展版本：**0.1.3** · CLI：`@zhhoceanfly/protoview@0.1.3`
 
 ## 功能概览
 
@@ -55,10 +55,10 @@ Rider 等环境可用 npm CLI：`npx @zoceanfly/protoview` 在浏览器打开同
 ### Rider / 无 VS Code：CLI Client
 
 ```bash
-npm i -g @zoceanfly/protoview
+npm i -g @zhhoceanfly/protoview
 protoview --proto ./你的proto目录
 # 或
-npx @zoceanfly/protoview --git https://github.com/org/repo.git --branch main
+npx @zhhoceanfly/protoview --git https://github.com/org/repo.git --branch main
 ```
 
 浏览器打开 `http://127.0.0.1:3920/`。更多参数见 [`packages/cli/README.md`](packages/cli/README.md)。

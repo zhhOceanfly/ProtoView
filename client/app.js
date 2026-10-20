@@ -1143,7 +1143,7 @@
       els.sourceMeta.textContent = mode === "git"
         ? `Git · ${gitBranch} · ${gitUrl}`
         : `目录 · ${dirPath}`;
-      setRespBadge("wait", "未连接宿主：请用扩展打开 Client，或运行 npx @zoceanfly/protoview");
+      setRespBadge("wait", "未连接宿主：请用扩展打开 Client，或运行 npx @zhhoceanfly/protoview");
       return;
     }
     setRespBadge("wait", mode === "git" ? "正在应用 Git 来源…" : "正在加载目录…");
