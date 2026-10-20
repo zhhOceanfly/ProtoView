@@ -68,27 +68,91 @@ Cursor 对 Open VSX 有镜像同步延迟（常见数小时）；也可在 Curso
 
 ## 发布 npm CLI（`@zoceanfly/protoview`）
 
-供 Rider 等环境在浏览器使用 ProtoView Client，与扩展共用 Client 页面逻辑。
+供 Rider 等环境在浏览器使用 ProtoView Client，与扩展共用 Client 页面逻辑。包目录：[`packages/cli`](packages/cli)，说明见 [`packages/cli/README.md`](packages/cli/README.md)。
 
-需 npm 登录且拥有 `@zoceanfly` scope：
+### 前置条件
+
+1. 在 [npmjs.com](https://www.npmjs.com/signup) **注册官方账号**（不要用 CNPM / npmmirror 注册页）  
+2. 对 **`@zoceanfly` scope** 有发布权限（个人 scope，或组织 `@zoceanfly` 的成员 + publish 权限）  
+3. 包为**公开**包（`publishConfig.access: public`；首次发布 scoped 包必须 `--access public`）  
+4. **登录必须指向官方 registry**（见下；国内若把默认源改成了 npmmirror，直接 `npm login` 会进 CNPM 并报 `Public registration is not allowed`）
 
 ```bash
-npm run build:cli                 # 编译共享核心 + CLI，复制 client → packages/cli/public
-npm run publish:cli               # 构建并发布
-# 或
-cd packages/cli && npm publish --access public
+# 查看当前源（若是 registry.npmmirror.com / cnpmjs，发布前不要用默认 login）
+npm config get registry
+
+# 只对官方源登录（推荐；不必改掉日常安装用的镜像）
+npm login --registry=https://registry.npmjs.org/
+npm whoami --registry=https://registry.npmjs.org/
 ```
 
-构建脚本：[`scripts/build-cli.js`](scripts/build-cli.js)。包说明见 [`packages/cli/README.md`](packages/cli/README.md)。
+浏览器应打开 **npmjs.org** 的登录/授权页，而不是「Sign up to CNPM」。  
+`packages/cli` 已配置 `publishConfig.registry = https://registry.npmjs.org/`，`npm run publish:cli` 会发到官方源；日常 `npm install` 仍可用你在 `~/.npmrc` 里配的 npmmirror。
 
-本地试跑（不发布）：
+若尚未创建过组织/scope，在 **npmjs.com** 创建 Organization `zoceanfly`，或使用与登录名一致的 scope。
+
+### 发版步骤
+
+1. **确认 / 升版本**（版本号在 [`packages/cli/package.json`](packages/cli/package.json) 的 `version`；**同版本不能重复发布**）：
+
+```bash
+# 可选：在 packages/cli 下升版本（会改 package.json）
+cd packages/cli
+npm version patch    # 0.1.0 → 0.1.1
+# 或 npm version minor / major
+cd ../..
+```
+
+也可手改 `packages/cli/package.json` 的 `version`，与扩展 `package.json` 版本**不必相同**。
+
+2. **构建并发布**（在仓库根目录）：
+
+```bash
+npm run publish:cli
+```
+
+等价于：
+
+```bash
+npm run build:cli                                    # 编译共享核心 + CLI，复制 client → packages/cli/public
+npm publish --access public --prefix packages/cli    # 实际上传
+```
+
+`packages/cli` 的 `prepublishOnly` 也会再跑一遍 build，因此直接 `cd packages/cli && npm publish --access public` 亦可。
+
+3. **验证**：
+
+```bash
+npm view @zoceanfly/protoview version
+npx @zoceanfly/protoview@latest --help
+# 或全局
+npm i -g @zoceanfly/protoview
+protoview --proto ./你的proto目录
+```
+
+包页面：https://www.npmjs.com/package/@zoceanfly/protoview  
+
+构建脚本：[`scripts/build-cli.js`](scripts/build-cli.js)。打进 npm 的内容见 `packages/cli` 的 `files` 字段（`bin` / `dist` / `public` / `README.md`），不含仓库源码树。
+
+### 常见问题
+
+| 问题 | 处理 |
+| --- | --- |
+| 打开「Sign up to CNPM」/ `Public registration is not allowed` | 当前默认源是 npmmirror；改用 `npm login --registry=https://registry.npmjs.org/`，到 npmjs.com 注册/登录 |
+| `You need to authorize this machine` / 401 | 对官方源重新 `npm login --registry=https://registry.npmjs.org/`；检查 token 未过期 |
+| `You do not have permission to publish` | 账号不在 `@zoceanfly`，或组织未开通该成员的 publish |
+| `Cannot publish over existing version` | 先升 `version` 再发 |
+| `Package name too similar` / scope 冲突 | 确认包名仍为 `@zoceanfly/protoview`，且 scope 归属正确 |
+| 发布后 `npx` 仍是旧版 | 镜像同步延迟：用 `npx @zoceanfly/protoview@x.y.z`，或 `npm view @zoceanfly/protoview version --registry=https://registry.npmjs.org/` |
+
+### 本地试跑（不发布）
 
 ```bash
 npm run build:cli
 node packages/cli/bin/protoview.js --proto ./你的proto目录 --port 3920
 ```
 
-开发调试（免每次 build）：
+### 开发调试（免每次 build）
 
 ```bash
 npm run dev:cli
@@ -98,7 +162,8 @@ npm run dev:cli -- --proto ./你的proto目录 --port 3920
 
 - 改 `client/`（页面 JS/CSS）→ **浏览器刷新**即可  
 - 改 `src/` 或 `packages/cli/src` → 自动 `tsc` 并重启服务  
-- 开发时静态资源直连仓库 `client/`，不必再 `build:cli` 复制到 `public/`
+- 开发时静态资源直连仓库 `client/`，不必再 `build:cli` 复制到 `public/`  
+- **正式发布前仍须** `npm run publish:cli`（或至少 `build:cli`），确保 `public/` / `dist/` 为最新产物
 
 ## 图标资源
 
