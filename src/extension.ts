@@ -31,6 +31,20 @@ export function activate(context: vscode.ExtensionContext): void {
   clientPanel.setRefreshHandler(() => {
     void reload(tree, panel, status, sourceConfig.mode === "git");
   });
+  clientPanel.setSourceHandler(async (next) => {
+    const prevUrl = sourceConfig.gitUrl;
+    sourceConfig = {
+      ...sourceConfig,
+      mode: next.mode,
+      gitUrl: next.gitUrl,
+      gitBranch: next.gitBranch || "main",
+      lastError: "",
+      localPath: next.mode === "git" && next.gitUrl === prevUrl ? sourceConfig.localPath : "",
+      lastSyncedAt: next.mode === "git" && next.gitUrl === prevUrl ? sourceConfig.lastSyncedAt : 0,
+    };
+    await saveSourceConfig(extensionContext, sourceConfig);
+    await reload(tree, panel, status, next.mode === "git");
+  });
   const view = vscode.window.createTreeView("protoview.explorer", {
     treeDataProvider: tree,
     showCollapseAll: true,
@@ -68,7 +82,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showWarningMessage("请先完成 Proto 解析，再打开 ProtoView Client。");
         return;
       }
-      clientPanel.open(catalog, sourceLabel(), showGoogle());
+      clientPanel.open(catalog, sourceLabel(), showGoogle(), sourceConfig);
     }),
     vscode.commands.registerCommand("protoview.showAtCursor", () => {
       const editor = vscode.window.activeTextEditor;
@@ -311,7 +325,7 @@ async function parseEntries(
   catalog = buildCatalog(files, errors);
   tree.update(catalog, false, showGoogle(), sourceConfig);
   panel.refresh(catalog);
-  clientPanel.refresh(catalog, sourceLabel(), showGoogle());
+  clientPanel.refresh(catalog, sourceLabel(), showGoogle(), sourceConfig);
   const visible = catalog.packages.filter((pkg) => showGoogle() || !pkg.wellKnown).length;
   const modeLabel = sourceConfig.mode === "git" ? "Git" : "工作区";
   status.text = `$(symbol-namespace) ProtoView ${visible}`;

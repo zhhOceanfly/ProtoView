@@ -9,7 +9,6 @@ export function renderAiPage(canBack: boolean, qrUrl: string): string {
       </div>
       <div class="actions">
         ${back}
-        <button class="btn" type="button" id="ai-music-toggle">音乐</button>
       </div>
     </div>
     <div class="ai-stage">

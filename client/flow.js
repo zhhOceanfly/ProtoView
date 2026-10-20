@@ -48,6 +48,150 @@
     }
   }
 
+  function flowSnapshot() {
+    return {
+      version: 1,
+      kind: "protoview.flow",
+      exportedAt: new Date().toISOString(),
+      nodes: flow.nodes.map((node) => ({
+        id: node.id,
+        rpcId: node.rpcId,
+        name: node.name,
+        package: node.package,
+        x: node.x,
+        y: node.y,
+        message: node.message,
+        metadata: Array.isArray(node.metadata) ? node.metadata : [{ name: "", value: "" }],
+        extracts: node.extracts && typeof node.extracts === "object" ? node.extracts : {},
+        protocol: node.protocol || "grpc",
+        httpMethod: node.httpMethod || "POST",
+        httpPath: node.httpPath || "/",
+        envId: node.envId || "",
+      })),
+      edges: flow.edges.map((edge) => ({
+        id: edge.id,
+        from: edge.from,
+        to: edge.to,
+      })),
+      scale: flow.scale,
+      panX: flow.panX,
+      panY: flow.panY,
+    };
+  }
+
+  function exportFlow() {
+    const snapshot = flowSnapshot();
+    if (!snapshot.nodes.length) {
+      void notify("画布为空，没有可导出的节点");
+      return;
+    }
+    if (!api()?.postHost?.("exportFlow", snapshot)) {
+      void notify("请在 VS Code 中打开 ProtoView Client 再导出");
+    }
+  }
+
+  function requestImportFlow() {
+    if (!api()?.postHost?.("importFlow")) {
+      void notify("请在 VS Code 中打开 ProtoView Client 再导入");
+    }
+  }
+
+  function importData(raw) {
+    void applyImport(raw);
+  }
+
+  async function applyImport(raw) {
+    const parsed = normalizeImport(raw);
+    if (!parsed.ok) {
+      void notify(parsed.error);
+      return;
+    }
+    if (flow.nodes.length) {
+      const ok = await askConfirm(`导入将替换当前画布（${flow.nodes.length} 个节点）。继续？`);
+      if (!ok) return;
+    }
+    flow.nodes = parsed.nodes;
+    flow.edges = parsed.edges;
+    flow.scale = parsed.scale;
+    flow.panX = parsed.panX;
+    flow.panY = parsed.panY;
+    flow.menuNodeId = null;
+    flow.editNodeId = null;
+    flow.historyNodeId = null;
+    flow.historySelectedId = null;
+    hideMenu();
+    save();
+    render();
+    applyTransform();
+    void notify(`已导入 ${flow.nodes.length} 个节点、${flow.edges.length} 条连线`);
+  }
+
+  function normalizeImport(raw) {
+    if (!raw || typeof raw !== "object") {
+      return { ok: false, error: "导入失败：文件内容无效" };
+    }
+    if (raw.kind && raw.kind !== "protoview.flow") {
+      return { ok: false, error: "导入失败：不是 ProtoView 链路配置文件" };
+    }
+    const nodesIn = Array.isArray(raw.nodes) ? raw.nodes : null;
+    const edgesIn = Array.isArray(raw.edges) ? raw.edges : null;
+    if (!nodesIn || !edgesIn) {
+      return { ok: false, error: "导入失败：缺少 nodes / edges" };
+    }
+    const nodeIds = new Set();
+    const nodes = [];
+    for (const item of nodesIn) {
+      if (!item || typeof item !== "object") continue;
+      const id = String(item.id || "").trim() || uid("n");
+      const rpcId = String(item.rpcId || "").trim();
+      if (!rpcId) continue;
+      nodeIds.add(id);
+      nodes.push({
+        id,
+        rpcId,
+        name: String(item.name || rpcId),
+        package: String(item.package || ""),
+        x: Number.isFinite(Number(item.x)) ? Number(item.x) : 40,
+        y: Number.isFinite(Number(item.y)) ? Number(item.y) : 40,
+        message: item.message && typeof item.message === "object" ? item.message : {},
+        metadata: Array.isArray(item.metadata) && item.metadata.length
+          ? item.metadata.map((row) => ({
+            name: String(row?.name || ""),
+            value: String(row?.value || ""),
+          }))
+          : [{ name: "", value: "" }],
+        extracts: item.extracts && typeof item.extracts === "object" ? { ...item.extracts } : {},
+        history: [],
+        protocol: normalizeNodeProtocol(item.protocol),
+        httpMethod: String(item.httpMethod || (item.protocol === "sse" ? "GET" : "POST")),
+        httpPath: String(item.httpPath || "/"),
+        envId: String(item.envId || ""),
+        result: null,
+      });
+    }
+    const edges = [];
+    for (const item of edgesIn) {
+      if (!item || typeof item !== "object") continue;
+      const from = String(item.from || "");
+      const to = String(item.to || "");
+      if (!from || !to || from === to) continue;
+      if (!nodeIds.has(from) || !nodeIds.has(to)) continue;
+      edges.push({
+        id: String(item.id || "").trim() || uid("e"),
+        from,
+        to,
+      });
+    }
+    return {
+      ok: true,
+      nodes,
+      edges,
+      scale: Number.isFinite(Number(raw.scale)) ? Math.min(2.5, Math.max(0.35, Number(raw.scale))) : 1,
+      panX: Number.isFinite(Number(raw.panX)) ? Number(raw.panX) : 40,
+      panY: Number.isFinite(Number(raw.panY)) ? Number(raw.panY) : 40,
+    };
+  }
+
   function uid(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -119,7 +263,7 @@
     world.innerHTML = flow.nodes.map((node) => {
       const hit = api()?.findRpc?.(node.rpcId);
       const title = hit ? hit.rpc.name : (node.name || node.rpcId || "未知接口");
-      const proto = node.protocol === "http" ? `HTTP ${node.httpMethod || "POST"}` : "gRPC";
+      const proto = protocolLabel(node);
       const sub = `${proto} · ${hit ? `${hit.pkg.name}.${hit.service.name}` : (node.package || "")}`;
       const status = node.result?.ok === true ? "ok" : node.result?.ok === false ? "fail" : "";
       const badge = node.result
@@ -580,14 +724,31 @@
       : `<div class="flow-msg-empty">无响应字段</div>`;
   }
 
+  function normalizeNodeProtocol(value) {
+    const p = (value || "grpc").toLowerCase();
+    if (p === "http" || p === "sse" || p === "websocket") return p;
+    return "grpc";
+  }
+
+  function protocolLabel(node) {
+    const p = normalizeNodeProtocol(node.protocol);
+    if (p === "http") return `HTTP ${node.httpMethod || "POST"}`;
+    if (p === "sse") return `SSE ${node.httpMethod || "GET"}`;
+    if (p === "websocket") return "WebSocket";
+    return "gRPC";
+  }
+
   function renderNodeTransport(node, hit) {
-    const protocol = node.protocol === "http" ? "http" : "grpc";
+    const protocol = normalizeNodeProtocol(node.protocol);
     const protoEl = $("flowNodeProtocol");
     const methodEl = $("flowNodeHttpMethod");
     const pathEl = $("flowNodeHttpPath");
     const envEl = $("flowNodeEnv");
     if (protoEl) protoEl.value = protocol;
-    if (methodEl) methodEl.value = node.httpMethod || hit?.rpc.httpVerb || "POST";
+    if (methodEl) {
+      methodEl.value = node.httpMethod
+        || (protocol === "sse" ? "GET" : hit?.rpc.httpVerb || "POST");
+    }
     if (pathEl) pathEl.value = node.httpPath || hit?.rpc.httpPath || "/";
     if (envEl) {
       const envs = api()?.listEnvs?.() || [];
@@ -600,9 +761,11 @@
   }
 
   function syncNodeTransportUi() {
-    const http = $("flowNodeProtocol")?.value === "http";
-    $("flowNodeMethodWrap")?.classList.toggle("hidden", !http);
-    $("flowNodePathWrap")?.classList.toggle("hidden", !http);
+    const protocol = normalizeNodeProtocol($("flowNodeProtocol")?.value);
+    const needsMethod = protocol === "http" || protocol === "sse";
+    const needsPath = protocol === "http" || protocol === "sse" || protocol === "websocket";
+    $("flowNodeMethodWrap")?.classList.toggle("hidden", !needsMethod);
+    $("flowNodePathWrap")?.classList.toggle("hidden", !needsPath);
   }
 
   function openEdit(nodeId) {
@@ -689,8 +852,8 @@
       if (key && val) extracts[key] = val;
     }
     node.extracts = extracts;
-    node.protocol = $("flowNodeProtocol")?.value === "http" ? "http" : "grpc";
-    node.httpMethod = $("flowNodeHttpMethod")?.value || "POST";
+    node.protocol = normalizeNodeProtocol($("flowNodeProtocol")?.value);
+    node.httpMethod = $("flowNodeHttpMethod")?.value || (node.protocol === "sse" ? "GET" : "POST");
     node.httpPath = $("flowNodeHttpPath")?.value || "/";
     node.envId = $("flowNodeEnv")?.value || node.envId || "";
     $("flowEditModal").classList.remove("show");
@@ -838,10 +1001,10 @@
         if (!name) continue;
         metadata[name] = interpolate(row.value, vars);
       }
-      const protocol = node.protocol === "http" ? "http" : "grpc";
+      const protocol = normalizeNodeProtocol(node.protocol);
       const result = await client.invokeOnce({
         protocol,
-        httpMethod: node.httpMethod || hit.rpc.httpVerb || "POST",
+        httpMethod: node.httpMethod || (protocol === "sse" ? "GET" : hit.rpc.httpVerb || "POST"),
         httpPath: interpolate(node.httpPath || hit.rpc.httpPath || "/", vars),
         host: client.resolveHost?.(node.envId) || "",
         package: hit.pkg.name,
@@ -1044,7 +1207,7 @@
   }
 
   // Expose early so app.js drag-drop can call even if later bind steps fail
-  window.ProtoViewFlow = { addNode, addSelected, openFlow, isFlowOpen, addAtScreen, render };
+  window.ProtoViewFlow = { addNode, addSelected, openFlow, isFlowOpen, addAtScreen, render, importData };
 
   function bind() {
     load();
@@ -1055,6 +1218,8 @@
     $("flowClearBtn")?.addEventListener("click", clearCanvas);
     $("flowRunBtn")?.addEventListener("click", () => void runFlow());
     $("flowStressBtn")?.addEventListener("click", openStressDrawer);
+    $("flowExportBtn")?.addEventListener("click", exportFlow);
+    $("flowImportBtn")?.addEventListener("click", requestImportFlow);
     $("flowStressClose")?.addEventListener("click", closeStressDrawer);
     $("flowStressDrawer")?.addEventListener("click", (event) => {
       if (event.target === $("flowStressDrawer")) closeStressDrawer();
@@ -1251,8 +1416,13 @@
 
     hideMenu();
     render();
-    window.ProtoViewFlow = { addNode, addSelected, openFlow, isFlowOpen, addAtScreen, render };
+    window.ProtoViewFlow = { addNode, addSelected, openFlow, isFlowOpen, addAtScreen, render, importData };
   }
+
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (data?.type === "flowImportData") importData(data.payload);
+  });
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
   else bind();

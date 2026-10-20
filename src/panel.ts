@@ -111,11 +111,9 @@ export class ProtoPanel {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const app = document.getElementById('app');
-    let music = null;
 
     window.addEventListener('message', (event) => {
       if (!event.data || event.data.type !== 'html') return;
-      if (music) { music.stop(); music = null; }
       app.innerHTML = event.data.html;
       if (event.data.page === 'ai') bootAiPage();
     });
@@ -154,8 +152,7 @@ export class ProtoPanel {
       const reward = document.getElementById('ai-reward');
       const qr = document.getElementById('ai-qr');
       const shuffleBtn = document.getElementById('ai-shuffle');
-      const musicBtn = document.getElementById('ai-music-toggle');
-      if (!root || !board || !reward || !qr || !shuffleBtn || !musicBtn) return;
+      if (!root || !board || !reward || !qr || !shuffleBtn) return;
 
       const target = ['山', '海', '平', '爱'];
       let tiles = shuffle(target.slice());
@@ -200,26 +197,6 @@ export class ProtoPanel {
         render();
       });
 
-      music = createMusic();
-      music.start();
-      musicBtn.textContent = '音乐开';
-      musicBtn.addEventListener('click', () => {
-        if (!music) {
-          music = createMusic();
-          music.start();
-          musicBtn.textContent = '音乐开';
-          return;
-        }
-        if (music.playing) {
-          music.pause();
-          musicBtn.textContent = '音乐关';
-        } else {
-          music = createMusic();
-          music.start();
-          musicBtn.textContent = '音乐开';
-        }
-      });
-
       render();
     }
 
@@ -232,86 +209,6 @@ export class ProtoPanel {
       }
       if (list.join('') === '山海平爱') return shuffle(list);
       return list;
-    }
-
-    function createMusic() {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioCtx();
-      const master = ctx.createGain();
-      master.gain.value = 0.08;
-      master.connect(ctx.destination);
-      const styles = [playPad, playPluck, playBell];
-      const style = styles[Math.floor(Math.random() * styles.length)];
-      let timer = null;
-      let playing = false;
-
-      function tone(freq, when, dur, type, gain) {
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = type;
-        osc.frequency.value = freq;
-        g.gain.setValueAtTime(0.0001, when);
-        g.gain.exponentialRampToValueAtTime(gain, when + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-        osc.connect(g);
-        g.connect(master);
-        osc.start(when);
-        osc.stop(when + dur + 0.02);
-      }
-
-      function playPad() {
-        const roots = [196, 233, 262, 311];
-        const root = roots[Math.floor(Math.random() * roots.length)];
-        const now = ctx.currentTime;
-        [0, 4, 7, 12].forEach((semi, i) => {
-          tone(root * Math.pow(2, semi / 12), now + i * 0.08, 2.4, 'sine', 0.05);
-        });
-      }
-
-      function playPluck() {
-        const scale = [262, 294, 330, 349, 392, 440];
-        const now = ctx.currentTime;
-        for (let i = 0; i < 4; i++) {
-          const f = scale[(i * 2 + Math.floor(Math.random() * 2)) % scale.length];
-          tone(f, now + i * 0.28, 0.45, 'triangle', 0.06);
-        }
-      }
-
-      function playBell() {
-        const now = ctx.currentTime;
-        const base = 392;
-        tone(base, now, 1.6, 'sine', 0.05);
-        tone(base * 1.5, now + 0.05, 1.4, 'sine', 0.03);
-        tone(base * 2, now + 0.9, 1.2, 'triangle', 0.03);
-      }
-
-      return {
-        get playing() { return playing; },
-        start() {
-          if (playing) return;
-          playing = true;
-          master.gain.value = 0.08;
-          if (ctx.state === 'suspended') ctx.resume();
-          style();
-          timer = setInterval(style, 2200);
-        },
-        stop() {
-          playing = false;
-          if (timer) clearInterval(timer);
-          timer = null;
-          master.gain.value = 0;
-          try { ctx.close(); } catch (_) {}
-        },
-        pause() {
-          playing = false;
-          if (timer) clearInterval(timer);
-          timer = null;
-          master.gain.value = 0;
-        },
-        resume() {
-          this.start();
-        }
-      };
     }
 
     vscode.postMessage({ type: 'ready' });

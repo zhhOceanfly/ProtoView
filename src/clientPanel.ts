@@ -8,10 +8,19 @@ import {
   defaultEnvFile,
   toClientCatalog,
 } from "./clientModel";
-import { GrpcInvokeRequest, invokeGrpc } from "./grpcInvoke";
-import { invokeHttp } from "./httpInvoke";
+import { GrpcInvokeRequest } from "./grpcInvoke";
 import { cancelStress, runStress } from "./grpcStress";
+import { dispatchInvoke } from "./invokeDispatch";
 import { openSource } from "./panel";
+import { ProtoSourceConfig } from "./source";
+
+export interface ClientSourceState {
+  mode: "workspace" | "git";
+  gitUrl: string;
+  gitBranch: string;
+  localPath: string;
+  lastError: string;
+}
 
 export class ClientPanel {
   private panel: vscode.WebviewPanel | undefined;
@@ -19,7 +28,15 @@ export class ClientPanel {
   private catalog: Catalog | undefined;
   private sourceLabel = "工作区";
   private showGoogle = false;
+  private sourceState: ClientSourceState = {
+    mode: "workspace",
+    gitUrl: "",
+    gitBranch: "main",
+    localPath: "",
+    lastError: "",
+  };
   private onRefresh: (() => void) | undefined;
+  private onSetSource: ((next: ClientSourceState) => void | Promise<void>) | undefined;
   private stressRunning = false;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
@@ -28,19 +45,25 @@ export class ClientPanel {
     this.onRefresh = handler;
   }
 
-  open(catalog: Catalog, sourceLabel: string, showGoogle: boolean): void {
+  setSourceHandler(handler: (next: ClientSourceState) => void | Promise<void>): void {
+    this.onSetSource = handler;
+  }
+
+  open(catalog: Catalog, sourceLabel: string, showGoogle: boolean, source?: ProtoSourceConfig): void {
     this.catalog = catalog;
     this.sourceLabel = sourceLabel;
     this.showGoogle = showGoogle;
+    if (source) this.sourceState = toClientSource(source);
     this.ensure();
     this.panel?.reveal(vscode.ViewColumn.Beside, false);
     if (this.ready) void this.postBootstrap();
   }
 
-  refresh(catalog: Catalog, sourceLabel: string, showGoogle: boolean): void {
+  refresh(catalog: Catalog, sourceLabel: string, showGoogle: boolean, source?: ProtoSourceConfig): void {
     this.catalog = catalog;
     this.sourceLabel = sourceLabel;
     this.showGoogle = showGoogle;
+    if (source) this.sourceState = toClientSource(source);
     if (this.panel && this.ready) void this.postBootstrap();
   }
 
@@ -72,7 +95,7 @@ export class ClientPanel {
         total?: number;
         command?: string;
         args?: string[];
-      };
+      } & Record<string, unknown>;
       file?: string;
       line?: number;
       id?: string;
@@ -86,6 +109,27 @@ export class ClientPanel {
         this.onRefresh?.();
         return;
       }
+      if (message.type === "setSource" && message.payload && this.onSetSource) {
+        const mode = message.payload.mode === "git" ? "git" : "workspace";
+        const next: ClientSourceState = {
+          mode,
+          gitUrl: String(message.payload.gitUrl || "").trim(),
+          gitBranch: String(message.payload.gitBranch || "main").trim() || "main",
+          localPath: this.sourceState.localPath,
+          lastError: "",
+        };
+        await this.onSetSource(next);
+        return;
+      }
+      if (message.type === "exportFlow" && message.payload && this.panel) {
+        await exportFlowFile(message.payload);
+        return;
+      }
+      if (message.type === "importFlow" && this.panel) {
+        const data = await importFlowFile();
+        if (data) this.panel.webview.postMessage({ type: "flowImportData", payload: data });
+        return;
+      }
       if (message.type === "saveEnvs" && message.payload) {
         await saveEnvFile(message.payload);
         void vscode.window.setStatusBarMessage("ProtoView Client 环境已保存", 2000);
@@ -96,9 +140,7 @@ export class ClientPanel {
         return;
       }
       if (message.type === "invoke" && message.payload && this.catalog && this.panel) {
-        const result = message.payload.protocol === "http"
-          ? await invokeHttp(message.payload)
-          : await invokeGrpc(this.catalog, message.payload);
+        const result = await dispatchInvoke(this.catalog, message.payload);
         this.panel.webview.postMessage({ type: "invokeResult", ...result });
         return;
       }
@@ -185,6 +227,7 @@ export class ClientPanel {
       type: "bootstrap",
       catalog: toClientCatalog(this.catalog, this.sourceLabel, this.showGoogle),
       envs,
+      source: this.sourceState,
       qr: qr.toString(),
     });
   }
@@ -224,7 +267,10 @@ export class ClientPanel {
           </div>
         </div>
         <div class="side-meta-row">
-          <div class="side-meta" id="sourceMeta">加载中…</div>
+          <div class="side-meta-group">
+            <div class="side-meta" id="sourceMeta">加载中…</div>
+            <button class="btn side-source-btn" id="sourceConfigBtn" type="button" title="在 Client 内配置工作区或 Git 来源">自定义源</button>
+          </div>
           <button class="btn side-flow-btn primary" id="flowBtn" type="button" title="链路调试">链路调试</button>
         </div>
         <input class="side-search" id="filter" placeholder="筛选 package / service / 接口" />
@@ -236,6 +282,8 @@ export class ClientPanel {
         <select class="pill" id="protocolSelect" title="协议">
           <option value="grpc">gRPC</option>
           <option value="http">HTTP</option>
+          <option value="sse">SSE</option>
+          <option value="websocket">WebSocket</option>
         </select>
         <select class="pill hidden" id="httpMethodSelect" title="HTTP 方法">
           <option>GET</option>
@@ -390,6 +438,8 @@ export class ClientPanel {
         <button class="btn" id="flowClearBtn" type="button">清空画布</button>
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
         <button class="btn" id="flowStressBtn" type="button">压测</button>
+        <button class="btn" id="flowExportBtn" type="button" title="导出当前链路节点与连线配置">导出</button>
+        <button class="btn" id="flowImportBtn" type="button" title="从文件导入链路配置">导入</button>
         <button class="btn" id="flowCloseBtn" type="button">返回 Client</button>
       </div>
       <div class="flow-stage" id="flowStage">
@@ -442,6 +492,8 @@ export class ClientPanel {
             <select id="flowNodeProtocol">
               <option value="grpc">gRPC</option>
               <option value="http">HTTP</option>
+              <option value="sse">SSE</option>
+              <option value="websocket">WebSocket</option>
             </select>
           </label>
           <label id="flowNodeMethodWrap" class="hidden">方法
@@ -486,6 +538,29 @@ export class ClientPanel {
       <div class="modal-body flow-history-layout">
         <div class="flow-history-list" id="flowHistoryList"></div>
         <pre class="flow-history-detail" id="flowHistoryDetail">选择左侧一条记录查看</pre>
+      </div>
+    </div>
+  </div>
+  <div class="modal-mask" id="sourceModal">
+    <div class="modal">
+      <div class="modal-head">
+        <span>自定义 Proto 来源</span>
+        <button class="icon-btn" id="closeSourceModal" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="stress-note">与侧边栏「Proto 来源」相同：工作区扫描本地 .proto；Git 会拉取到系统临时目录。</p>
+        <div class="source-mode-row">
+          <label class="source-mode-opt"><input type="radio" name="sourceMode" value="workspace" /> 工作区自动识别</label>
+          <label class="source-mode-opt"><input type="radio" name="sourceMode" value="git" /> 自定义 Git 来源</label>
+        </div>
+        <div id="sourceGitFields" class="source-git-fields hidden">
+          <label>Git 地址<input id="sourceGitUrl" placeholder="https://github.com/org/repo.git" /></label>
+          <label>分支<input id="sourceGitBranch" placeholder="main" /></label>
+          <p class="stress-note" id="sourceGitHint"></p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" id="applySourceBtn" type="button">应用并刷新</button>
       </div>
     </div>
   </div>
@@ -546,7 +621,6 @@ export class ClientPanel {
           <p class="ai-poem">所爱隔山海，山海亦可平<br/>消耗了 token，贡献点爱心<br/>尊重每个热爱开发的程序员</p>
         </div>
         <div class="ai-actions">
-          <button class="btn" id="aiMusicBtn" type="button">音乐</button>
           <button class="btn" id="closeAiBtn" type="button">关闭</button>
         </div>
       </div>
@@ -572,6 +646,56 @@ export class ClientPanel {
 </body>
 </html>`;
   }
+}
+
+function toClientSource(config: ProtoSourceConfig): ClientSourceState {
+  return {
+    mode: config.mode === "git" ? "git" : "workspace",
+    gitUrl: config.gitUrl || "",
+    gitBranch: config.gitBranch || "main",
+    localPath: config.localPath || "",
+    lastError: config.lastError || "",
+  };
+}
+
+async function exportFlowFile(payload: unknown): Promise<void> {
+  const uri = await vscode.window.showSaveDialog({
+    title: "导出链路配置",
+    saveLabel: "导出",
+    filters: { JSON: ["json"] },
+    defaultUri: vscode.Uri.file(`protoview-flow-${stamp()}.json`),
+  });
+  if (!uri) return;
+  await fs.writeFile(uri.fsPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  void vscode.window.showInformationMessage(`链路配置已导出：${uri.fsPath}`);
+}
+
+async function importFlowFile(): Promise<unknown | undefined> {
+  const uris = await vscode.window.showOpenDialog({
+    title: "导入链路配置",
+    openLabel: "导入",
+    canSelectMany: false,
+    filters: { JSON: ["json"] },
+  });
+  if (!uris?.length) return undefined;
+  try {
+    const text = await fs.readFile(uris[0].fsPath, "utf8");
+    const data = JSON.parse(text) as unknown;
+    if (!data || typeof data !== "object") {
+      void vscode.window.showErrorMessage("链路配置文件无效：根节点不是对象");
+      return undefined;
+    }
+    return data;
+  } catch (error) {
+    void vscode.window.showErrorMessage(`导入失败：${(error as Error).message || error}`);
+    return undefined;
+  }
+}
+
+function stamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
 async function envFilePath(): Promise<string | undefined> {

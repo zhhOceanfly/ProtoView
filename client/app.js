@@ -21,6 +21,13 @@
     stressMode: "light",
     stressId: "",
     ghzLog: "",
+    source: {
+      mode: "workspace",
+      gitUrl: "",
+      gitBranch: "main",
+      localPath: "",
+      lastError: "",
+    },
   };
 
   const $ = (id) => document.getElementById(id);
@@ -47,6 +54,7 @@
     envNote: $("envNote"),
     envList: $("envList"),
     envModal: $("envModal"),
+    sourceModal: $("sourceModal"),
     bulkModal: $("bulkModal"),
     bulkText: $("bulkText"),
   };
@@ -190,13 +198,30 @@
     persistEnvs();
   }
 
+  function currentProtocol() {
+    const raw = ($("protocolSelect")?.value || "grpc").toLowerCase();
+    if (raw === "http" || raw === "sse" || raw === "websocket") return raw;
+    return "grpc";
+  }
+
   function syncProtocolUi() {
-    const http = ($("protocolSelect")?.value || "grpc") === "http";
-    $("httpMethodSelect")?.classList.toggle("hidden", !http);
-    $("httpPath")?.classList.toggle("hidden", !http);
-    document.querySelector('[data-stress-mode="ghz"]')?.classList.toggle("hidden", http);
-    if (http && state.stressMode === "ghz") setStressMode("light");
-    if (els.address) els.address.placeholder = http ? "HTTP host:port 或 https://host" : "gRPC host:port";
+    const protocol = currentProtocol();
+    const needsPath = protocol === "http" || protocol === "sse" || protocol === "websocket";
+    const needsMethod = protocol === "http" || protocol === "sse";
+    const grpcOnly = protocol === "grpc";
+    $("httpMethodSelect")?.classList.toggle("hidden", !needsMethod);
+    $("httpPath")?.classList.toggle("hidden", !needsPath);
+    document.querySelector('[data-stress-mode="ghz"]')?.classList.toggle("hidden", !grpcOnly);
+    if (!grpcOnly && state.stressMode === "ghz") setStressMode("light");
+    if (els.address) {
+      const placeholders = {
+        grpc: "gRPC host:port",
+        http: "HTTP host:port 或 https://host",
+        sse: "SSE host:port 或 https://host",
+        websocket: "WS host:port 或 wss://host",
+      };
+      els.address.placeholder = placeholders[protocol] || placeholders.grpc;
+    }
   }
 
   function fillEnvForm() {
@@ -313,8 +338,14 @@
         ? draft.metadata
         : [{ name: "", value: "", description: "" }];
       state.auth = normalizeAuth(draft.auth);
-      if ($("protocolSelect")) $("protocolSelect").value = draft.protocol === "http" ? "http" : "grpc";
-      if ($("httpMethodSelect")) $("httpMethodSelect").value = draft.httpMethod || rpc.httpVerb || "POST";
+      if ($("protocolSelect")) {
+        const p = (draft.protocol || "grpc").toLowerCase();
+        $("protocolSelect").value = ["http", "sse", "websocket"].includes(p) ? p : "grpc";
+      }
+      if ($("httpMethodSelect")) {
+        $("httpMethodSelect").value = draft.httpMethod
+          || (draft.protocol === "sse" ? "GET" : rpc.httpVerb || "POST");
+      }
       if ($("httpPath")) $("httpPath").value = draft.httpPath || rpc.httpPath || "";
     } else {
       els.messageEditor.value = generateMessage(rpc);
@@ -854,6 +885,15 @@
       state.envs = data.envs.envs;
       state.activeEnvId = data.envs.activeEnvId || state.envs[0].id;
     }
+    if (data.source && typeof data.source === "object") {
+      state.source = {
+        mode: data.source.mode === "git" ? "git" : "workspace",
+        gitUrl: data.source.gitUrl || "",
+        gitBranch: data.source.gitBranch || "main",
+        localPath: data.source.localPath || "",
+        lastError: data.source.lastError || "",
+      };
+    }
     els.sourceMeta.textContent = state.catalog.sourceLabel || "ProtoView Client";
     if (data.qr) state.qr = data.qr;
     renderEnvSelect();
@@ -863,6 +903,63 @@
       const first = state.catalog.packages?.[0]?.services?.[0]?.rpcs?.[0];
       if (first) selectRpc(first.id);
     }
+  }
+
+  function syncSourceModalUi() {
+    const mode = document.querySelector('input[name="sourceMode"]:checked')?.value || "workspace";
+    $("sourceGitFields")?.classList.toggle("hidden", mode !== "git");
+  }
+
+  function fillSourceModal() {
+    const mode = state.source.mode === "git" ? "git" : "workspace";
+    for (const input of document.querySelectorAll('input[name="sourceMode"]')) {
+      input.checked = input.value === mode;
+    }
+    if ($("sourceGitUrl")) $("sourceGitUrl").value = state.source.gitUrl || "";
+    if ($("sourceGitBranch")) $("sourceGitBranch").value = state.source.gitBranch || "main";
+    const hint = $("sourceGitHint");
+    if (hint) {
+      const parts = [];
+      if (state.source.localPath) parts.push(`临时目录：${state.source.localPath}`);
+      if (state.source.lastError) parts.push(`上次错误：${state.source.lastError}`);
+      hint.textContent = parts.join(" · ") || "应用后会 clone/fetch 到系统临时目录并刷新接口树。";
+    }
+    syncSourceModalUi();
+  }
+
+  function openSourceModal() {
+    fillSourceModal();
+    openModal(els.sourceModal);
+  }
+
+  function applySourceFromModal() {
+    const mode = document.querySelector('input[name="sourceMode"]:checked')?.value === "git" ? "git" : "workspace";
+    const gitUrl = ($("sourceGitUrl")?.value || "").trim();
+    const gitBranch = ($("sourceGitBranch")?.value || "main").trim() || "main";
+    if (mode === "git") {
+      if (!gitUrl) {
+        setRespBadge("err", "请填写 Git 地址");
+        return;
+      }
+      if (!/^https?:\/\/|^git@|^ssh:\/\//i.test(gitUrl)) {
+        setRespBadge("err", "Git 地址格式无效");
+        return;
+      }
+    }
+    state.source = { ...state.source, mode, gitUrl, gitBranch, lastError: "" };
+    closeModal(els.sourceModal);
+    if (!vscode) {
+      els.sourceMeta.textContent = mode === "git"
+        ? `Git · ${gitBranch} · ${gitUrl}`
+        : "工作区自动识别";
+      setRespBadge("wait", "独立模式仅更新显示；请在扩展内打开 Client 才会真正拉取");
+      return;
+    }
+    setRespBadge("wait", mode === "git" ? "正在应用 Git 来源…" : "正在切换到工作区…");
+    vscode.postMessage({
+      type: "setSource",
+      payload: { mode, gitUrl, gitBranch },
+    });
   }
 
   function openModal(el) { el.classList.add("show"); }
@@ -886,10 +983,18 @@
     ai.selected = -1;
     renderAiBoard();
   });
-  $("aiMusicBtn").addEventListener("click", toggleAiMusic);
   $("refreshBtn").addEventListener("click", () => {
     if (vscode) vscode.postMessage({ type: "refresh" });
     else location.reload();
+  });
+  $("sourceConfigBtn")?.addEventListener("click", openSourceModal);
+  $("closeSourceModal")?.addEventListener("click", () => closeModal(els.sourceModal));
+  $("applySourceBtn")?.addEventListener("click", applySourceFromModal);
+  for (const input of document.querySelectorAll('input[name="sourceMode"]')) {
+    input.addEventListener("change", syncSourceModalUi);
+  }
+  els.sourceModal?.addEventListener("click", (event) => {
+    if (event.target === els.sourceModal) closeModal(els.sourceModal);
   });
   $("treeToggleBtn").addEventListener("click", () => setAllExpanded(!treeIsOpen()));
   $("grpcurlBtn").addEventListener("click", () => {
@@ -911,6 +1016,10 @@
   els.filter.addEventListener("input", renderTree);
   els.envSelect.addEventListener("change", () => applyEnvId(els.envSelect.value));
   $("protocolSelect")?.addEventListener("change", () => {
+    const protocol = currentProtocol();
+    if (protocol === "sse" && $("httpMethodSelect") && !$("httpMethodSelect").dataset.userSet) {
+      $("httpMethodSelect").value = "GET";
+    }
     syncProtocolUi();
     persistCurrentDraft();
   });
@@ -1183,8 +1292,8 @@
       showInvokeResult({ ok: false, status: "INVALID", method: `${rpc.package}.${rpc.service}/${rpc.name}`, host, error: `Message 不是合法 JSON：${error.message}` });
       return;
     }
-    const protocol = $("protocolSelect")?.value === "http" ? "http" : "grpc";
-    const httpMethod = $("httpMethodSelect")?.value || "POST";
+    const protocol = currentProtocol();
+    const httpMethod = $("httpMethodSelect")?.value || (protocol === "sse" ? "GET" : "POST");
     const httpPath = $("httpPath")?.value || rpc.httpPath || "/";
     const payload = {
       id: String(Date.now()),
@@ -1216,9 +1325,13 @@
       return;
     }
     setRespBadge("wait", "发送中…");
-    const label = protocol === "http"
-      ? `${httpMethod} ${httpPath}`
-      : `${rpc.package}.${rpc.service}/${rpc.name}`;
+    const label = protocol === "grpc"
+      ? `${rpc.package}.${rpc.service}/${rpc.name}`
+      : protocol === "websocket"
+        ? `WS ${httpPath}`
+        : protocol === "sse"
+          ? `SSE ${httpMethod} ${httpPath}`
+          : `${httpMethod} ${httpPath}`;
     els.responseView.innerHTML = `<div class="resp-empty">正在请求 ${esc(host || "(未配置)")} · ${esc(label)}</div>`;
     vscode.postMessage({ type: "invoke", payload });
   });
@@ -1231,9 +1344,10 @@
     catch (error) {
       return { error: `Message 不是合法 JSON：${error.message}` };
     }
+    const protocol = currentProtocol();
     return {
-      protocol: $("protocolSelect")?.value === "http" ? "http" : "grpc",
-      httpMethod: $("httpMethodSelect")?.value || rpc.httpVerb || "POST",
+      protocol,
+      httpMethod: $("httpMethodSelect")?.value || (protocol === "sse" ? "GET" : rpc.httpVerb || "POST"),
       httpPath: $("httpPath")?.value || rpc.httpPath || "/",
       host: els.address.value.trim() || activeEnv()?.host || "",
       package: rpc.package,
@@ -1267,7 +1381,7 @@
 
   function buildGhzArgs() {
     const base = currentInvokeBase();
-    if (!base || base.error || base.protocol === "http") return null;
+    if (!base || base.error || base.protocol !== "grpc") return null;
     const rpc = state.selected;
     const concurrency = Math.max(1, Number($("ghzConcurrency").value || 20));
     const total = Math.max(1, Number($("ghzTotal").value || 200));
@@ -1461,6 +1575,11 @@
       catch { return ""; }
     },
     invokeOnce,
+    postHost(type, payload) {
+      if (!vscode) return false;
+      vscode.postMessage(payload === undefined ? { type } : { type, payload });
+      return true;
+    },
     getSelectedRpcId: () => state.selected?.id || "",
     getSelectedRpcLabel: () => state.selected?.name || "",
     listEnvs: () => state.envs.map((env) => ({ id: env.id, name: env.name, host: env.host || "" })),
@@ -1504,7 +1623,7 @@
     if (event.target === els.envModal) closeModal(els.envModal);
   });
 
-  const ai = { tiles: [], selected: -1, solved: false, target: ["山", "海", "平", "爱"], music: null };
+  const ai = { tiles: [], selected: -1, solved: false, target: ["山", "海", "平", "爱"] };
 
   function openAi() {
     const overlay = $("aiOverlay");
@@ -1522,12 +1641,10 @@
       $("aiGame").classList.remove("hidden");
     }
     renderAiBoard();
-    if (!ai.music) startAiMusic();
   }
 
   function closeAi() {
     $("aiOverlay").classList.remove("show");
-    stopAiMusic();
   }
 
   function renderAiBoard() {
@@ -1568,68 +1685,6 @@
     }
     if (list.join("") === "山海平爱") return shuffleTiles(list);
     return list;
-  }
-
-  function toggleAiMusic() {
-    if (ai.music?.playing) stopAiMusic();
-    else startAiMusic();
-  }
-
-  function startAiMusic() {
-    stopAiMusic();
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const master = ctx.createGain();
-    master.gain.value = 0.08;
-    master.connect(ctx.destination);
-    const styles = [playPad, playPluck];
-    const style = styles[Math.floor(Math.random() * styles.length)];
-    let timer = null;
-    let playing = true;
-    function tone(freq, when, dur, type, gain) {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = type;
-      osc.frequency.value = freq;
-      g.gain.setValueAtTime(0.0001, when);
-      g.gain.exponentialRampToValueAtTime(gain, when + 0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-      osc.connect(g);
-      g.connect(master);
-      osc.start(when);
-      osc.stop(when + dur + 0.02);
-    }
-    function playPad() {
-      const roots = [196, 233, 262, 311];
-      const root = roots[Math.floor(Math.random() * roots.length)];
-      const now = ctx.currentTime;
-      [0, 4, 7, 12].forEach((semi, i) => tone(root * Math.pow(2, semi / 12), now + i * 0.08, 2.4, "sine", 0.05));
-    }
-    function playPluck() {
-      const scale = [262, 294, 330, 349, 392, 440];
-      const now = ctx.currentTime;
-      for (let i = 0; i < 4; i++) tone(scale[(i * 2 + Math.floor(Math.random() * 2)) % scale.length], now + i * 0.28, 0.45, "triangle", 0.06);
-    }
-    if (ctx.state === "suspended") ctx.resume();
-    style();
-    timer = setInterval(style, 2200);
-    $("aiMusicBtn").textContent = "音乐开";
-    ai.music = {
-      get playing() { return playing; },
-      stop() {
-        playing = false;
-        if (timer) clearInterval(timer);
-        try { ctx.close(); } catch { /* ignore */ }
-      },
-    };
-  }
-
-  function stopAiMusic() {
-    if (ai.music) ai.music.stop();
-    ai.music = null;
-    const btn = $("aiMusicBtn");
-    if (btn) btn.textContent = "音乐";
   }
 
   function loadSplitState() {

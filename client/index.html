@@ -20,7 +20,10 @@
           </div>
         </div>
         <div class="side-meta-row">
-          <div class="side-meta" id="sourceMeta">独立模式</div>
+          <div class="side-meta-group">
+            <div class="side-meta" id="sourceMeta">独立模式</div>
+            <button class="btn side-source-btn" id="sourceConfigBtn" type="button" title="在 Client 内配置工作区或 Git 来源">自定义源</button>
+          </div>
           <button class="btn side-flow-btn primary" id="flowBtn" type="button" title="链路调试">链路调试</button>
         </div>
         <input class="side-search" id="filter" placeholder="筛选 package / service / 接口" />
@@ -33,6 +36,8 @@
         <select class="pill" id="protocolSelect" title="协议">
           <option value="grpc">gRPC</option>
           <option value="http">HTTP</option>
+          <option value="sse">SSE</option>
+          <option value="websocket">WebSocket</option>
         </select>
         <select class="pill hidden" id="httpMethodSelect" title="HTTP 方法">
           <option>GET</option>
@@ -191,6 +196,8 @@
         <button class="btn" id="flowClearBtn" type="button">清空画布</button>
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
         <button class="btn" id="flowStressBtn" type="button">压测</button>
+        <button class="btn" id="flowExportBtn" type="button" title="导出当前链路节点与连线配置">导出</button>
+        <button class="btn" id="flowImportBtn" type="button" title="从文件导入链路配置">导入</button>
         <button class="btn" id="flowCloseBtn" type="button">返回 Client</button>
       </div>
       <div class="flow-stage" id="flowStage">
@@ -244,6 +251,8 @@
             <select id="flowNodeProtocol">
               <option value="grpc">gRPC</option>
               <option value="http">HTTP</option>
+              <option value="sse">SSE</option>
+              <option value="websocket">WebSocket</option>
             </select>
           </label>
           <label id="flowNodeMethodWrap" class="hidden">方法
@@ -289,6 +298,30 @@
       <div class="modal-body flow-history-layout">
         <div class="flow-history-list" id="flowHistoryList"></div>
         <pre class="flow-history-detail" id="flowHistoryDetail">选择左侧一条记录查看</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="sourceModal">
+    <div class="modal">
+      <div class="modal-head">
+        <span>自定义 Proto 来源</span>
+        <button class="icon-btn" id="closeSourceModal" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="stress-note">与侧边栏「Proto 来源」相同：工作区扫描本地 .proto；Git 会拉取到系统临时目录。</p>
+        <div class="source-mode-row">
+          <label class="source-mode-opt"><input type="radio" name="sourceMode" value="workspace" /> 工作区自动识别</label>
+          <label class="source-mode-opt"><input type="radio" name="sourceMode" value="git" /> 自定义 Git 来源</label>
+        </div>
+        <div id="sourceGitFields" class="source-git-fields hidden">
+          <label>Git 地址<input id="sourceGitUrl" placeholder="https://github.com/org/repo.git" /></label>
+          <label>分支<input id="sourceGitBranch" placeholder="main" /></label>
+          <p class="stress-note" id="sourceGitHint"></p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" id="applySourceBtn" type="button">应用并刷新</button>
       </div>
     </div>
   </div>
@@ -352,7 +385,6 @@
           <p class="ai-poem">所爱隔山海，山海亦可平<br/>消耗了 token，贡献点爱心<br/>尊重每个热爱开发的程序员</p>
         </div>
         <div class="ai-actions">
-          <button class="btn" id="aiMusicBtn" type="button">音乐</button>
           <button class="btn" id="closeAiBtn" type="button">关闭</button>
         </div>
       </div>

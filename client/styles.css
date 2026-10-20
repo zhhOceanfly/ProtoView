@@ -99,12 +99,54 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   justify-content: space-between;
   gap: 8px;
 }
+.side-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
 .side-meta { color: var(--muted); font-size: 11px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-source-btn,
 .side-flow-btn {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-sizing: border-box;
+  font-size: 11px;
+}
+.side-source-btn {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+}
+.side-flow-btn {
   height: 26px;
   padding: 0 10px;
-  font-size: 11px;
+}
+.source-mode-row {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+.source-mode-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+.source-mode-opt:has(input:checked) {
+  border-color: var(--accent);
+}
+.source-git-fields {
+  display: grid;
+  gap: 10px;
 }
 .side-flow-btn.primary {
   background: linear-gradient(120deg, #2563eb, #0891b2);
