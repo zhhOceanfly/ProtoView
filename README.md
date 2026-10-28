@@ -73,9 +73,12 @@ npx @zhhoceanfly/protoview --git https://github.com/org/repo.git --branch main
 
 ```bash
 npm install
+npm ci --prefix packages/cli   # CLI 是独立包，需要单独装依赖（ws 等）
 npm run compile
 npm run dev:cli          # CLI 开发：改 client/ 刷新浏览器，改 .ts 自动重启
 ```
+
+> 只跑 `npm run build:cli` / `npm run dev:cli` 时，如果忘了 `npm ci --prefix packages/cli`，会提示 `packages/cli 缺少依赖：@types/ws…`，按提示补装即可。
 
 按 **F5**（「运行 ProtoView」）启动扩展调试。调试宿主会 `--disable-extensions`，只加载本仓库开发版，避免与已安装的商店版（同 ID `zoceanfly.protoview`）冲突；主窗口里的商店版不受影响。打包与发布见 **[Publish.md](Publish.md)**。
 

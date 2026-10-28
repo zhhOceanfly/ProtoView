@@ -105,6 +105,15 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 console.log("[dev-cli] initial compile…");
+// packages/cli 是独立包，根目录 npm ci 不会装它的依赖
+(() => {
+  const required = ["ws", "@types/ws", "@grpc/grpc-js", "@grpc/proto-loader", "protobufjs"];
+  const missing = required.filter((name) => !fs.existsSync(path.join(cliRoot, "node_modules", ...name.split("/"))));
+  if (!missing.length) return;
+  console.error(`[dev-cli] packages/cli 缺少依赖：${missing.join(", ")}`);
+  console.error("[dev-cli] 请先执行：npm ci --prefix packages/cli");
+  process.exit(1);
+})();
 execSync("npx tsc -p ./", { cwd: root, stdio: "inherit" });
 execSync("npx tsc -p ./", { cwd: cliRoot, stdio: "inherit" });
 syncCore();

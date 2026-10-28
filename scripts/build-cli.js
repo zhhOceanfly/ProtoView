@@ -51,6 +51,18 @@ function copyDir(src, dest) {
   }
 }
 
+/** packages/cli 是独立包，根目录 npm ci 不会装它的依赖；缺了 tsc 会报 TS2307 */
+function ensureCliDeps() {
+  const required = ["ws", "@types/ws", "@grpc/grpc-js", "@grpc/proto-loader", "protobufjs"];
+  const missing = required.filter((name) => !fs.existsSync(path.join(cliRoot, "node_modules", ...name.split("/"))));
+  if (!missing.length) return;
+  console.error(`[build-cli] packages/cli 缺少依赖：${missing.join(", ")}`);
+  console.error("[build-cli] 请先执行：npm ci --prefix packages/cli");
+  process.exit(1);
+}
+
+ensureCliDeps();
+
 console.log("[build-cli] compile extension src…");
 execSync("npx tsc -p ./", { cwd: root, stdio: "inherit" });
 

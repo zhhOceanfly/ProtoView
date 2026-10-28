@@ -40,6 +40,9 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/cli/package-lock.json
 
       - name: Show npm / node
         run: |
@@ -48,6 +51,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # packages/cli 是独立包（有自己的 package-lock），根目录 npm ci 不会装它的
+      # 依赖，缺 ws / @types/ws 会让 tsc 报 TS2307
+      - name: Install CLI dependencies
+        run: npm ci --prefix packages/cli
 
       - name: Build CLI
         run: npm run build:cli
