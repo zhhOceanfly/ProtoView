@@ -398,13 +398,17 @@
           <div class="children${svcOpen ? "" : " collapsed"}">`;
         for (const rpc of rpcs) {
           const active = state.selected?.id === rpc.id ? " active" : "";
+          const streamHint = rpc.requestStream && rpc.responseStream ? " · bidi"
+            : rpc.requestStream ? " · client-stream"
+            : rpc.responseStream ? " · server-stream"
+            : "";
           html += `<div>
             <button class="node-row${active}" type="button" data-rpc="${esc(rpc.id)}" title="在链路调试中按住拖到画布">
               <span class="caret"></span>
               <span class="kind">⇢</span>
-              <span class="label">${esc(rpc.name)}</span>
+              <span class="label">${esc(rpc.name)}${esc(streamHint)}</span>
             </button>
-            <div class="rpc-desc">${esc(rpc.comment || `${rpc.request} → ${rpc.response}`)}</div>
+            <div class="rpc-desc">${esc(rpc.comment || `${rpc.requestStream ? "stream " : ""}${rpc.request} → ${rpc.responseStream ? "stream " : ""}${rpc.response}`)}</div>
           </div>`;
         }
         html += `</div></div>`;
@@ -602,6 +606,64 @@
     `;
   }
 
+  function preferIntAsString(field) {
+    if (!field) return false;
+    if (field.jstype === "JS_STRING") return true;
+    if (field.jstype === "JS_NUMBER") return false;
+    return /^(int64|uint64|sint64|fixed64|sfixed64)$/i.test(String(field.type || ""));
+  }
+
+  function canBeSafeIntegerText(digitStr) {
+    if (!/^-?\d+$/.test(digitStr)) return false;
+    const n = Number(digitStr);
+    return Number.isSafeInteger(n) && String(n) === digitStr;
+  }
+
+  /** JSON.parse 前把超大整型字面量加引号，避免 JS Number 丢精度；jstype/int64 发送时保持字符串 */
+  function parseJsonPreserveLongs(raw) {
+    const src = String(raw ?? "").trim() || "{}";
+    const quoted = src.replace(/([:\[,]\s*)(-?\d+)(\s*[,\]\}])/g, (m, pre, digits, post) => {
+      if (canBeSafeIntegerText(digits)) return m;
+      return `${pre}"${digits}"${post}`;
+    });
+    return JSON.parse(quoted);
+  }
+
+  function normalizeBodyLongs(value, fields) {
+    if (!fields?.length || value == null || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value;
+    const out = { ...value };
+    for (const field of fields) {
+      if (!field || !Object.prototype.hasOwnProperty.call(out, field.name)) continue;
+      const raw = out[field.name];
+      if (field.repeated && Array.isArray(raw)) {
+        const itemField = { ...field, repeated: false };
+        out[field.name] = raw.map((item) => {
+          if (preferIntAsString(itemField) && (typeof item === "number" || typeof item === "string")) {
+            return String(item);
+          }
+          if (item && typeof item === "object") {
+            const typeDef = field.typeId ? state.catalog.types?.[field.typeId] : undefined;
+            if (typeDef?.kind === "message") return normalizeBodyLongs(item, typeDef.fields || []);
+          }
+          return item;
+        });
+        continue;
+      }
+      if (preferIntAsString(field) && (typeof raw === "number" || (typeof raw === "string" && /^-?\d+$/.test(raw)))) {
+        out[field.name] = String(raw);
+        continue;
+      }
+      if (raw && typeof raw === "object" && !Array.isArray(raw) && !field.key) {
+        const typeDef = field.typeId ? state.catalog.types?.[field.typeId] : undefined;
+        if (typeDef?.kind === "message") {
+          out[field.name] = normalizeBodyLongs(raw, typeDef.fields || []);
+        }
+      }
+    }
+    return out;
+  }
+
   function sampleValue(field, depth = 0, seen = new Set()) {
     if (field.repeated) {
       if (depth >= 2) return [];
@@ -609,7 +671,7 @@
     }
     if (field.key) {
       if (depth >= 2) return {};
-      const keySample = sampleScalar(field.key, `${field.name}Key`);
+      const keySample = sampleScalar(field.key, `${field.name}Key`, field);
       return { [String(keySample)]: sampleValue({ ...field, key: undefined }, depth + 1, seen) };
     }
 
@@ -617,7 +679,7 @@
     const typeDef = field.typeId ? state.catalog.types?.[field.typeId] : undefined;
     if (typeDef?.kind === "enum") return sampleEnum(typeDef);
     if (typeDef?.kind === "message") return sampleMessage(typeDef, depth, seen);
-    return sampleScalar(type, field.name);
+    return sampleScalar(type, field.name, field);
   }
 
   function sampleEnum(typeDef) {
@@ -638,7 +700,7 @@
     return body;
   }
 
-  function sampleScalar(type, fieldName) {
+  function sampleScalar(type, fieldName, field) {
     const name = fieldName || "";
     const lower = name.toLowerCase();
     const hint = nameHint(lower);
@@ -655,7 +717,9 @@
       return 1.5;
     }
     if (["int32", "int64", "uint32", "uint64", "sint32", "sint64", "fixed32", "fixed64", "sfixed32", "sfixed64"].includes(type)) {
-      return sampleNumber(name, lower, hint, type.includes("64"));
+      const asString = preferIntAsString(field || { type, jstype: field?.jstype });
+      const n = sampleNumber(name, lower, hint, type.includes("64") || asString);
+      return asString ? String(n) : n;
     }
     return sampleString(name, lower, "default");
   }
@@ -739,8 +803,10 @@
 
   function formatMessage() {
     try {
-      const obj = JSON.parse(els.messageEditor.value || "{}");
-      els.messageEditor.value = JSON.stringify(obj, null, 2);
+      const obj = parseJsonPreserveLongs(els.messageEditor.value || "{}");
+      const rpc = state.selected;
+      const normalized = rpc ? normalizeBodyLongs(obj, rpc.requestFields || []) : obj;
+      els.messageEditor.value = JSON.stringify(normalized, null, 2);
       state.messageDirty = true;
       setRespBadge("ok", "Message 已格式化");
     } catch (error) {
@@ -943,7 +1009,11 @@
     if (!rpc) return "";
     const host = els.address.value.trim() || activeEnv()?.host || "localhost:50051";
     let body = (els.messageEditor.value || "{}").trim();
-    try { body = JSON.stringify(JSON.parse(body)); } catch { /* keep raw */ }
+    try {
+      const rpc = state.selected;
+      const parsed = parseJsonPreserveLongs(body);
+      body = JSON.stringify(rpc ? normalizeBodyLongs(parsed, rpc.requestFields || []) : parsed);
+    } catch { /* keep raw */ }
     const headers = Object.entries(requestMetadata())
       .map(([name, value]) => `  -H ${shellQuote(`${name}: ${value ?? ""}`)}`);
     const proto = rpc.file ? `  -proto ${shellQuote(rpc.file)}` : "";
@@ -1751,7 +1821,7 @@
     const host = els.address.value.trim() || env?.host || "";
     let body = {};
     try {
-      body = JSON.parse(els.messageEditor.value || "{}");
+      body = normalizeBodyLongs(parseJsonPreserveLongs(els.messageEditor.value || "{}"), rpc.requestFields || []);
     } catch (error) {
       showInvokeResult({ ok: false, status: "INVALID", method: `${rpc.package}.${rpc.service}/${rpc.name}`, host, error: `Message 不是合法 JSON：${error.message}` });
       return;
@@ -1804,8 +1874,9 @@
     const rpc = state.selected;
     if (!rpc) return null;
     let body = {};
-    try { body = JSON.parse(els.messageEditor.value || "{}"); }
-    catch (error) {
+    try {
+      body = normalizeBodyLongs(parseJsonPreserveLongs(els.messageEditor.value || "{}"), rpc.requestFields || []);
+    } catch (error) {
       return { error: `Message 不是合法 JSON：${error.message}` };
     }
     const protocol = currentProtocol();
@@ -2036,17 +2107,153 @@
     });
   }
 
+  function streamOpen(partial) {
+    return new Promise((resolve) => {
+      if (!vscode) {
+        resolve({ ok: false, status: "UNAVAILABLE", ms: 0, error: "需要 VS Code Client" });
+        return;
+      }
+      const id = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const host = partial?.host || els.address.value.trim() || activeEnv()?.host || "";
+      const handler = (event) => {
+        const data = event.data;
+        if (!data || data.type !== "streamOpenResult" || data.id !== id) return;
+        window.removeEventListener("message", handler);
+        resolve(data);
+      };
+      window.addEventListener("message", handler);
+      vscode.postMessage({
+        type: "streamOpen",
+        payload: {
+          id,
+          host,
+          tls: $("tlsCheck").checked,
+          ...partial,
+        },
+      });
+    });
+  }
+
+  function streamWrite(streamId, body) {
+    return new Promise((resolve) => {
+      if (!vscode) {
+        resolve({ ok: false, error: "需要 VS Code Client" });
+        return;
+      }
+      const id = `sw-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const handler = (event) => {
+        const data = event.data;
+        if (!data || data.type !== "streamWriteResult" || data.id !== id) return;
+        window.removeEventListener("message", handler);
+        resolve(data);
+      };
+      window.addEventListener("message", handler);
+      vscode.postMessage({ type: "streamWrite", payload: { id, streamId, body } });
+    });
+  }
+
+  function streamClose(streamId) {
+    return new Promise((resolve) => {
+      if (!vscode) {
+        resolve({ ok: false, error: "需要 VS Code Client" });
+        return;
+      }
+      const id = `sc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const handler = (event) => {
+        const data = event.data;
+        if (!data || data.type !== "streamCloseResult" || data.id !== id) return;
+        window.removeEventListener("message", handler);
+        resolve(data);
+      };
+      window.addEventListener("message", handler);
+      vscode.postMessage({ type: "streamClose", payload: { id, streamId } });
+    });
+  }
+
+  function decodeBytes(partial) {
+    return new Promise((resolve) => {
+      if (!vscode) {
+        resolve({ ok: false, error: "需要 VS Code Client" });
+        return;
+      }
+      const id = `db-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const handler = (event) => {
+        const data = event.data;
+        if (!data || data.type !== "decodeBytesResult" || data.id !== id) return;
+        window.removeEventListener("message", handler);
+        resolve(data);
+      };
+      window.addEventListener("message", handler);
+      vscode.postMessage({
+        type: "decodeBytes",
+        payload: { id, ...partial },
+      });
+    });
+  }
+
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data) return;
+    if (data.type === "streamData" || data.type === "streamEnded") {
+      try {
+        window.ProtoViewFlow?.onHostStreamEvent?.(data);
+      } catch { /* ignore */ }
+    }
+  });
+
   window.ProtoViewClient = {
     findRpc,
     getType(typeId) {
       if (!typeId) return undefined;
       return state.catalog.types?.[typeId];
     },
+    findType(name) {
+      const raw = String(name || "").trim();
+      if (!raw) return undefined;
+      const types = state.catalog.types || {};
+      if (types[raw]) return types[raw];
+      const bare = raw.includes(".") ? raw.split(".").pop() : raw;
+      let found;
+      for (const item of Object.values(types)) {
+        if (!item) continue;
+        if (item.fullName === raw || item.name === raw) return item;
+        if (item.name === bare) found = found || item;
+        if (item.fullName?.endsWith(`.${bare}`)) found = found || item;
+      }
+      return found;
+    },
+    getAllTypes() {
+      return state.catalog.types || {};
+    },
+    /** 供链路模板/压测按「包/服务/方法」重新定位接口 */
+    listRpcs() {
+      const out = [];
+      for (const pkg of state.catalog.packages || []) {
+        for (const service of pkg.services || []) {
+          for (const rpc of service.rpcs || []) {
+            out.push({
+              id: rpc.id,
+              name: rpc.name,
+              package: pkg.name,
+              service: service.name,
+              file: rpc.file,
+              requestStream: Boolean(rpc.requestStream),
+              responseStream: Boolean(rpc.responseStream),
+            });
+          }
+        }
+      }
+      return out;
+    },
     sampleField(field) {
       try { return sampleValue(field); }
       catch { return ""; }
     },
     invokeOnce,
+    streamOpen,
+    streamWrite,
+    streamClose,
+    decodeBytes,
     postHost(type, payload) {
       if (!vscode) return false;
       vscode.postMessage(payload === undefined ? { type } : { type, payload });

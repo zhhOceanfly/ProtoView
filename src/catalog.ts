@@ -30,6 +30,8 @@ export interface FieldView {
   key?: LinkedType;
   value: LinkedType;
   oneof?: string;
+  /** protobuf jstype option */
+  jstype?: "JS_STRING" | "JS_NUMBER" | "JS_NORMAL";
 }
 
 export interface MessageView {
@@ -282,6 +284,7 @@ export function buildCatalog(files: ProtoFile[], errors: { file: string; message
     key: field.mapKey ? linkType(from, field.mapKey, scope) : undefined,
     value: linkType(from, field.mapValue ?? field.typeName, scope),
     oneof,
+    jstype: field.jstype,
   });
 
   const fileOfMessage = new Map<string, ProtoFile>();

@@ -215,6 +215,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.6",
     "@grpc/proto-loader": "^0.8.1",
-    "nrm": "^2.1.0"
+    "nrm": "^2.1.0",
+    "protobufjs": "^7.5.4"
   }
 }

@@ -8,7 +8,8 @@ import {
   defaultEnvFile,
   toClientCatalog,
 } from "./clientModel";
-import { GrpcInvokeRequest } from "./grpcInvoke";
+import { decodeBytesMessage } from "./decodeBytes";
+import { closeGrpcStream, GrpcInvokeRequest, openGrpcStream, writeGrpcStream } from "./grpcInvoke";
 import { cancelStress, runStress } from "./grpcStress";
 import { dispatchInvoke } from "./invokeDispatch";
 import { openSource } from "./panel";
@@ -200,6 +201,36 @@ export class ClientPanel {
         this.post({ type: "invokeResult", ...result });
         return;
       }
+      if (message.type === "streamOpen" && message.payload && this.catalog && this.panel) {
+        const result = await openGrpcStream(this.catalog, message.payload as GrpcInvokeRequest, {
+          onData: (event) => this.post({ type: "streamData", ...event }),
+          onEnd: (event) => this.post({ type: "streamEnded", ...event }),
+        });
+        this.post({ type: "streamOpenResult", ...result });
+        return;
+      }
+      if (message.type === "streamWrite" && message.payload && this.panel) {
+        const streamId = String(message.payload.streamId || "");
+        const result = await writeGrpcStream(streamId, message.payload.body);
+        this.post({ type: "streamWriteResult", id: message.payload.id, streamId, ...result });
+        return;
+      }
+      if (message.type === "streamClose" && message.payload && this.panel) {
+        const streamId = String(message.payload.streamId || "");
+        const result = await closeGrpcStream(streamId);
+        this.post({ type: "streamCloseResult", id: message.payload.id, ...result });
+        return;
+      }
+      if (message.type === "decodeBytes" && message.payload && this.catalog && this.panel) {
+        const result = await decodeBytesMessage(this.catalog, message.payload as unknown as {
+          id?: string;
+          typeName: string;
+          file?: string;
+          data: unknown;
+        });
+        this.post({ type: "decodeBytesResult", ...result });
+        return;
+      }
       if (message.type === "stressCancel" && message.id) {
         cancelStress(message.id);
         return;
@@ -292,6 +323,7 @@ export class ClientPanel {
     const styles = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "styles.css"));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "app.js"));
     const flowScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "flow.js"));
+    const tplScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "flowTemplates.js"));
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource} 'unsafe-inline'`,
@@ -500,51 +532,35 @@ export class ClientPanel {
     <main class="main flow-main hidden" id="mainFlow">
       <div class="flow-topbar">
         <strong>链路调试</strong>
-        <span class="flow-hint">按住左侧接口拖到画布松手 · 双击也可添加 · 右键节点编辑</span>
+        <span class="flow-hint">先加「起始步骤」再连接口 · 从右侧圆点拖出连线 · 点线选中，右键删除</span>
         <div class="spacer"></div>
         <button class="btn" id="flowAddSelectedBtn" type="button">添加选中接口</button>
-        <button class="btn" id="flowClearBtn" type="button">清空画布</button>
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
-        <button class="btn" id="flowStressBtn" type="button">压测</button>
         <button class="btn" id="flowExportBtn" type="button" title="导出当前链路节点与连线配置">导出</button>
         <button class="btn" id="flowImportBtn" type="button" title="从文件导入链路配置">导入</button>
         <button class="btn" id="flowCloseBtn" type="button">返回 Client</button>
       </div>
       <div class="flow-stage" id="flowStage">
-        <div class="flow-empty" id="flowEmpty">从左侧拖入接口，或点「添加选中接口」</div>
+        <div class="flow-empty" id="flowEmpty">点右上角「＋ 起始步骤」，再拖入接口并连线</div>
+        <div class="flow-float-tools" id="flowFloatTools">
+          <button class="flow-float-toggle" id="flowFloatToggle" type="button" title="收起/展开工具栏">⋯</button>
+          <div class="flow-float-items" id="flowFloatItems">
+            <button class="btn" id="flowAddStartBtn" type="button" title="添加起始步骤（设置本段运行次数）">＋ 起始步骤</button>
+            <button class="btn" id="flowClearBtn" type="button">清空画布</button>
+            <button class="btn" id="flowTplBtn" type="button" title="画布模板">模板</button>
+            <button class="btn flow-float-icon" id="flowUndoBtn" type="button" title="撤销 (Ctrl+Z)" disabled>↶</button>
+            <button class="btn flow-float-icon" id="flowRedoBtn" type="button" title="恢复 (Ctrl+Shift+Z)" disabled>↷</button>
+          </div>
+        </div>
         <svg class="flow-edges" id="flowEdges"></svg>
         <div class="flow-world" id="flowWorld"></div>
       </div>
       <div class="flow-menu hidden" id="flowMenu" style="display:none">
         <button type="button" data-flow-act="edit">编辑</button>
         <button type="button" data-flow-act="view-resp">查看响应</button>
+        <button type="button" data-flow-act="send-msg" class="hidden">收发消息</button>
+        <button type="button" data-flow-act="close-stream" class="hidden">关闭连接</button>
         <button type="button" data-flow-act="delete">删除</button>
-      </div>
-      <div class="flow-drawer-mask" id="flowStressDrawer">
-        <aside class="flow-drawer" role="dialog" aria-label="链路压测">
-          <div class="flow-drawer-head">
-            <strong>链路压测</strong>
-            <button class="icon-btn" id="flowStressClose" type="button" title="关闭">✕</button>
-          </div>
-          <div class="flow-drawer-body">
-            <p class="stress-note">按拓扑顺序重复跑整条链路（轻量并发，无 ghz）。复用节点 Message / Metadata / 变量提取。</p>
-            <div class="stress-form">
-              <label>并发 <input id="flowStressConcurrency" type="number" min="1" max="5" value="1" /></label>
-              <label>总次数 <input id="flowStressTotal" type="number" min="1" max="100" value="10" /></label>
-            </div>
-            <div class="flow-drawer-actions">
-              <button class="btn primary" id="flowStressStartBtn" type="button">开始压测</button>
-              <button class="btn" id="flowStressStopBtn" type="button" disabled>停止</button>
-            </div>
-            <div class="stress-progress-wrap">
-              <div class="stress-progress-bar"><i id="flowStressProgressBar"></i></div>
-              <div class="stress-progress-text" id="flowStressProgressText">未开始</div>
-            </div>
-            <div class="stress-result" id="flowStressResult">
-              <div class="stress-empty">压测结果会显示在这里。</div>
-            </div>
-          </div>
-        </aside>
       </div>
     </main>
     <aside class="source-drawer hidden" id="sourceDrawer" aria-label="源码预览">
@@ -568,42 +584,64 @@ export class ClientPanel {
         <button class="icon-btn" id="closeFlowEdit" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <div class="flow-node-transport">
-          <label>协议
-            <select id="flowNodeProtocol">
-              <option value="grpc">gRPC</option>
-              <option value="http">HTTP</option>
-              <option value="sse">SSE</option>
-              <option value="websocket">WebSocket</option>
-            </select>
-          </label>
-          <label id="flowNodeMethodWrap" class="hidden">方法
-            <select id="flowNodeHttpMethod">
-              <option>GET</option>
-              <option>POST</option>
-              <option>PUT</option>
-              <option>PATCH</option>
-              <option>DELETE</option>
-            </select>
-          </label>
-          <label id="flowNodePathWrap" class="hidden">路径
-            <input id="flowNodeHttpPath" placeholder="/path" />
-          </label>
-          <label>环境
-            <select id="flowNodeEnv"></select>
-          </label>
+        <div id="flowStartEditFields" class="flow-start-edit hidden">
+          <label>步骤名称 <input id="flowStartName" placeholder="步骤1" /></label>
+          <label>运行次数 <input id="flowStartRuns" type="number" min="1" max="9999" value="1" /></label>
+          <label>间隔(秒) <input id="flowStartInterval" type="number" min="0" step="0.1" value="1" /></label>
+          <label class="flow-check"><input id="flowStartEnabled" type="checkbox" checked /> 全量运行时启用本步骤</label>
+          <p class="stress-note">本起始步骤之后的接口会按拓扑顺序重复执行「运行次数」次，每次之间等待「间隔」秒（默认 1 次 / 1 秒）。节点上的开关可快速启停；「运行」按钮可单独跑本步骤。</p>
         </div>
-        <p class="stress-note">请求字段值支持 <code>{{变量名}}</code>；响应字段可填写「提取变量」供后续节点使用（如写入 Metadata / Header）。</p>
-        <h4 class="flow-edit-h">Message</h4>
-        <div id="flowMsgBody" class="flow-msg-tree"></div>
-        <h4 class="flow-edit-h">Metadata</h4>
-        <table class="meta-table flow-edit-table">
-          <thead><tr><th>Name</th><th>Value（可用 {{var}}）</th><th></th></tr></thead>
-          <tbody id="flowMetaBody"></tbody>
-        </table>
-        <button class="btn" id="flowAddMetaBtn" type="button">添加 Metadata</button>
-        <h4 class="flow-edit-h">响应提取变量 <span class="flow-edit-h-sub">嵌套字段可展开，填写变量名供后续 {{var}} 引用</span></h4>
-        <div id="flowExtractBody" class="flow-extract-tree"></div>
+        <div id="flowRpcEditFields">
+          <div class="flow-node-transport">
+            <label>协议
+              <select id="flowNodeProtocol">
+                <option value="grpc">gRPC</option>
+                <option value="http">HTTP</option>
+                <option value="sse">SSE</option>
+                <option value="websocket">WebSocket</option>
+              </select>
+            </label>
+            <label id="flowNodeMethodWrap" class="hidden">方法
+              <select id="flowNodeHttpMethod">
+                <option>GET</option>
+                <option>POST</option>
+                <option>PUT</option>
+                <option>PATCH</option>
+                <option>DELETE</option>
+              </select>
+            </label>
+            <label id="flowNodePathWrap" class="hidden">路径
+              <input id="flowNodeHttpPath" placeholder="/path" />
+            </label>
+            <label>环境
+              <select id="flowNodeEnv"></select>
+            </label>
+          </div>
+          <p class="stress-note" id="flowStreamTypeHint"></p>
+          <div id="flowStreamPlanFields" class="flow-stream-plan hidden">
+            <h4 class="flow-edit-h">心跳（建流后定时发送）</h4>
+            <div class="flow-stream-heartbeat">
+              <label>心跳间隔(秒) <input id="flowStreamHbInterval" type="number" min="0" step="0.1" value="" placeholder="默认 2" /></label>
+              <label>心跳次数 <input id="flowStreamHbCount" type="number" min="0" value="" placeholder="不填则一直发" /></label>
+            </div>
+            <h4 class="flow-edit-h">心跳 Message</h4>
+            <div id="flowHbMsgBody" class="flow-msg-tree"></div>
+            <p class="stress-note">建流成功后不发初始包，只按上面的间隔发送「心跳 Message」（这里不填就用下方 Message）。次数留空表示一直发到关流。</p>
+          </div>
+          <p class="stress-note">请求字段值支持 <code>{{变量名}}</code>；响应字段可填写「提取变量」供后续节点使用。流式回包为数组时，提取取<strong>最后一条</strong>消息。oneof 用下拉选择要发的成员。</p>
+          <div id="flowMsgSection">
+            <h4 class="flow-edit-h">Message</h4>
+            <div id="flowMsgBody" class="flow-msg-tree"></div>
+          </div>
+          <h4 class="flow-edit-h">Metadata</h4>
+          <table class="meta-table flow-edit-table">
+            <thead><tr><th>Name</th><th>Value（可用 {{var}}）</th><th></th></tr></thead>
+            <tbody id="flowMetaBody"></tbody>
+          </table>
+          <button class="btn" id="flowAddMetaBtn" type="button">添加 Metadata</button>
+          <h4 class="flow-edit-h">响应提取变量 <span class="flow-edit-h-sub">嵌套字段可展开，填写变量名供后续 {{var}} 引用</span></h4>
+          <div id="flowExtractBody" class="flow-extract-tree"></div>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn primary" id="saveFlowEditBtn" type="button">保存</button>
@@ -614,11 +652,141 @@ export class ClientPanel {
     <div class="modal flow-history-modal">
       <div class="modal-head">
         <span id="flowHistoryTitle">响应历史</span>
-        <button class="icon-btn" id="closeFlowHistory" type="button">✕</button>
+        <div class="flow-head-actions">
+          <button class="btn" id="clearFlowHistoryBtn" type="button" title="清空该节点的接收与运行记录">清空</button>
+          <button class="icon-btn" id="closeFlowHistory" type="button">✕</button>
+        </div>
       </div>
       <div class="modal-body flow-history-layout">
         <div class="flow-history-list" id="flowHistoryList"></div>
         <pre class="flow-history-detail" id="flowHistoryDetail">选择左侧一条记录查看</pre>
+      </div>
+    </div>
+  </div>
+  <div class="modal-mask" id="flowVarsModal">
+    <div class="modal flow-vars-modal">
+      <div class="modal-head">
+        <span id="flowVarsTitle">链路变量</span>
+        <button class="icon-btn" id="closeFlowVars" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="stress-note">这些是「解析后变量赋值」写进来的值，发送时用 <code>{{变量名}}</code> 引用。</p>
+        <div id="flowVarsBody" class="flow-vars-list"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="clearFlowVarsBtn" type="button">清空变量</button>
+        <button class="btn primary" id="closeFlowVarsFoot" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-mask" id="flowStressModal">
+    <div class="modal flow-stress-modal">
+      <div class="modal-head">
+        <span id="flowStressTitle">压测</span>
+        <button class="icon-btn" id="closeFlowStress" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <label id="flowStressNodeWrap">接口<select id="flowStressNode"></select></label>
+        <div class="stress-modes" id="flowStressModes">
+          <button type="button" class="active" data-flow-stress-mode="light">轻量压测</button>
+          <button type="button" data-flow-stress-mode="ghz">ghz</button>
+        </div>
+        <div id="flowStressLight" class="flow-stress-fields">
+          <label>并发(≤10)<input id="flowStressConcurrency" type="number" min="1" max="10" value="5" /></label>
+          <label>总数(≤200)<input id="flowStressTotal" type="number" min="1" max="200" value="50" /></label>
+        </div>
+        <div id="flowStressGhz" class="flow-stress-fields hidden">
+          <label>并发<input id="flowStressGhzConcurrency" type="number" min="1" value="20" /></label>
+          <label>总数<input id="flowStressGhzTotal" type="number" min="1" value="200" /></label>
+          <label>ghz 路径<input id="flowStressGhzPath" placeholder="ghz" /></label>
+          <textarea id="flowStressGhzCommand" rows="4" readonly></textarea>
+        </div>
+        <div id="flowStressProgressWrap" class="hidden">
+          <div class="stress-progress"><div class="stress-progress-bar" id="flowStressProgressBar"></div></div>
+          <span class="stress-note" id="flowStressProgressText"></span>
+        </div>
+        <div id="flowStressResult" class="flow-stress-result"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="flowStressCopyGhz" type="button">复制 ghz 命令</button>
+        <button class="btn" id="flowStressStop" type="button" disabled>停止</button>
+        <button class="btn primary" id="flowStressStart" type="button">开始压测</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-mask" id="flowTplModal">
+    <div class="modal flow-tpl-modal">
+      <div class="modal-head">
+        <span>画布模板</span>
+        <button class="icon-btn" id="closeFlowTpl" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="stress-note">把当前画布存成模板，之后可在任意工程里一键载入；节点会按「包/服务/方法」重新对应到本工程的 proto。</p>
+        <div class="flow-tpl-save">
+          <input id="flowTplName" placeholder="模板名称，如：玩家登录 + 事件流" />
+          <button class="btn" id="saveFlowTplBtn" type="button">保存当前画布</button>
+        </div>
+        <div id="flowTplList" class="flow-tpl-list"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" id="closeFlowTplFoot" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-mask" id="flowSendModal">
+    <div class="modal flow-edit-modal flow-io-modal">
+      <div class="modal-head">
+        <span id="flowSendTitle">收发消息</span>
+        <button class="icon-btn" id="closeFlowSend" type="button">✕</button>
+      </div>
+      <div class="modal-body flow-io-layout">
+        <div class="flow-io-tasks">
+          <h4 class="flow-edit-h">任务 <span class="flow-edit-h-sub" id="flowSendTaskHint"></span></h4>
+          <p class="stress-note">填「延迟」= 建流后自动发送；勾「只做接收解析」= 不发送，只在收到匹配 EventType 时解析并赋值变量。</p>
+          <div id="flowSendTaskList" class="flow-task-list"></div>
+          <button class="btn" id="flowAddSendTaskBtn" type="button">＋ 新增任务</button>
+        </div>
+        <div class="flow-io-editor">
+          <div id="flowSendTaskEmpty" class="flow-msg-empty">左侧新增或选择一个发送任务</div>
+          <div id="flowSendTaskEditor" class="flow-task-editor hidden">
+            <div class="flow-task-head">
+              <label>任务名 <input id="flowSendTaskName" placeholder="任务1" /></label>
+              <label>建流后延迟(秒) <input id="flowSendTaskDelay" type="number" min="0" step="0.1" placeholder="不填=不自动发" /></label>
+              <button class="btn primary" id="flowSendTaskSendBtn" type="button">发送</button>
+            </div>
+            <div class="flow-task-match">
+              <label class="flow-check"><input id="flowSendTaskRecvOnly" type="checkbox" /> 只做接收解析（不发送）</label>
+              <label>路由值 <input id="flowSendTaskRouteValue" placeholder="如 1001（留空=不按值匹配）" /></label>
+            </div>
+            <div id="flowSendTaskSendSection">
+              <h4 class="flow-edit-h">Message</h4>
+              <p class="stress-note">本条任务的发送内容；oneof 请先选择成员。int64 / jstype=JS_STRING 按字符串发送，避免精度丢失。</p>
+              <div id="flowSendMsgBody" class="flow-msg-tree"></div>
+            </div>
+            <h4 class="flow-edit-h">接收路由</h4>
+            <p class="stress-note">收到消息先取「路由字段」的值，等于「路由值」时把「Payload 字段」按「Payload 类型」解析，再执行下面的变量赋值。</p>
+            <div class="flow-route-grid">
+              <label>路由字段 <input id="flowSendTaskRoutePath" list="flowRoutePathOptions" placeholder="如 EventData.EventType" /></label>
+              <label>Payload 字段 <input id="flowSendTaskPayloadPath" list="flowRoutePathOptions" placeholder="如 EventData.Payload" /></label>
+              <label>Payload 类型 <input id="flowSendTaskPayloadType" placeholder="如 ConfirmJoinServerEvt" /></label>
+            </div>
+            <datalist id="flowRoutePathOptions"></datalist>
+            <h4 class="flow-edit-h">接收结构体字段 <span class="flow-edit-h-sub">点标量行填入路由字段，点 bytes 行填入 Payload 字段</span></h4>
+            <div id="flowRecvDecodeBody" class="flow-struct-list"></div>
+            <h4 class="flow-edit-h">解析后变量赋值</h4>
+            <div id="flowRecvExtractBody" class="flow-extract-tree"></div>
+          </div>
+        </div>
+        <aside class="flow-io-right">
+          <h4 class="flow-edit-h">最近接收
+            <span class="flow-edit-h-sub" id="flowRecvLiveHint"></span>
+            <button class="link" id="clearRecvLiveBtn" type="button">清空</button>
+          </h4>
+          <div class="flow-recv-live-list" id="flowRecvLiveBody"></div>
+        </aside>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="closeFlowSendFoot" type="button">关闭</button>
       </div>
     </div>
   </div>
@@ -732,6 +900,7 @@ export class ClientPanel {
     </div>
   </div>
   <script nonce="${nonce}" src="${script}"></script>
+  <script nonce="${nonce}" src="${tplScript}"></script>
   <script nonce="${nonce}" src="${flowScript}"></script>
 </body>
 </html>`;

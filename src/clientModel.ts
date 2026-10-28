@@ -11,6 +11,8 @@ export interface ClientField {
   comment: string;
   number: number;
   oneof?: string;
+  /** protobuf jstype；JS_STRING 时 int64 等应以字符串传递避免精度丢失 */
+  jstype?: "JS_STRING" | "JS_NUMBER" | "JS_NORMAL";
 }
 
 export interface ClientRpc {
@@ -28,6 +30,8 @@ export interface ClientRpc {
   line: number;
   httpVerb?: string;
   httpPath?: string;
+  requestStream: boolean;
+  responseStream: boolean;
   badges: { text: string; warn?: boolean }[];
   source: string;
 }
@@ -114,6 +118,8 @@ export function toClientCatalog(catalog: Catalog, sourceLabel: string, showGoogl
           line: rpc.line,
           httpVerb: rpc.httpVerb,
           httpPath: rpc.httpPath,
+          requestStream: Boolean(rpc.requestStream),
+          responseStream: Boolean(rpc.responseStream),
           badges: rpc.badges ?? [],
           source: rpc.source || "",
         })),
@@ -170,6 +176,7 @@ function clientFields(fields: FieldView[]): ClientField[] {
     comment: field.comment,
     number: field.number,
     oneof: field.oneof,
+    jstype: field.jstype,
   }));
 }
 

@@ -8,6 +8,8 @@ import {
   toClientCatalog,
 } from "./clientModel";
 import { cancelStress, runStress } from "./grpcStress";
+import { decodeBytesMessage } from "./decodeBytes";
+import { closeGrpcStream, openGrpcStream, writeGrpcStream } from "./grpcInvoke";
 import { InvokePayload, dispatchInvoke } from "./invokeDispatch";
 import { openInEditor } from "./openEditor";
 import { ProtoParseError, parseProto } from "./parser";
@@ -180,6 +182,35 @@ export class ClientHost {
     if (type === "invoke" && message.payload) {
       const result = await dispatchInvoke(this.catalog, message.payload);
       send({ type: "invokeResult", ...result });
+      return;
+    }
+    if (type === "streamOpen" && message.payload && this.catalog) {
+      const result = await openGrpcStream(this.catalog, message.payload as Parameters<typeof openGrpcStream>[1], {
+        onData: (event) => send({ type: "streamData", ...event }),
+        onEnd: (event) => send({ type: "streamEnded", ...event }),
+      });
+      send({ type: "streamOpenResult", ...result });
+      return;
+    }
+    if (type === "streamWrite" && message.payload) {
+      const streamId = String((message.payload as { streamId?: string }).streamId || "");
+      const body = (message.payload as { body?: unknown }).body;
+      const result = await writeGrpcStream(streamId, body);
+      send({ type: "streamWriteResult", id: message.payload.id, streamId, ...result });
+      return;
+    }
+    if (type === "streamClose" && message.payload) {
+      const streamId = String((message.payload as { streamId?: string }).streamId || "");
+      const result = await closeGrpcStream(streamId);
+      send({ type: "streamCloseResult", id: (message.payload as { id?: string }).id, ...result });
+      return;
+    }
+    if (type === "decodeBytes" && message.payload && this.catalog) {
+      const result = await decodeBytesMessage(
+        this.catalog,
+        message.payload as unknown as Parameters<typeof decodeBytesMessage>[1],
+      );
+      send({ type: "decodeBytesResult", ...result });
       return;
     }
     if (type === "stressCancel" && message.id) {

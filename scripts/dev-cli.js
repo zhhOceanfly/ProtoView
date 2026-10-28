@@ -26,6 +26,7 @@ const CORE_FILES = [
   "sourceCore.js",
   "openEditor.js",
   "grpcInvoke.js",
+  "decodeBytes.js",
   "httpInvoke.js",
   "sseInvoke.js",
   "wsInvoke.js",

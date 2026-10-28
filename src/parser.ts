@@ -5,6 +5,8 @@ export interface SourceLoc {
   endLine: number;
 }
 
+export type JsTypeOption = "JS_STRING" | "JS_NUMBER" | "JS_NORMAL";
+
 export interface FieldDef {
   name: string;
   typeName: string;
@@ -13,6 +15,8 @@ export interface FieldDef {
   repeated: boolean;
   optional: boolean;
   number: number;
+  /** protobuf field option jstype = JS_STRING | JS_NUMBER | JS_NORMAL */
+  jstype?: JsTypeOption;
   comment: string;
   loc: SourceLoc;
 }
@@ -553,7 +557,7 @@ class Parser {
     const nameTok = this.expectKind("id");
     this.expectSym("=");
     const num = this.expectKind("num");
-    if (this.matchSym("[")) this.skipGroup("[", "]");
+    const jstype = this.parseFieldJsType();
     const semi = this.expectSym(";");
     return {
       name: nameTok.value,
@@ -563,9 +567,39 @@ class Parser {
       repeated,
       optional,
       number: Number(num.value),
+      jstype,
       comment: joinDoc(start?.lead ?? "", semi.trail || nameTok.trail),
       loc: { line: nameTok.line, endLine: semi.line },
     };
+  }
+
+  /** 消费 `[...]` 字段选项，提取 jstype（其余选项忽略） */
+  private parseFieldJsType(): JsTypeOption | undefined {
+    if (!this.matchSym("[")) return undefined;
+    this.eat();
+    let depth = 1;
+    const toks: Token[] = [];
+    while (depth > 0 && !this.done()) {
+      const tok = this.eat();
+      if (tok.kind === "sym" && tok.value === "[") depth += 1;
+      else if (tok.kind === "sym" && tok.value === "]") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+      toks.push(tok);
+    }
+    for (let i = 0; i + 2 < toks.length; i += 1) {
+      const a = toks[i];
+      const b = toks[i + 1];
+      const c = toks[i + 2];
+      if (a?.kind !== "id" || a.value !== "jstype") continue;
+      if (b?.kind !== "sym" || b.value !== "=") continue;
+      if (c?.kind !== "id") continue;
+      if (c.value === "JS_STRING" || c.value === "JS_NUMBER" || c.value === "JS_NORMAL") {
+        return c.value;
+      }
+    }
+    return undefined;
   }
 
   private readDottedName(): string {

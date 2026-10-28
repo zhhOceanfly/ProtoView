@@ -355,6 +355,65 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   letter-spacing: 0.02em;
 }
 .flow-empty.hidden { display: none !important; }
+/* 画布右上角浮动工具栏 */
+.flow-float-tools {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.flow-float-toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  box-shadow: var(--shadow);
+}
+.flow-float-toggle:hover { color: var(--text); }
+.flow-float-items {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(4px);
+}
+.flow-float-tools.collapsed .flow-float-items { display: none; }
+.flow-float-icon {
+  min-width: 30px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+.flow-float-icon:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* 起始步骤里的「变量」按钮 */
+.flow-start-var-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.flow-start-var-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .flow-world, .flow-edges {
   position: absolute;
   left: 0;
@@ -411,6 +470,435 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .flow-node.ok { border-color: var(--ok); }
 .flow-node.fail { border-color: var(--danger); }
+.flow-node.stream-unary { border-left: 3px solid #64748b; }
+.flow-node.stream-server { border-left: 3px solid #0ea5e9; }
+.flow-node.stream-client { border-left: 3px solid #a855f7; }
+.flow-node.stream-bidi { border-left: 3px solid #f59e0b; }
+.flow-node-start {
+  border-style: dashed;
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+}
+.flow-node-start.disabled {
+  border-color: color-mix(in srgb, var(--muted) 55%, var(--border));
+}
+/* 禁用只弱化标识区，不影响「运行」按钮观感 */
+.flow-node-start.disabled .flow-node-head,
+.flow-node-start.disabled .flow-start-switch,
+.flow-node-start.disabled .flow-node-result {
+  opacity: 0.62;
+}
+.flow-node-start.running {
+  border-color: var(--accent);
+}
+.flow-start-run-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.flow-node-icon.start {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.flow-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0 10px 6px;
+}
+.flow-start-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.flow-start-switch input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.flow-start-run-btn {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.flow-start-run-btn:hover {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
+}
+.modal.flow-edit-modal.flow-io-modal {
+  width: min(1240px, 96vw);
+  max-width: 96vw;
+}
+.modal.flow-edit-modal.flow-io-modal .modal-body.flow-io-layout {
+  display: grid !important;
+  grid-template-columns: minmax(150px, 200px) minmax(0, 1fr) minmax(240px, 330px);
+  gap: 14px;
+  align-items: start;
+}
+/* 左：发送任务列表 */
+.flow-io-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.flow-task-list {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  max-height: min(420px, 52vh);
+  overflow: auto;
+  min-height: 80px;
+}
+.flow-task-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  cursor: pointer;
+  font-size: 12px;
+}
+.flow-task-item.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.flow-task-item .flow-task-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flow-task-item .flow-task-delay {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.flow-task-item.manual .flow-task-delay { opacity: 0.6; }
+.flow-task-item button.link {
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.flow-task-item button.link:hover { color: var(--danger); }
+/* 中：当前任务编辑 */
+.flow-io-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.flow-task-editor {
+  display: grid;
+  gap: 8px;
+}
+.flow-task-editor.hidden { display: none !important; }
+.flow-task-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.flow-task-head label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.flow-task-head input { width: 100%; }
+/* 接收路由：字段 / 值 / Payload */
+.flow-route-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.flow-route-grid label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.flow-route-grid input { width: 100%; }
+/* 响应结构体字段一览 */
+.flow-struct-list {
+  display: grid;
+  gap: 4px;
+  max-height: min(240px, 32vh);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.flow-struct-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.flow-struct-row:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--panel);
+}
+.flow-struct-row.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.flow-struct-row:disabled { cursor: default; opacity: 0.55; }
+.flow-struct-row .flow-struct-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flow-struct-row .flow-struct-type { color: var(--muted); font-size: 10px; }
+.flow-task-match {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+.flow-task-match label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.flow-task-match label.flow-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding-bottom: 7px;
+}
+.flow-task-match input[type="text"],
+.flow-task-match label > input:not([type]) {
+  width: 100%;
+}
+.flow-io-left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.flow-io-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+}
+.flow-io-right .flow-io-pane {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.flow-io-right .flow-recv-live-list {
+  max-height: min(280px, 36vh);
+}
+.flow-io-pane {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.flow-recv-decode {
+  display: grid;
+  gap: 8px;
+}
+.flow-recv-decode-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 36%) 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.flow-recv-decode-row.flow-recv-decode-extra {
+  grid-template-columns: minmax(110px, 1.1fr) minmax(100px, 1fr) auto;
+}
+.flow-recv-decode-row label {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--muted);
+  word-break: break-all;
+}
+.flow-recv-decode-row input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--input);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.flow-recv-decode-row .flow-decode-path {
+  min-width: 0;
+}
+#flowAddDecodeBtn {
+  justify-self: start;
+  margin-top: 2px;
+}
+.flow-msg-type-combo {
+  position: relative;
+  min-width: 0;
+}
+.flow-msg-type-menu {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel, var(--bg, #fff));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+}
+.flow-msg-type-menu[hidden] {
+  display: none !important;
+}
+.flow-msg-type-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.35;
+}
+.flow-msg-type-opt:hover,
+.flow-msg-type-opt:focus {
+  background: var(--panel-2, rgba(0, 0, 0, 0.06));
+  outline: none;
+}
+.flow-msg-type-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.flow-recv-live-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(560px, 62vh);
+  overflow: auto;
+  min-height: 120px;
+}
+.flow-recv-live-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 8px 10px;
+}
+.flow-recv-live-item .h {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.flow-recv-live-item pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+}
+.flow-recv-err {
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+  font-family: var(--mono);
+  word-break: break-word;
+}
+.flow-recv-live-item .h button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.flow-recv-live-item .h button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.flow-io-right .flow-edit-h {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.flow-io-right .flow-edit-h .link {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.flow-io-right .flow-edit-h .link:hover { color: var(--danger); }
+@media (max-width: 820px) {
+  .modal.flow-edit-modal.flow-io-modal .modal-body.flow-io-layout {
+    grid-template-columns: 1fr;
+  }
+  .flow-io-right { position: static; }
+}
+.flow-start-edit,
+.flow-stream-plan {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.flow-start-edit.hidden,
+.flow-stream-plan.hidden { display: none !important; }
+.flow-stream-heartbeat {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.flow-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
 .flow-node-head {
   display: flex;
   align-items: flex-start;
@@ -456,6 +944,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .flow-node-result.ok { color: var(--ok); }
 .flow-node-result.fail { color: var(--danger); }
+.flow-node-result.live { color: var(--accent); }
 .flow-port {
   position: absolute;
   width: 12px;
@@ -478,6 +967,33 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .flow-edge.ok { stroke: var(--ok); }
 .flow-edge.fail { stroke: var(--danger); }
+/* 透明粗线只负责命中，方便点选/右键 */
+.flow-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.flow-edge.selected,
+.flow-edge-hit.selected + .flow-edge {
+  stroke: var(--accent);
+  stroke-width: 4;
+}
+.flow-edge-group:hover .flow-edge:not(.selected) { stroke-width: 3.5; }
+/* 从端口拖出时的实时预览线 */
+.flow-edge.preview {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+  pointer-events: none;
+  opacity: 0;
+}
+.flow-edge.preview.show { opacity: 0.95; }
+.flow-stage.flow-connecting { cursor: crosshair; }
+.flow-stage.flow-connecting .flow-port {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent);
+}
 .flow-menu {
   position: fixed;
   z-index: 40;
@@ -673,6 +1189,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   border-radius: 8px;
   background: var(--panel);
 }
+.flow-msg-oneof {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
+.flow-msg-oneof-select {
+  min-width: 160px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  background: var(--input);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
 .flow-msg-head {
   display: flex;
   align-items: baseline;
@@ -691,6 +1225,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   display: grid;
   grid-template-columns: 1fr;
   gap: 6px;
+}
+.flow-msg-enum-select {
+  appearance: auto;
+  cursor: pointer;
 }
 .flow-msg-row input,
 .flow-msg-row textarea,
@@ -1631,6 +2169,143 @@ textarea.editor {
   border-bottom: 1px solid var(--border);
   font-weight: 650;
 }
+.flow-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 链路变量查看 */
+.modal.flow-vars-modal {
+  width: min(680px, 94vw);
+}
+.flow-vars-count {
+  margin-left: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.75;
+}
+.flow-vars-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(480px, 60vh);
+  overflow: auto;
+  min-height: 80px;
+}
+.flow-var-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 8px 10px;
+}
+.flow-var-key {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+.flow-var-value {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+  color: var(--text);
+}
+/* 步骤压测弹窗 */
+.modal.flow-stress-modal {
+  width: min(760px, 94vw);
+}
+#flowStressModes button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#flowStressModes button.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.flow-stress-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.flow-stress-fields.hidden { display: none !important; }
+.flow-stress-fields textarea {
+  grid-column: 1 / -1;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.flow-stress-result {
+  max-height: min(360px, 46vh);
+  overflow: auto;
+}
+.flow-stress-result .stress-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.flow-stress-result .stress-stat {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--panel-2);
+  min-width: 72px;
+}
+.flow-stress-result .stress-stat b { display: block; font-size: 14px; }
+.flow-stress-result .stress-stat span { font-size: 11px; color: var(--muted); }
+.stress-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.stress-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+/* 画布模板弹窗 */
+.modal.flow-tpl-modal {
+  width: min(680px, 94vw);
+}
+.flow-tpl-save {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.flow-tpl-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(420px, 52vh);
+  overflow: auto;
+  min-height: 80px;
+}
+.flow-tpl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 8px 10px;
+}
+.flow-tpl-info { display: grid; gap: 3px; min-width: 0; }
+.flow-tpl-info strong { font-size: 13px; }
+.flow-tpl-info span { font-size: 11px; color: var(--muted); }
+.flow-tpl-actions { display: flex; align-items: center; gap: 8px; }
 .modal-body { padding: 14px; display: grid; gap: 10px; }
 .modal-body label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .modal-body input, .modal-body textarea {
