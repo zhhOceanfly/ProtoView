@@ -147,7 +147,84 @@ function buildRuntime() {
   fs.writeFileSync(path.join(runtimeDest, "package.json"), `${JSON.stringify(runtimePkg, null, 2)}\n`);
 
   console.log("[build-dbx] npm install runtime deps …");
-  execSync("npm install --omit=dev", { cwd: runtimeDest, stdio: "inherit" });
+  // --no-bin-links: avoid node_modules/.bin symlinks (dbx-plugin package rejects them).
+  execSync("npm install --omit=dev --no-bin-links", {
+    cwd: runtimeDest,
+    stdio: "inherit",
+    env: { ...process.env, npm_config_bin_links: "false" },
+  });
+  sanitizeRuntimeNodeModules(path.join(runtimeDest, "node_modules"));
+}
+
+/**
+ * dbx-plugin package forbids any symlink in the package tree.
+ * Linux/macOS npm still leaves .bin links (and occasional nested links);
+ * Windows usually uses .cmd shims so packaging appeared fine there.
+ */
+function sanitizeRuntimeNodeModules(nodeModules) {
+  if (!fs.existsSync(nodeModules)) return;
+  const binDir = path.join(nodeModules, ".bin");
+  if (fs.existsSync(binDir)) {
+    console.log("[build-dbx] remove runtime/node_modules/.bin (not needed at runtime)");
+    rmrf(binDir);
+  }
+  let removed = 0;
+  let materialized = 0;
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      let isLink = entry.isSymbolicLink();
+      if (!isLink) {
+        try {
+          isLink = fs.lstatSync(full).isSymbolicLink();
+        } catch {
+          continue;
+        }
+      }
+      if (isLink) {
+        let resolved;
+        try {
+          resolved = fs.realpathSync(full);
+        } catch {
+          resolved = null;
+        }
+        try {
+          fs.unlinkSync(full);
+        } catch {
+          continue;
+        }
+        if (resolved && fs.existsSync(resolved)) {
+          try {
+            const st = fs.statSync(resolved);
+            if (st.isDirectory()) {
+              copyDir(resolved, full);
+            } else {
+              fs.copyFileSync(resolved, full);
+            }
+            materialized += 1;
+            continue;
+          } catch {
+            /* fall through to count as removed */
+          }
+        }
+        removed += 1;
+        continue;
+      }
+      if (entry.isDirectory()) walk(full);
+    }
+  }
+  walk(nodeModules);
+  if (removed || materialized) {
+    console.log(
+      `[build-dbx] sanitized symlinks in runtime/node_modules (materialized=${materialized}, removed=${removed})`,
+    );
+  }
 }
 
 function watchUi() {
