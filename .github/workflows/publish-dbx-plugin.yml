@@ -62,9 +62,12 @@ jobs:
             packages/dbx-plugin/dist/*.dbxp
             packages/dbx-plugin/dist/*.artifact.json
 
+  # Matrix 里只要有一台成功就要发 Release（Linux/mac 失败时 Windows 仍应上架候选包）。
+  # needs.package 在部分矩阵失败时 result=failure，必须用 always()，否则整段 release 会被跳过，
+  # 产物只留在 Actions Artifact，不会出现在 GitHub Releases。
   release:
     needs: package
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ always() && !cancelled() && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,13 +77,26 @@ jobs:
           path: bundled
           pattern: dbxp-*
           merge-multiple: true
+          # 部分平台失败时仍下载已成功的 artifact
+        continue-on-error: false
 
       - name: Collect release-candidates.json
         id: meta
         run: |
           set -euo pipefail
           mkdir -p out-release
-          cp bundled/*.dbxp bundled/*.artifact.json out-release/ || true
+          shopt -s nullglob
+          if compgen -G "bundled/*.dbxp" > /dev/null; then
+            cp bundled/*.dbxp out-release/
+          fi
+          if compgen -G "bundled/*.artifact.json" > /dev/null; then
+            cp bundled/*.artifact.json out-release/
+          fi
+          if ! compgen -G "out-release/*.dbxp" > /dev/null; then
+            echo "No .dbxp artifacts downloaded — all package matrix jobs failed?"
+            ls -laR bundled || true
+            exit 1
+          fi
           python3 <<'PY'
           import json, glob, os, hashlib
           from pathlib import Path
@@ -150,12 +166,17 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: DBX plugin ${{ github.ref_name }}
           files: out-release/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
             Unsigned DBX plugin candidates for store review.
 
             Install locally only with **Allow unsigned development packages** enabled.
             Official marketplace listing requires a PR to `t8y2/dbx-store` (see `packages/dbx-plugin/PUBLISH-DBX.md`).
+
+            Partial platform builds are OK: only successfully packaged targets are attached.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
