@@ -93,20 +93,45 @@ function buildRuntime() {
     copyFile(src, path.join(coreDest, name));
   }
 
+  // Only need uploadProtoDir (no ws / server.ts). Prefer existing dist, else
+  // compile that single file so CI without packages/cli/node_modules still works.
+  const uploadDest = path.join(runtimeDest, "uploadProtoDir.js");
   const uploadSrcCandidates = [
     path.join(root, "packages", "cli", "dist", "uploadProtoDir.js"),
     path.join(root, "out", "uploadProtoDir.js"),
   ];
-  let uploadSrc = uploadSrcCandidates.find((p) => fs.existsSync(p));
-  if (!uploadSrc) {
-    console.log("[build-dbx] compile packages/cli for uploadProtoDir …");
-    execSync("npx tsc -p packages/cli", { cwd: root, stdio: "inherit" });
-    uploadSrc = path.join(root, "packages", "cli", "dist", "uploadProtoDir.js");
+  const uploadSrc = uploadSrcCandidates.find((p) => fs.existsSync(p));
+  if (uploadSrc) {
+    copyFile(uploadSrc, uploadDest);
+  } else {
+    const uploadTs = path.join(root, "packages", "cli", "src", "uploadProtoDir.ts");
+    if (!fs.existsSync(uploadTs)) {
+      throw new Error(`missing ${uploadTs}`);
+    }
+    console.log("[build-dbx] compile uploadProtoDir.ts only …");
+    const tmpOut = path.join(pkgRoot, ".tmp-upload");
+    rmrf(tmpOut);
+    execSync(
+      [
+        "npx tsc",
+        JSON.stringify(uploadTs),
+        "--outDir", JSON.stringify(tmpOut),
+        "--rootDir", JSON.stringify(path.dirname(uploadTs)),
+        "--module commonjs",
+        "--target ES2022",
+        "--esModuleInterop",
+        "--skipLibCheck",
+        "--strict",
+      ].join(" "),
+      { cwd: root, stdio: "inherit", shell: true },
+    );
+    const compiled = path.join(tmpOut, "uploadProtoDir.js");
+    if (!fs.existsSync(compiled)) {
+      throw new Error("uploadProtoDir.js not found after single-file compile");
+    }
+    copyFile(compiled, uploadDest);
+    rmrf(tmpOut);
   }
-  if (!fs.existsSync(uploadSrc)) {
-    throw new Error("uploadProtoDir.js not found after CLI compile");
-  }
-  copyFile(uploadSrc, path.join(runtimeDest, "uploadProtoDir.js"));
 
   const runtimePkg = {
     name: "protoview-dbx-runtime",

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .dbx-dev/
+.tmp-upload/
 runtime/core/
 runtime/node_modules/
 runtime/uploadProtoDir.js
