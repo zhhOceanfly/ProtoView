@@ -9,6 +9,7 @@ import {
 } from "./clientModel";
 import { cancelStress, runStress } from "./grpcStress";
 import { InvokePayload, dispatchInvoke } from "./invokeDispatch";
+import { openInEditor } from "./openEditor";
 import { ProtoParseError, parseProto } from "./parser";
 import {
   ProtoSourceConfig,
@@ -90,6 +91,7 @@ export class ClientHost {
     type?: string;
     payload?: InvokePayload & ClientEnvFile & {
       mode?: string;
+      dirPath?: string;
       gitUrl?: string;
       gitBranch?: string;
       concurrency?: number;
@@ -100,6 +102,7 @@ export class ClientHost {
     };
     file?: string;
     line?: number;
+    editor?: string;
     id?: string;
   }, send: HostSend): Promise<void> {
     const type = message.type;
@@ -116,7 +119,7 @@ export class ClientHost {
       const mode = message.payload.mode === "git" ? "git" : "workspace";
       const gitUrl = String(message.payload.gitUrl || "").trim();
       const gitBranch = String(message.payload.gitBranch || "main").trim() || "main";
-      const dirPath = String((message.payload as { dirPath?: string }).dirPath || "").trim();
+      const dirPath = String(message.payload.dirPath || "").trim();
       const prevUrl = this.source.gitUrl;
       if (mode === "git") {
         this.source = {
@@ -145,8 +148,33 @@ export class ClientHost {
       await saveEnvFileAt(this.workspaceRoot, message.payload);
       return;
     }
+    if (type === "readSource" && message.file) {
+      const abs = path.resolve(String(message.file));
+      const line = Math.max(1, Math.floor(Number(message.line || 1) || 1));
+      try {
+        const content = await fs.readFile(abs, "utf8");
+        send({ type: "sourceContent", file: abs, line, content });
+      } catch (error) {
+        send({
+          type: "toast",
+          level: "err",
+          text: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
     if (type === "openSource" && message.file) {
-      this.log(`openSource: ${message.file}:${message.line || 1}`);
+      const line = Number(message.line || 1);
+      const editor = String(message.editor || "").trim();
+      this.log(`openSource: ${message.file}:${line}${editor ? ` (${editor})` : ""}`);
+      const result = await openInEditor(String(message.file), line, editor || undefined);
+      send({
+        type: "toast",
+        level: result.ok ? "ok" : "err",
+        text: result.ok
+          ? `已在编辑器打开 ${path.basename(String(message.file))}:${line}`
+          : result.detail,
+      });
       return;
     }
     if (type === "invoke" && message.payload) {

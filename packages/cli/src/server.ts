@@ -13,7 +13,16 @@ type ClientHostCtor = {
     log?: (line: string) => void;
   }): {
     reload(syncGit?: boolean): Promise<void>;
-    handleMessage(message: { type?: string }, send: (m: Record<string, unknown>) => void): Promise<void>;
+    handleMessage(
+      message: {
+        type?: string;
+        file?: string;
+        line?: number;
+        editor?: string;
+        payload?: Record<string, unknown>;
+      },
+      send: (m: Record<string, unknown>) => void,
+    ): Promise<void>;
     sourceLabel(): string;
   };
 };
@@ -80,7 +89,7 @@ export async function startServer(options: ServerOptions): Promise<void> {
               base64?: string;
             };
           };
-          // 浏览器原生选目录/文件后上传内容（无完整本机路径）
+          // 浏览器选目录上传：只落盘并回填路径，等用户点「应用并刷新」
           if (message.type === "uploadProtoDir") {
             const result = await materializeProtoUpload(message.payload || {});
             if (!result.count) {

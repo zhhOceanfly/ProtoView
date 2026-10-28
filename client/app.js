@@ -239,6 +239,8 @@
   function treeIsOpen() {
     for (const pkg of state.catalog.packages || []) {
       if (state.expanded.has(`pkg:${pkg.name}`)) return true;
+      if (state.expanded.has(`pkg:${pkg.name}:messages`)) return true;
+      if (state.expanded.has(`pkg:${pkg.name}:enums`)) return true;
       for (const service of pkg.services || []) {
         if (state.expanded.has(`svc:${service.id}`)) return true;
       }
@@ -261,6 +263,8 @@
       for (const pkg of state.catalog.packages || []) {
         state.expanded.add(`pkg:${pkg.name}`);
         for (const service of pkg.services || []) state.expanded.add(`svc:${service.id}`);
+        if ((pkg.messages || []).length) state.expanded.add(`pkg:${pkg.name}:messages`);
+        if ((pkg.enums || []).length) state.expanded.add(`pkg:${pkg.name}:enums`);
       }
     }
     renderTree();
@@ -354,19 +358,30 @@
       return;
     }
     ensureExpandedDefaults();
+    const activeTypeId = state.docsNav[state.docsNav.length - 1] || "";
     let html = "";
     for (const pkg of packs) {
+      const pkgMatched = !query || pkg.name.toLowerCase().includes(query);
       const services = (pkg.services || []).filter((service) => matchService(pkg, service, query));
-      if (!services.length) continue;
+      const messages = (pkg.messages || []).filter((item) => pkgMatched || matchTypeRef(item, query));
+      const enums = (pkg.enums || []).filter((item) => pkgMatched || matchTypeRef(item, query));
+      if (!services.length && !messages.length && !enums.length) continue;
       const pkgKey = `pkg:${pkg.name}`;
+      if (query && (messages.length || enums.length)) {
+        state.expanded.add(pkgKey);
+        if (messages.length) state.expanded.add(`pkg:${pkg.name}:messages`);
+        if (enums.length) state.expanded.add(`pkg:${pkg.name}:enums`);
+      }
       const pkgOpen = state.expanded.has(pkgKey);
       const rpcCount = services.reduce((n, s) => n + (s.rpcs || []).length, 0);
+      const typeCount = messages.length + enums.length;
+      const countLabel = typeCount ? `${rpcCount} · ${typeCount}` : String(rpcCount);
       html += `<div class="node">
         <button class="node-row" type="button" data-toggle="${esc(pkgKey)}">
           <span class="caret">${pkgOpen ? "▼" : "▶"}</span>
           <span class="kind">📦</span>
           <span class="label">${esc(pkg.name)}</span>
-          <span class="count">${rpcCount}</span>
+          <span class="count">${esc(countLabel)}</span>
         </button>
         <div class="children${pkgOpen ? "" : " collapsed"}">`;
       for (const service of services) {
@@ -394,10 +409,39 @@
         }
         html += `</div></div>`;
       }
+      html += typeGroupHtml(pkg, "messages", "消息", "▣", messages, activeTypeId);
+      html += typeGroupHtml(pkg, "enums", "枚举", "☰", enums, activeTypeId);
       html += `</div></div>`;
     }
-    els.tree.innerHTML = html || `<div class="empty-side">没有匹配的接口</div>`;
+    els.tree.innerHTML = html || `<div class="empty-side">没有匹配的接口 / 类型</div>`;
     syncTreeToggle();
+  }
+
+  function typeGroupHtml(pkg, kind, label, icon, items, activeTypeId) {
+    if (!items.length) return "";
+    const key = `pkg:${pkg.name}:${kind}`;
+    const open = state.expanded.has(key);
+    let html = `<div class="node">
+      <button class="node-row" type="button" data-toggle="${esc(key)}">
+        <span class="caret">${open ? "▼" : "▶"}</span>
+        <span class="kind">${icon}</span>
+        <span class="label">${esc(label)}</span>
+        <span class="count">${items.length}</span>
+      </button>
+      <div class="children${open ? "" : " collapsed"}">`;
+    for (const item of items) {
+      const active = activeTypeId === item.id ? " active" : "";
+      const title = item.comment || item.fullName || item.name;
+      html += `<div>
+        <button class="node-row${active}" type="button" data-type-id="${esc(item.id)}" title="${esc(title)}">
+          <span class="caret"></span>
+          <span class="kind">${kind === "enums" ? "≡" : "▢"}</span>
+          <span class="label">${esc(item.fullName || item.name)}</span>
+        </button>
+        <div class="rpc-desc">${esc(item.comment || (kind === "enums" ? "enum" : "message"))}</div>
+      </div>`;
+    }
+    return `${html}</div></div>`;
   }
 
   function matchService(pkg, service, query) {
@@ -409,7 +453,67 @@
   function matchRpc(pkg, service, rpc, query) {
     if (!query) return true;
     const hay = `${pkg.name} ${service.name} ${rpc.name} ${rpc.comment || ""} ${rpc.request} ${rpc.response}`.toLowerCase();
-    return hay.includes(query);
+    if (hay.includes(query)) return true;
+    if (matchFields(rpc.requestFields, query) || matchFields(rpc.responseFields, query)) return true;
+    if (matchTypeId(rpc.requestId, query) || matchTypeId(rpc.responseId, query)) return true;
+    return false;
+  }
+
+  function matchTypeRef(item, query) {
+    if (!query) return true;
+    const hay = `${item.fullName || ""} ${item.name || ""} ${item.comment || ""}`.toLowerCase();
+    if (hay.includes(query)) return true;
+    return matchTypeId(item.id, query);
+  }
+
+  function matchTypeId(id, query) {
+    if (!id || !query) return false;
+    const type = state.catalog.types?.[id];
+    if (!type) return false;
+    const head = `${type.fullName || ""} ${type.name || ""} ${type.comment || ""}`.toLowerCase();
+    if (head.includes(query)) return true;
+    if (type.kind === "enum") return matchEnumValues(type.values, query);
+    if (matchFields(type.fields, query)) return true;
+    for (const nested of type.nested || []) {
+      const nestedHay = `${nested.name || ""} ${nested.comment || ""}`.toLowerCase();
+      if (nestedHay.includes(query)) return true;
+      if (matchTypeId(nested.id, query)) return true;
+    }
+    return false;
+  }
+
+  function matchFields(fields, query) {
+    for (const field of fields || []) {
+      const hay = [
+        field.name,
+        field.type,
+        field.key,
+        field.comment,
+        field.oneof,
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (hay.includes(query)) return true;
+      if (field.typeId && matchTypeIdShallow(field.typeId, query)) return true;
+      if (field.keyId && matchTypeIdShallow(field.keyId, query)) return true;
+    }
+    return false;
+  }
+
+  /** 字段类型只比名称/枚举值，避免递归炸栈 */
+  function matchTypeIdShallow(id, query) {
+    const type = state.catalog.types?.[id];
+    if (!type) return false;
+    const head = `${type.fullName || ""} ${type.name || ""} ${type.comment || ""}`.toLowerCase();
+    if (head.includes(query)) return true;
+    if (type.kind === "enum") return matchEnumValues(type.values, query);
+    return false;
+  }
+
+  function matchEnumValues(values, query) {
+    for (const value of values || []) {
+      const hay = `${value.name || ""} ${value.comment || ""}`.toLowerCase();
+      if (hay.includes(query)) return true;
+    }
+    return false;
   }
 
   function findRpc(id) {
@@ -646,13 +750,16 @@
 
   function paintDocs() {
     const hit = state.selected ? findRpc(state.selected.id) : null;
-    if (!hit) {
-      els.docsView.innerHTML = `<div class="doc-empty">选择左侧接口后显示注释与请求/响应字段。</div>`;
+    const typeId = state.docsNav[state.docsNav.length - 1];
+    if (typeId && state.catalog.types?.[typeId]) {
+      renderTypeDoc(hit, typeId);
       return;
     }
-    const typeId = state.docsNav[state.docsNav.length - 1];
-    if (typeId && state.catalog.types?.[typeId]) renderTypeDoc(hit, typeId);
-    else renderDocs(hit.pkg, hit.service, hit.rpc);
+    if (!hit) {
+      els.docsView.innerHTML = `<div class="doc-empty">选择左侧接口、消息或枚举后显示注释与字段。</div>`;
+      return;
+    }
+    renderDocs(hit.pkg, hit.service, hit.rpc);
   }
 
   function openType(id) {
@@ -660,6 +767,18 @@
     state.docsNav.push(id);
     setTab("docs");
     paintDocs();
+    renderTree();
+  }
+
+  function selectType(id) {
+    if (!id || !state.catalog.types?.[id]) return;
+    const type = state.catalog.types[id];
+    state.expanded.add(`pkg:${type.package}`);
+    state.expanded.add(`pkg:${type.package}:${type.kind === "enum" ? "enums" : "messages"}`);
+    state.docsNav = [id];
+    setTab("docs");
+    paintDocs();
+    renderTree();
   }
 
   function typeLink(text, id) {
@@ -706,18 +825,22 @@
 
   function renderTypeDoc(hit, id) {
     const type = state.catalog.types[id];
-    const back = `<button class="btn" type="button" data-doc-back="1">返回</button>`;
+    const canBack = state.docsNav.length > 1 || !!hit;
+    const back = canBack ? `<button class="btn" type="button" data-doc-back="1">返回</button>` : "";
     const crumbs = state.docsNav.map((item) => {
       const node = state.catalog.types[item];
       return node ? esc(node.fullName || node.name) : esc(item);
     }).join(`<span>/</span>`);
+    const prefix = hit
+      ? `<span>${esc(hit.pkg.name)}</span><span>/</span><span>${esc(hit.service.name)}</span><span>/</span><span>${esc(hit.rpc.name)}</span><span>/</span>`
+      : `<span>${esc(type.package || "")}</span><span>/</span>`;
     const body = type.kind === "enum" ? enumTable(type) : `<div class="doc-card"><table>
       <thead><tr><th>#</th><th>类型</th><th>字段</th><th>说明</th></tr></thead>
       <tbody>${fieldRows(type.fields)}</tbody>
     </table></div>${nestedList(type)}`;
     els.docsView.innerHTML = `<div class="doc-page">
       <div class="doc-toolbar">${back}${sourceButton(type.path || type.file, type.line)}</div>
-      <div class="doc-crumbs"><span>${esc(hit.pkg.name)}</span><span>/</span><span>${esc(hit.service.name)}</span><span>/</span><span>${esc(hit.rpc.name)}</span><span>/</span>${crumbs}</div>
+      <div class="doc-crumbs">${prefix}${crumbs}</div>
       <h2 class="doc-title">${esc(type.fullName || type.name)}</h2>
       <p class="doc-lead">${esc(type.comment || (type.kind === "enum" ? "枚举" : "message"))}</p>
       <p class="doc-file">${esc(type.file || "")}${type.line ? `:${type.line}` : ""}</p>
@@ -1026,58 +1149,94 @@
     return btoa(binary);
   }
 
-  async function collectProtosFromDirHandle(dirHandle, prefix, out) {
-    for await (const [name, handle] of dirHandle.entries()) {
-      const rel = prefix ? `${prefix}/${name}` : name;
-      if (handle.kind === "directory") {
-        await collectProtosFromDirHandle(handle, rel, out);
-      } else if (handle.kind === "file" && /\.proto$/i.test(name)) {
-        const file = await handle.getFile();
-        out.push({ path: rel.replace(/\\/g, "/"), content: await file.text() });
-      }
-    }
+  const OPEN_WITH_KEY = "protoview.client.openWith";
+
+  function getOpenWithTarget() {
+    const el = $("openWithSelect");
+    const v = el?.value || localStorage.getItem(OPEN_WITH_KEY) || "preview";
+    return ["preview", "cursor", "code", "notepad", "auto"].includes(v) ? v : "preview";
   }
 
-  /** CLI：浏览器原生选目录（无完整路径，上传 .proto 到宿主临时目录） */
+  function initOpenWithUi() {
+    const wrap = $("openWithWrap");
+    const sel = $("openWithSelect");
+    if (!wrap || !sel) return;
+    // 仅 npm / 浏览器端需要选择打开方式；VS Code 插件直接在编辑器打开
+    wrap.classList.toggle("hidden", isVsCodeWebview);
+    const saved = localStorage.getItem(OPEN_WITH_KEY) || "preview";
+    if ([...sel.options].some((o) => o.value === saved)) sel.value = saved;
+    sel.addEventListener("change", () => {
+      localStorage.setItem(OPEN_WITH_KEY, sel.value);
+    });
+  }
+
+  let sourcePreview = { file: "", line: 1 };
+
+  function closeSourceDrawer() {
+    const drawer = $("sourceDrawer");
+    const app = document.getElementById("app");
+    drawer?.classList.add("hidden");
+    app?.classList.remove("source-open");
+  }
+
+  function showSourceDrawer(file, line, content) {
+    const drawer = $("sourceDrawer");
+    const code = $("sourceDrawerCode");
+    const nameEl = $("sourceDrawerName");
+    const metaEl = $("sourceDrawerMeta");
+    const app = document.getElementById("app");
+    if (!drawer || !code) return;
+    sourcePreview = { file: String(file || ""), line: Math.max(1, Number(line) || 1) };
+    const base = String(file || "").replace(/\\/g, "/").split("/").pop() || "源码";
+    if (nameEl) nameEl.textContent = base;
+    if (metaEl) metaEl.textContent = `${file}:${sourcePreview.line}`;
+    const lines = String(content ?? "").replace(/\r\n/g, "\n").split("\n");
+    code.innerHTML = lines.map((text, i) => {
+      const n = i + 1;
+      const mark = n === sourcePreview.line ? " is-target" : "";
+      return `<div class="source-line${mark}" data-line="${n}"><span class="source-line-no">${n}</span><span class="source-line-text">${esc(text)}</span></div>`;
+    }).join("");
+    drawer.classList.remove("hidden");
+    app?.classList.add("source-open");
+    requestAnimationFrame(() => {
+      code.querySelector(".source-line.is-target")?.scrollIntoView({ block: "center" });
+    });
+  }
+
+  /** CLI：浏览器选目录并上传 .proto（宿主落盘后自动应用） */
   async function pickProtoDirViaBrowser() {
     if (!vscode) return;
     const files = [];
     let label = "";
     try {
-      if (typeof showDirectoryPicker === "function") {
-        const root = await showDirectoryPicker({ mode: "read" });
-        label = root.name || "proto";
-        await collectProtosFromDirHandle(root, "", files);
-      } else {
-        await new Promise((resolve, reject) => {
-          const input = document.createElement("input");
-          input.type = "file";
-          input.multiple = true;
-          input.setAttribute("webkitdirectory", "");
-          input.style.display = "none";
-          input.addEventListener("change", async () => {
-            try {
-              const list = Array.from(input.files || []);
-              input.remove();
-              for (const file of list) {
-                if (!/\.proto$/i.test(file.name)) continue;
-                const rel = String(file.webkitRelativePath || file.name).replace(/\\/g, "/");
-                if (!label) label = rel.split("/")[0] || file.name;
-                files.push({ path: rel, content: await file.text() });
-              }
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          });
-          input.addEventListener("cancel", () => {
+      await new Promise((resolve, reject) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.multiple = true;
+        input.setAttribute("webkitdirectory", "");
+        input.style.display = "none";
+        input.addEventListener("change", async () => {
+          try {
+            const list = Array.from(input.files || []);
             input.remove();
+            for (const file of list) {
+              if (!/\.proto$/i.test(file.name)) continue;
+              const rel = String(file.webkitRelativePath || file.name).replace(/\\/g, "/");
+              if (!label) label = rel.split("/")[0] || file.name;
+              files.push({ path: rel, content: await file.text() });
+            }
             resolve();
-          });
-          document.body.appendChild(input);
-          input.click();
+          } catch (error) {
+            reject(error);
+          }
         });
-      }
+        input.addEventListener("cancel", () => {
+          input.remove();
+          resolve();
+        });
+        document.body.appendChild(input);
+        input.click();
+      });
     } catch (error) {
       if (error && error.name === "AbortError") return;
       setRespBadge("err", (error && error.message) || "选择目录失败");
@@ -1148,8 +1307,8 @@
       dirHint.textContent = state.source.dirPath
         ? `当前：${state.source.dirPath}`
         : (isVsCodeWebview
-          ? "填写或浏览选择含 .proto 的目录。"
-          : "浏览用浏览器选目录（导入 .proto）；也可直接填本机绝对路径。");
+          ? "点「浏览」选择目录，再点「应用并刷新」。"
+          : "点「浏览」选文件夹并确认上传，再点「应用并刷新」；也可直接填本机绝对路径。");
     }
     const hint = $("sourceGitHint");
     if (hint) {
@@ -1215,6 +1374,7 @@
 
   // events
   initTheme();
+  initOpenWithUi();
   initSidebarCollapsed();
   els.themeBtn.addEventListener("click", toggleTheme);
   $("sidebarToggleBtn")?.addEventListener("click", toggleSidebar);
@@ -1235,8 +1395,28 @@
   $("applySourceBtn")?.addEventListener("click", applySourceFromModal);
   $("pickSourceDirBtn")?.addEventListener("click", () => {
     if (!vscode) return;
-    if (isVsCodeWebview) vscode.postMessage({ type: "pickProtoDir" });
-    else void pickProtoDirViaBrowser();
+    if (isVsCodeWebview) {
+      // 先收起 HTML 弹层，避免挡住 / 干扰 VS Code 原生选目录对话框
+      closeModal(els.sourceModal);
+      setRespBadge("wait", "请选择目录…");
+      vscode.postMessage({ type: "pickProtoDir" });
+      return;
+    }
+    setRespBadge("wait", "请选择本地目录…");
+    void pickProtoDirViaBrowser();
+  });
+  $("sourceDrawerClose")?.addEventListener("click", closeSourceDrawer);
+  $("sourceDrawerExtBtn")?.addEventListener("click", () => {
+    if (!vscode || !sourcePreview.file) return;
+    const target = getOpenWithTarget();
+    const editor = target === "preview" || target === "auto" ? "" : target;
+    vscode.postMessage({
+      type: "openSource",
+      file: sourcePreview.file,
+      line: sourcePreview.line,
+      editor,
+    });
+    setRespBadge("ok", "正在用外部编辑器打开…");
   });
   for (const input of document.querySelectorAll('input[name="sourceMode"]')) {
     input.addEventListener("change", syncSourceModalUi);
@@ -1283,8 +1463,38 @@
   function openSourceFromUi(src) {
     const file = src.getAttribute("data-src");
     const line = Number(src.getAttribute("data-line") || 1);
-    if (vscode) vscode.postMessage({ type: "openSource", file, line });
-    else setRespBadge("err", "独立浏览器模式无法打开 VS Code 源码");
+    if (!file) return;
+    if (!vscode) {
+      const loc = `${file}:${line}`;
+      if (navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(loc).then(
+          () => setRespBadge("ok", `已复制路径 ${loc}`),
+          () => setRespBadge("err", loc),
+        );
+      } else {
+        setRespBadge("err", loc);
+      }
+      return;
+    }
+    // VS Code 插件：直接在编辑器打开
+    if (isVsCodeWebview) {
+      vscode.postMessage({ type: "openSource", file, line });
+      return;
+    }
+    // npm / 浏览器：按顶部「源码」下拉选择打开方式
+    const target = getOpenWithTarget();
+    if (target === "preview") {
+      setRespBadge("wait", "加载源码…");
+      vscode.postMessage({ type: "readSource", file, line });
+      return;
+    }
+    vscode.postMessage({
+      type: "openSource",
+      file,
+      line,
+      editor: target === "auto" ? "" : target,
+    });
+    setRespBadge("ok", "正在打开源码…");
   }
 
   els.rpcInfo.addEventListener("click", (event) => {
@@ -1296,6 +1506,7 @@
     if (back) {
       state.docsNav.pop();
       paintDocs();
+      renderTree();
       return;
     }
     const src = event.target.closest("[data-src]");
@@ -1317,6 +1528,11 @@
       if (state.expanded.has(key)) state.expanded.delete(key);
       else state.expanded.add(key);
       renderTree();
+      return;
+    }
+    const typeBtn = event.target.closest("[data-type-id]");
+    if (typeBtn) {
+      selectType(typeBtn.getAttribute("data-type-id"));
       return;
     }
     const rpc = event.target.closest("[data-rpc]");
@@ -1872,14 +2088,30 @@
       setRespBadge(data.ok ? "ok" : "err", data.ok ? "ghz 完成" : "ghz 失败/未安装");
     }
     if (data.type === "pickedProtoDir" && data.path) {
+      // 只回填路径，等用户点「应用并刷新」
       if ($("sourceDirPath")) $("sourceDirPath").value = String(data.path);
+      const dirMode = document.querySelector('input[name="sourceMode"][value="directory"]');
+      if (dirMode) dirMode.checked = true;
+      syncSourceModalUi();
       const dirHint = $("sourceDirHint");
       if (dirHint) {
         dirHint.textContent = data.label
-          ? `已选择：${data.label}（${data.count || "?"} 个 .proto）`
-          : `已选择：${data.path}`;
+          ? (data.count
+            ? `已选择：${data.label}（${data.count} 个 .proto），请点「应用并刷新」`
+            : `已选择：${data.label}，请点「应用并刷新」`)
+          : `已选择：${data.path}，请点「应用并刷新」`;
       }
-      setRespBadge("ok", data.label ? `已导入 ${data.count || ""} 个 .proto`.trim() : "已选择目录");
+      openModal(els.sourceModal);
+      setRespBadge("ok", data.count
+        ? `已导入 ${data.count} 个 .proto，请点应用并刷新`
+        : "已选择目录，请点应用并刷新");
+    }
+    if (data.type === "reopenSourceModal") {
+      openSourceModal();
+    }
+    if (data.type === "sourceContent") {
+      showSourceDrawer(data.file, data.line, data.content);
+      setRespBadge("ok", `已打开 ${String(data.file || "").replace(/\\/g, "/").split("/").pop() || "源码"}`);
     }
     if (data.type === "pickedGhzBinary" && data.path) {
       setGhzPath(data.path);

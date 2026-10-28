@@ -4,7 +4,7 @@
 
 Rider 等环境可用 npm CLI：`npx @zhhoceanfly/protoview` 在浏览器打开同一套 Client。
 
-当前扩展版本：**0.1.3** · CLI：`@zhhoceanfly/protoview@0.1.3`
+当前扩展版本：**0.1.5** · CLI：`@zhhoceanfly/protoview@0.1.5`
 
 ## 功能概览
 
@@ -77,7 +77,7 @@ npm run compile
 npm run dev:cli          # CLI 开发：改 client/ 刷新浏览器，改 .ts 自动重启
 ```
 
-按 **F5**（「运行 ProtoView」）启动扩展调试。若已安装商店版，调试配置会禁用 `zoceanfly.protoview`，避免和开发版冲突。打包与发布见 **[Publish.md](Publish.md)**。
+按 **F5**（「运行 ProtoView」）启动扩展调试。调试宿主会 `--disable-extensions`，只加载本仓库开发版，避免与已安装的商店版（同 ID `zoceanfly.protoview`）冲突；主窗口里的商店版不受影响。打包与发布见 **[Publish.md](Publish.md)**。
 
 ## 许可
 

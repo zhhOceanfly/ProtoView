@@ -53,10 +53,15 @@ Options:
   --show-google         Include google.* packages in tree
   -h, --help            Show help
 
+Env:
+  PROTOVIEW_EDITOR      Editor to open source (cursor / code / idea, or
+                        template with {file} {line})
+
 Examples:
   protoview
   protoview --proto ./api
   protoview --git https://github.com/org/repo.git --branch main
+  PROTOVIEW_EDITOR=cursor protoview
 `);
 }
 

@@ -1,0 +1,59 @@
+# 发布 npm CLI：@zhhoceanfly/protoview
+#
+# 推荐：Trusted Publishing（OIDC，无 NPM_TOKEN、无浏览器 MFA）
+#   1. https://www.npmjs.com/package/@zhhoceanfly/protoview → Settings → Trusted Publisher
+#   2. GitHub Actions：用户/组织、仓库、Workflow filename = publish-npm-cli.yml
+#      （勾选允许 npm publish；新建后 2 天内需成功发一次完成绑定）
+#   3. 本 workflow 已设 id-token: write
+#
+# 备选：Granular Access Token（勾选 Bypass 2FA）→ Secret 名 NPM_TOKEN
+#
+# 触发：
+#   - 手动：Actions → Publish npm CLI → Run workflow
+#   - Tag：git tag cli-v0.1.5 && git push origin cli-v0.1.5
+#
+# 发布前先升 packages/cli/package.json 的 version（同版本不能重复发）。
+
+name: Publish npm CLI
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "cli-v*"
+
+permissions:
+  contents: read
+  id-token: write # Trusted Publishing (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Trusted Publishing 要求 Node ≥ 22.14、npm CLI ≥ 11.5.1
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      - name: Show npm / node
+        run: |
+          node -v
+          npm -v
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CLI
+        run: npm run build:cli
+
+      - name: Publish @zhhoceanfly/protoview
+        env:
+          # 未配置 Trusted Publisher 时可用 Bypass-2FA 的 Granular Token
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish ./packages/cli --access public --registry https://registry.npmjs.org/

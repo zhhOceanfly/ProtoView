@@ -7,17 +7,24 @@ export interface UploadedProtoFile {
   content: string;
 }
 
-/** 将浏览器选中的 .proto 树落到系统临时目录，返回绝对路径。 */
+/** 将浏览器选中的 .proto 树落到系统临时目录，返回绝对路径（目录名用所选文件夹名）。 */
 export async function materializeProtoUpload(options: {
   name?: string;
   files?: UploadedProtoFile[];
 }): Promise<{ dir: string; count: number; label: string }> {
   const files = Array.isArray(options.files) ? options.files : [];
   const label = String(options.name || "proto").trim() || "proto";
-  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "protoview-dir-"));
+  const safeLabel = label.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "_").slice(0, 64) || "proto";
+  const staging = await fs.promises.mkdtemp(path.join(os.tmpdir(), "protoview-dir-"));
+  const root = path.join(staging, safeLabel);
+  await fs.promises.mkdir(root, { recursive: true });
   let count = 0;
   for (const file of files) {
-    const relRaw = String(file?.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    let relRaw = String(file?.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    // webkitdirectory 路径常带顶层文件夹名，去掉以免多嵌一层
+    if (relRaw === label || relRaw.startsWith(`${label}/`)) {
+      relRaw = relRaw.slice(label.length).replace(/^\/+/, "");
+    }
     if (!relRaw || relRaw.includes("\0")) continue;
     const rel = path.normalize(relRaw);
     if (rel.startsWith("..") || path.isAbsolute(rel)) continue;

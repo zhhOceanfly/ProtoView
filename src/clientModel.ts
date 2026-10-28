@@ -41,9 +41,18 @@ export interface ClientService {
   rpcs: ClientRpc[];
 }
 
+export interface ClientTypeRef {
+  id: string;
+  name: string;
+  fullName: string;
+  comment: string;
+}
+
 export interface ClientPackage {
   name: string;
   services: ClientService[];
+  messages: ClientTypeRef[];
+  enums: ClientTypeRef[];
 }
 
 export interface ClientType {
@@ -109,8 +118,25 @@ export function toClientCatalog(catalog: Catalog, sourceLabel: string, showGoogl
           source: rpc.source || "",
         })),
       })),
+      messages: pkg.messages.map((item) => ({
+        id: item.id,
+        name: item.name,
+        fullName: item.fullName,
+        comment: item.comment,
+      })),
+      enums: pkg.enums.map((item) => ({
+        id: item.id,
+        name: item.name,
+        fullName: item.fullName,
+        comment: item.comment,
+      })),
     }))
-    .filter((pkg) => pkg.services.some((service) => service.rpcs.length));
+    .filter(
+      (pkg) =>
+        pkg.services.some((service) => service.rpcs.length) ||
+        pkg.messages.length > 0 ||
+        pkg.enums.length > 0,
+    );
 
   return { sourceLabel, packages, types: collectTypes(catalog, showGoogle) };
 }

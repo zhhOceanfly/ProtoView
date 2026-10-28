@@ -2,7 +2,7 @@
   "name": "protoview",
   "displayName": "ProtoView",
   "description": "浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口：侧边栏导航、Client、Auth、压测与链路调试",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "publisher": "zoceanfly",
   "license": "MIT",

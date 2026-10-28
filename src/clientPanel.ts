@@ -122,16 +122,30 @@ export class ClientPanel {
         return;
       }
       if (message.type === "pickProtoDir" && this.panel) {
+        // 等前端收起 HTML 弹层后再弹原生对话框，否则在部分环境下选不了 / 对话框被挡
+        await new Promise((r) => setTimeout(r, 50));
         const uris = await vscode.window.showOpenDialog({
           title: "选择 Proto 目录",
           canSelectFiles: false,
           canSelectFolders: true,
           canSelectMany: false,
-          openLabel: "选择",
+          openLabel: "选择该目录",
+          defaultUri: this.sourceState.dirPath
+            ? vscode.Uri.file(this.sourceState.dirPath)
+            : vscode.workspace.workspaceFolders?.[0]?.uri,
         });
-        if (uris?.[0]) {
-          this.post({ type: "pickedProtoDir", path: uris[0].fsPath });
+        if (!uris?.[0]) {
+          this.post({ type: "toast", level: "ok", text: "已取消选择目录" });
+          // 取消时重新打开来源弹层
+          this.post({ type: "reopenSourceModal" });
+          return;
         }
+        const dirPath = uris[0].fsPath;
+        this.post({
+          type: "pickedProtoDir",
+          path: dirPath,
+          label: path.basename(dirPath),
+        });
         return;
       }
       if (message.type === "pickGhzBinary" && this.panel) {
@@ -313,7 +327,7 @@ export class ClientPanel {
           </div>
           <button class="btn side-flow-btn primary" id="flowBtn" type="button" title="链路调试">链路调试</button>
         </div>
-        <input class="side-search" id="filter" placeholder="筛选 package / service / 接口" />
+        <input class="side-search" id="filter" placeholder="筛选接口 / 消息 / 字段 / 枚举值…" />
       </div>
       <div class="tree" id="tree"></div>
     </aside>
@@ -340,6 +354,16 @@ export class ClientPanel {
         <div class="pill method" id="methodLabel">未选择接口</div>
         <button class="btn" id="grpcurlBtn" type="button" title="Generate grpcurl command">&lt;/&gt;</button>
         <label class="tls-toggle" title="不勾选时使用明文 gRPC"><input id="tlsCheck" type="checkbox" /> TLS</label>
+        <label class="open-with-wrap hidden" id="openWithWrap" title="跳转源码的打开方式（仅浏览器 / npm）">
+          <span class="open-with-label">源码</span>
+          <select class="pill" id="openWithSelect">
+            <option value="preview">内置预览</option>
+            <option value="cursor">Cursor</option>
+            <option value="code">VS Code</option>
+            <option value="notepad">记事本</option>
+            <option value="auto">系统自动</option>
+          </select>
+        </label>
         <button class="btn primary" id="sendBtn" type="button" disabled>发送</button>
       </div>
       <div class="tabs" id="tabs">
@@ -523,6 +547,19 @@ export class ClientPanel {
         </aside>
       </div>
     </main>
+    <aside class="source-drawer hidden" id="sourceDrawer" aria-label="源码预览">
+      <div class="source-drawer-head">
+        <div class="source-drawer-titles">
+          <strong id="sourceDrawerName">源码</strong>
+          <span id="sourceDrawerMeta"></span>
+        </div>
+        <div class="source-drawer-actions">
+          <button class="btn" id="sourceDrawerExtBtn" type="button" title="用外部编辑器打开">外部打开</button>
+          <button class="icon-btn" id="sourceDrawerClose" type="button" title="关闭">✕</button>
+        </div>
+      </div>
+      <pre class="source-drawer-code" id="sourceDrawerCode"></pre>
+    </aside>
   </div>
   <div class="modal-mask" id="flowEditModal">
     <div class="modal flow-edit-modal">
@@ -592,7 +629,7 @@ export class ClientPanel {
         <button class="icon-btn" id="closeSourceModal" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note">在此选择本地目录或 Git；侧边栏「Proto 来源」仍可单独使用工作区 / Git。</p>
+        <p class="stress-note">本地目录：浏览选择（或填写路径）后点「应用并刷新」。Git：填地址后点应用。</p>
         <div class="source-mode-row">
           <label class="source-mode-opt"><input type="radio" name="sourceMode" value="directory" /> 自定义目录</label>
           <label class="source-mode-opt"><input type="radio" name="sourceMode" value="git" /> 自定义 Git 来源</label>

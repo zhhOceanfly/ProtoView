@@ -26,7 +26,7 @@
 | `npm run publish:cli` | 构建并 `npm publish` CLI 包 |
 
 本地调试扩展：按 **F5**（「运行 ProtoView」）打开 Extension Development Host。  
-若本机已从商店安装过 ProtoView，开发宿主会与已安装版冲突；`.vscode/launch.json` 已加 `--disable-extension=zoceanfly.protoview`，只在调试窗口里禁用商店版，不影响你日常用的 Cursor 主窗口。仍异常时可在主窗口暂时禁用/卸载商店版再 F5。
+若本机已从商店安装过 ProtoView（同 ID `zoceanfly.protoview`），会与开发版抢激活。`.vscode/launch.json` 使用 `--disable-extensions`，调试窗口里只加载本仓库开发版，主窗口商店版不受影响。仍异常时：扩展面板暂时 **禁用** ProtoView 后再 F5。
 
 `packages/**` 已写入 [.vscodeignore](.vscodeignore)，打 VSIX 时不会打进 CLI 产物。
 
@@ -141,94 +141,97 @@ Cursor 对 Open VSX 有镜像同步延迟（常见数小时）；也可在 Curso
 
 供 Rider 等环境在浏览器使用 ProtoView Client，与扩展共用 Client 页面逻辑。包目录：[`packages/cli`](packages/cli)，说明见 [`packages/cli/README.md`](packages/cli/README.md)。
 
-npm 组织：**`zhhoceanfly`**（与 VS Code Marketplace publisher `zoceanfly` 不同，勿混用）。
+npm 组织：**`zhhoceanfly`**（与 VS Code Marketplace publisher `zoceanfly` 不同，勿混用）。  
+包页面：https://www.npmjs.com/package/@zhhoceanfly/protoview  
 
-### 前置条件
+### 推荐：GitHub Actions（Trusted Publishing，无浏览器 MFA）
+
+工作流：[`.github/workflows/publish-npm-cli.yml`](.github/workflows/publish-npm-cli.yml)  
+本机 `npm publish` 会走交互式 2FA；CI 用 **OIDC Trusted Publishing** 可完全跳过浏览器二次验证，也**不必**长期存放 `NPM_TOKEN`。
+
+**1. 在 npm 绑定 Trusted Publisher（一次性）**
+
+1. 打开包 Settings：https://www.npmjs.com/package/@zhhoceanfly/protoview → **Settings** → **Trusted Publisher**
+2. 选 **GitHub Actions**，填写（须与仓库完全一致，区分大小写）：
+
+| 项 | 值 |
+| --- | --- |
+| Organization or user | `zhhOceanfly`（你的 GitHub 用户/组织名） |
+| Repository | `ProtoView` |
+| Workflow filename | `publish-npm-cli.yml`（只要文件名，含 `.yml`） |
+| Allowed actions | 勾选允许 **`npm publish`**（若界面有该项） |
+
+3. 保存后 **2 天内**必须用该 workflow **成功发布一次**，否则配置过期需重建。
+
+**2. 升版本并触发**
+
+先改 [`packages/cli/package.json`](packages/cli/package.json) 的 `version`（与扩展版本**不必相同**；**同版本不能重复发**），提交推送后任选：
+
+| 方式 | 操作 |
+|------|------|
+| 手动 | Actions → **Publish npm CLI** → **Run workflow** |
+| Tag | `git tag cli-v0.1.5 && git push origin cli-v0.1.5`（tag 名仅作触发，真正版本以 `packages/cli` 的 `version` 为准） |
+
+工作流会 `npm ci` → `build:cli` → `npm publish ./packages/cli`。OIDC 由 `permissions.id-token: write` 提供，无需 Secret。
+
+**3. 备选：Granular Token（未配 Trusted Publisher 时）**
+
+1. npm → Access Tokens → **Granular** → 对该包 Read and write，并勾选 **Bypass 2FA**  
+2. 仓库 Settings → Secrets → Actions → 新建 `NPM_TOKEN`  
+3. 同一 workflow 会把 `NODE_AUTH_TOKEN` 设为该 Secret（OIDC 不可用时回退）
+
+配好 Trusted Publisher 并验证成功后，建议在包 Settings → **Publishing access** 选「Require 2FA and disallow tokens」，并撤销不再需要的 publish token。
+
+### 本机手动发布（会触发浏览器 / OTP MFA）
 
 1. 在 [npmjs.com](https://www.npmjs.com/signup) **注册官方账号**（不要用 CNPM / npmmirror 注册页）  
 2. 已创建组织 [zhhoceanfly](https://www.npmjs.com/settings/zhhoceanfly/members)，且当前账号为 owner / 有 publish 权限  
-3. 包为**公开**包（`publishConfig.access: public`；首次发布 scoped 包必须 `--access public`）  
-4. **登录必须指向官方 registry**（见下；国内若把默认源改成了 npmmirror，直接 `npm login` 会进 CNPM 并报 `Public registration is not allowed`）
+3. 包为**公开**包（`publishConfig.access: public`）  
+4. **登录必须指向官方 registry**（国内若默认源是 npmmirror，直接 `npm login` 会进 CNPM）
 
 ```bash
-# 查看当前源（若是 registry.npmmirror.com / cnpmjs，发布前不要用默认 login）
 npm config get registry
-
-# 只对官方源登录（推荐；不必改掉日常安装用的镜像）
 npm login --registry=https://registry.npmjs.org/
 npm whoami --registry=https://registry.npmjs.org/
 ```
 
 浏览器应打开 **npmjs.org** 的登录/授权页，而不是「Sign up to CNPM」。  
-`packages/cli` 已配置 `publishConfig.registry = https://registry.npmjs.org/`，`npm run publish:cli` 会发到官方源；日常 `npm install` 仍可用你在 `~/.npmrc` 里配的 npmmirror。
+`packages/cli` 已配置 `publishConfig.registry = https://registry.npmjs.org/`。
 
-组织已创建则为 `zhhoceanfly`；包名必须是 `@zhhoceanfly/protoview`（两个 `h`）。
-
-### 发版步骤
-
-1. **确认 / 升版本**（版本号在 [`packages/cli/package.json`](packages/cli/package.json) 的 `version`；**同版本不能重复发布**）：
+升版本并发布：
 
 ```bash
-# 可选：在 packages/cli 下升版本（会改 package.json）
 cd packages/cli
-npm version patch    # 0.1.0 → 0.1.1
-# 或 npm version minor / major
+npm version patch    # 或手改 version
 cd ../..
-```
-
-也可手改 `packages/cli/package.json` 的 `version`，与扩展 `package.json` 版本**不必相同**。
-
-2. **构建并发布**（在仓库根目录）：
-
-```bash
 npm run publish:cli
 ```
 
-等价于：
+等价于 `npm run build:cli` + `npm publish ./packages/cli --access public --registry https://registry.npmjs.org/`。
+
+**不要**在仓库根目录执行 `npm publish`：根包 `"private": true`。  
+正确包名是 **`@zhhoceanfly/protoview`**（两个 `h`）。
+
+验证：
 
 ```bash
-npm run build:cli
-npm publish ./packages/cli --access public --registry https://registry.npmjs.org/
-```
-
-**不要**在仓库根目录执行 `npm publish`：根 `package.json` 已设 `"private": true`（VS Code 扩展只走 Marketplace / Open VSX）。  
-旧脚本曾用 `npm publish --prefix packages/cli`，在部分环境下会误发根包名 `protoview`（未 scoped）；若你曾因此把 `protoview@0.1.3` 发到 npm，可在 72 小时内撤销：
-
-```bash
-npm unpublish protoview@0.1.3 --registry=https://registry.npmjs.org/
-```
-
-正确包名是 **`@zhhoceanfly/protoview`**。也可：
-
-```bash
-cd packages/cli && npm publish --access public --registry https://registry.npmjs.org/
-```
-
-3. **验证**：
-
-```bash
-npm view @zhhoceanfly/protoview version
+npm view @zhhoceanfly/protoview version --registry=https://registry.npmjs.org/
 npx @zhhoceanfly/protoview@latest --help
-# 或全局
-npm i -g @zhhoceanfly/protoview
-protoview --proto ./你的proto目录
 ```
 
-包页面：https://www.npmjs.com/package/@zhhoceanfly/protoview  
-
-构建脚本：[`scripts/build-cli.js`](scripts/build-cli.js)。打进 npm 的内容见 `packages/cli` 的 `files` 字段（`bin` / `dist` / `public` / `README.md`），不含仓库源码树。
+构建脚本：[`scripts/build-cli.js`](scripts/build-cli.js)。打进 npm 的内容见 `packages/cli` 的 `files` 字段。
 
 ### 常见问题
 
 | 问题 | 处理 |
 | --- | --- |
-| 打开「Sign up to CNPM」/ `Public registration is not allowed` | 当前默认源是 npmmirror；改用 `npm login --registry=https://registry.npmjs.org/`，到 npmjs.com 注册/登录 |
-| `You need to authorize this machine` / 401 | 对官方源重新 `npm login --registry=https://registry.npmjs.org/`；检查 token 未过期 |
-| `You do not have permission to publish` | 账号不是组织 `zhhoceanfly` 成员，或未开通 publish；确认登录的是 owner 账号 `zoceanfly` |
-| `Cannot publish over existing version` / `PUT .../protoview`（无 scope） | 误发了根包：用修好的 `npm run publish:cli`；可选 `npm unpublish protoview@x.y.z` |
-| `Cannot publish over existing version`（URL 含 `@zhhoceanfly%2fprotoview`） | 该版本已在 npm，先升 `packages/cli` 的 `version` 再发 |
-| `Package name too similar` / scope 冲突 | 确认包名为 `@zhhoceanfly/protoview`，组织为 `zhhoceanfly` |
-| 发布后 `npx` 仍是旧版 | 镜像同步延迟：用 `npx @zhhoceanfly/protoview@x.y.z`，或 `npm view @zhhoceanfly/protoview version --registry=https://registry.npmjs.org/` |
+| 打开「Sign up to CNPM」/ `Public registration is not allowed` | 当前默认源是 npmmirror；改用 `npm login --registry=https://registry.npmjs.org/` |
+| 本机发布要浏览器 MFA / OTP | 正常；改用上面的 **Trusted Publishing** 工作流即可免交互 |
+| CI `Unable to authenticate` / `ENEEDAUTH` | 检查 Trusted Publisher 的用户名/仓库/workflow 文件名是否完全一致；新建后是否已在 2 天内成功发过一次；workflow 是否含 `id-token: write` |
+| CI `Cannot publish over existing version` | 先升 `packages/cli` 的 `version` 再跑 workflow |
+| `You do not have permission to publish` | 账号不是组织 `zhhoceanfly` 成员；确认登录的是有权限的账号 |
+| `Cannot publish over existing version` / `PUT .../protoview`（无 scope） | 误发了根包：用 `npm run publish:cli` 或 CI workflow |
+| 发布后 `npx` 仍是旧版 | 镜像延迟：指定版本或查官方 registry |
 
 ### 本地试跑（不发布）
 

@@ -8,7 +8,7 @@
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "--disable-extension=zoceanfly.protoview",
+        "--disable-extensions",
         "${workspaceFolder}"
       ],
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
@@ -22,7 +22,7 @@
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "--disable-extension=zoceanfly.protoview",
+        "--disable-extensions",
         "${workspaceFolder}"
       ],
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
