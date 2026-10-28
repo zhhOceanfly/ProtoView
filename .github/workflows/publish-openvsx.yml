@@ -1,0 +1,40 @@
+# 发布 VS Code / Cursor 扩展到 Open VSX
+# 密钥：仓库 Settings → Secrets and variables → Actions → New repository secret
+#   Name:  OVSX_PAT
+#   Value: open-vsx.org → User Settings → Access Tokens 创建的 token（ovsxat_...）
+#
+# 触发：
+#   - 手动：Actions → Publish Open VSX → Run workflow
+#   - 打 tag：git tag v0.1.5 && git push origin v0.1.5
+#   - 发布 GitHub Release（published）
+
+name: Publish Open VSX
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package and publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npm run publish:openvsx

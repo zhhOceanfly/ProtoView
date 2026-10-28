@@ -110,6 +110,31 @@ npm run publish:openvsx            # 打包并发布到 Open VSX
 脚本说明见 [`scripts/openvsx-publish.js`](scripts/openvsx-publish.js)。发布后页面：  
 `https://open-vsx.org/extension/zoceanfly/protoview`
 
+### GitHub Actions 自动发布
+
+工作流：[`.github/workflows/publish-openvsx.yml`](.github/workflows/publish-openvsx.yml)
+
+**1. 配置仓库密钥（一次性）**
+
+1. 在 [Open VSX Access Tokens](https://open-vsx.org/user-settings/tokens) 创建 Token（需已签署 Publisher Agreement）
+2. 打开仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+3. Name 填 `OVSX_PAT`，Value 粘贴 token（形如 `ovsxat_...`）→ Add secret  
+   （不要写进代码或提交到 git）
+
+命名空间 `zoceanfly` 若尚未创建，先在本机执行一次 `npm run openvsx:namespace`（CI 不会自动创建）。
+
+**2. 触发发布**
+
+任选其一（发布前先把 `package.json` 的 `version` 升到目标版本并推送）：
+
+| 方式 | 操作 |
+|------|------|
+| 手动 | Actions → **Publish Open VSX** → **Run workflow** |
+| Tag | `git tag v0.1.5 && git push origin v0.1.5` |
+| Release | 在 GitHub 创建并 Publish Release |
+
+工作流会 `npm ci` → `npm run publish:openvsx`（打包 VSIX 并用密钥发布）。同一版本已存在时 Open VSX 会拒绝，需先升版本。
+
 Cursor 对 Open VSX 有镜像同步延迟（常见数小时）；也可在 Cursor 里用「从 VSIX 安装」。用完整 ID 搜索：`zoceanfly.protoview`。
 
 ## 发布 npm CLI（`@zhhoceanfly/protoview`）
