@@ -125,13 +125,19 @@ npm run publish:openvsx            # 打包并发布到 Open VSX
 
 **2. 触发发布**
 
-任选其一（发布前先把 `package.json` 的 `version` 升到目标版本并推送）：
+任选其一（发布前先把根目录 `package.json` 的 `version` 升到目标版本并推送）。  
+**Tag 前缀与 npm / DBX 分开**，避免一次 push 触发多个发布：
+
+| 渠道 | Tag 示例 | Workflow |
+|------|----------|----------|
+| Open VSX | `ext-v0.1.5` | `publish-openvsx.yml` |
+| npm CLI | `cli-v0.1.5` | `publish-npm-cli.yml` |
+| DBX | `dbx-v0.1.0` | `publish-dbx-plugin.yml` |
 
 | 方式 | 操作 |
 |------|------|
 | 手动 | Actions → **Publish Open VSX** → **Run workflow** |
-| Tag | `git tag v0.1.5 && git push origin v0.1.5` |
-| Release | 在 GitHub 创建并 Publish Release |
+| Tag | `git tag ext-v0.1.5 && git push origin ext-v0.1.5` |
 
 工作流会 `npm ci` → `npm run publish:openvsx`（打包 VSIX 并用密钥发布）。同一版本已存在时 Open VSX 会拒绝，需先升版本。
 

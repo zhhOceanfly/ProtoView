@@ -5,10 +5,10 @@
   "version": "0.1.0",
   "name": "ApiMan",
   "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX.",
-  "icon": "https://raw.githubusercontent.com/zhhOceanfly/ProtoView/v0.1.0-dbx/packages/dbx-plugin/assets/plugin.svg",
+  "icon": "https://raw.githubusercontent.com/zhhOceanfly/ProtoView/dbx-v0.1.0/packages/dbx-plugin/assets/plugin.svg",
   "tags": ["protobuf", "grpc", "api", "http", "websocket"],
   "permissions": ["host.workbench", "host.events", "host.storage"],
-  "source": "https://github.com/zhhOceanfly/ProtoView/tree/v0.1.0-dbx",
+  "source": "https://github.com/zhhOceanfly/ProtoView/tree/dbx-v0.1.0",
   "homepage": "https://github.com/zhhOceanfly/ProtoView",
   "license": "MIT",
   "releaseNotes": "Initial DBX plugin: ApiMan workbench with Node sidecar (requires Node.js >= 18 on PATH).",
@@ -21,19 +21,19 @@
   "targets": [
     {
       "target": "windows-x64",
-      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/v0.1.0-dbx/io.github.zhhoceanfly.protoview-0.1.0-windows-x64.dbxp",
+      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.0/io.github.zhhoceanfly.protoview-0.1.0-windows-x64.dbxp",
       "sha256": "REPLACE_WITH_64_HEX_SHA256",
       "size": 1
     },
     {
       "target": "linux-x64",
-      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/v0.1.0-dbx/io.github.zhhoceanfly.protoview-0.1.0-linux-x64.dbxp",
+      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.0/io.github.zhhoceanfly.protoview-0.1.0-linux-x64.dbxp",
       "sha256": "REPLACE_WITH_64_HEX_SHA256",
       "size": 1
     },
     {
       "target": "darwin-arm64",
-      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/v0.1.0-dbx/io.github.zhhoceanfly.protoview-0.1.0-darwin-arm64.dbxp",
+      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.0/io.github.zhhoceanfly.protoview-0.1.0-darwin-arm64.dbxp",
       "sha256": "REPLACE_WITH_64_HEX_SHA256",
       "size": 1
     }

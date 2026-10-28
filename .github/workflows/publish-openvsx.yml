@@ -3,20 +3,19 @@
 #   Name:  OVSX_PAT
 #   Value: open-vsx.org → User Settings → Access Tokens 创建的 token（ovsxat_...）
 #
-# 触发：
+# 触发（与 npm / DBX 分开，勿共用 tag）：
 #   - 手动：Actions → Publish Open VSX → Run workflow
-#   - 打 tag：git tag v0.1.5 && git push origin v0.1.5
-#   - 发布 GitHub Release（published）
+#   - Tag：git tag ext-v0.1.5 && git push origin ext-v0.1.5
+#
+# 版本以根目录 package.json 的 version 为准（tag 仅作触发）。
 
 name: Publish Open VSX
 
 on:
   workflow_dispatch:
-  release:
-    types: [published]
   push:
     tags:
-      - "v*"
+      - "ext-v*"
 
 jobs:
   publish:

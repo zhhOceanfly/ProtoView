@@ -8,7 +8,7 @@
 #
 # 备选：Granular Access Token（勾选 Bypass 2FA）→ Secret 名 NPM_TOKEN
 #
-# 触发：
+# 触发（与 Open VSX / DBX 分开，勿共用 tag）：
 #   - 手动：Actions → Publish npm CLI → Run workflow
 #   - Tag：git tag cli-v0.1.5 && git push origin cli-v0.1.5
 #

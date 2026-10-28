@@ -1,10 +1,14 @@
-# Build unsigned DBX plugin candidates (.dbxp) on tags like v0.1.0-dbx
+# Build unsigned DBX plugin candidates (.dbxp)
+# 触发（与 Open VSX / npm 分开，勿共用 tag）：
+#   - Tag：git tag dbx-v0.1.0 && git push origin dbx-v0.1.0
+#   - 手动：Actions → Publish DBX plugin candidates → Run workflow
+# 版本以 packages/dbx-plugin/manifest.json 为准。
 name: Publish DBX plugin candidates
 
 on:
   push:
     tags:
-      - "v*-dbx"
+      - "dbx-v*"
   workflow_dispatch:
 
 permissions:

@@ -84,12 +84,24 @@ dist/<plugin-id>-<version>-<target>.artifact.json
 ## 3. 源码 Tag + GitHub Release（第一步）
 
 1. 递增 `packages/dbx-plugin/manifest.json` 的 `version`（及 `.dbx-store.json` / store 候选模板中的版本）
-2. 打 Tag，例如 `v0.1.0-dbx`（与 VS Code 扩展版本号可独立）
-3. 创建 GitHub Release，附上：
+2. 打 **DBX 专用 Tag**（勿用 `ext-v*` / `cli-v*`，避免触发 Open VSX / npm）：
+   ```bash
+   git tag dbx-v0.1.0 && git push origin dbx-v0.1.0
+   ```
+   CI（`publish-dbx-plugin.yml`）会打多平台 `.dbxp` 并创建/更新 GitHub Release。
+3. 也可本机 `npm run package:dbx` 后手工挂 Release，资产需包含：
    - 每个平台的 `.dbxp`
    - 对应 `.artifact.json`
-   - 汇总的 `release-candidates.json`（CI 可生成）
+   - 汇总的 `release-candidates.json`
 4. Release 资产 URL 必须是 **HTTPS、不可变**（按 Tag/版本路径）；不要指向 `dbx-store` 已签名包
+
+三渠道 Tag 约定：
+
+| 渠道 | Tag | Workflow |
+|------|-----|----------|
+| Open VSX | `ext-v0.1.5` | `publish-openvsx.yml` |
+| npm CLI | `cli-v0.1.5` | `publish-npm-cli.yml` |
+| DBX | `dbx-v0.1.0` | `publish-dbx-plugin.yml` |
 
 `release-candidates.json` 示意（字段以 CLI 实际输出为准）：
 
@@ -100,8 +112,8 @@ dist/<plugin-id>-<version>-<target>.artifact.json
   "version": "0.1.0",
   "targets": [
     {
-      "target": "win-x64",
-      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/v0.1.0-dbx/io.github.zhhoceanfly.protoview-0.1.0-win-x64.dbxp",
+      "target": "windows-x64",
+      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.0/io.github.zhhoceanfly.protoview-0.1.0-windows-x64.dbxp",
       "sha256": "<64 hex>",
       "size": 123456
     }
