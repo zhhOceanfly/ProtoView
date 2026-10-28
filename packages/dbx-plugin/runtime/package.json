@@ -1,0 +1,11 @@
+{
+  "name": "protoview-dbx-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "main": "sidecar.js",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/proto-loader": "^0.8.1",
+    "protobufjs": "^7.5.4"
+  }
+}

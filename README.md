@@ -82,6 +82,18 @@ npm run dev:cli          # CLI 开发：改 client/ 刷新浏览器，改 .ts �
 
 按 **F5**（「运行 ProtoView」）启动扩展调试。调试宿主会 `--disable-extensions`，只加载本仓库开发版，避免与已安装的商店版（同 ID `zoceanfly.protoview`）冲突；主窗口里的商店版不受影响。打包与发布见 **[Publish.md](Publish.md)**。
 
+### DBX 插件（展示名 ApiMan）
+
+同一套 Client 也可打包为 DBX 商店格式（`.dbxp`，插件名 **ApiMan**）：
+
+```bash
+npm run build:dbx
+npm run package:dbx    # 产出 packages/dbx-plugin/dist/*.dbxp
+nvm use 22 && npm run dev:dbx   # 开发宿主需 Node 22+（官方 CLI）
+```
+
+上架流程（候选 Release → `t8y2/dbx-store` PR → 审核签名）见 [`packages/dbx-plugin/PUBLISH-DBX.md`](packages/dbx-plugin/PUBLISH-DBX.md)。
+
 ## 许可
 
 MIT License（仓库根目录 `LICENSE` 文件）。

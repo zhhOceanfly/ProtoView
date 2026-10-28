@@ -1,0 +1,157 @@
+{
+  "$schema": "https://raw.githubusercontent.com/t8y2/dbx/main/plugins/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "io.github.zhhoceanfly.protoview",
+  "name": "ApiMan",
+  "version": "0.1.0",
+  "publisher": "zoceanfly",
+  "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX.",
+  "icon": "assets/plugin.svg",
+  "source": "https://github.com/zhhOceanfly/ProtoView",
+  "homepage": "https://github.com/zhhOceanfly/ProtoView",
+  "engines": {
+    "dbx": ">=0.6.0",
+    "host_api": "1"
+  },
+  "permissions": [
+    "host.workbench",
+    "host.events",
+    "host.storage"
+  ],
+  "entrypoints": {
+    "ui": {
+      "root": "ui",
+      "entry": "ui/index.html"
+    },
+    "backend": {
+      "protocol_versions": [1],
+      "transport": "stdio-jsonl",
+      "executable": "bin/protoview-dbx"
+    }
+  },
+  "contributions": [
+    {
+      "type": "connection-provider",
+      "id": "io.github.zhhoceanfly.protoview.connection",
+      "label": "ApiMan",
+      "icon": "assets/plugin.svg",
+      "database_type": "protoview-grpc",
+      "description": "gRPC / HTTP API debugging with Protobuf definitions. Host/port live in Client environments.",
+      "fields": [
+        {
+          "key": "display_name",
+          "label": "Name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "ApiMan"
+        },
+        {
+          "key": "source_mode",
+          "label": "Proto source",
+          "type": "radio",
+          "binding": "config",
+          "required": true,
+          "default": "directory",
+          "options": [
+            { "label": "Local directory", "value": "directory" },
+            { "label": "Git repository", "value": "git" }
+          ]
+        },
+        {
+          "key": "dir_path",
+          "label": "Proto directory",
+          "type": "text",
+          "binding": "config",
+          "placeholder": "Select a folder containing .proto files",
+          "picker": { "kind": "directory" },
+          "visible_when": { "field": "source_mode", "one_of": ["directory"] },
+          "required_when": { "field": "source_mode", "one_of": ["directory"] }
+        },
+        {
+          "key": "git_url",
+          "label": "Git URL",
+          "type": "text",
+          "binding": "config",
+          "placeholder": "https://github.com/org/repo.git",
+          "visible_when": { "field": "source_mode", "one_of": ["git"] },
+          "required_when": { "field": "source_mode", "one_of": ["git"] }
+        },
+        {
+          "key": "git_branch",
+          "label": "Git branch",
+          "type": "text",
+          "binding": "config",
+          "default": "main",
+          "placeholder": "main",
+          "visible_when": { "field": "source_mode", "one_of": ["git"] }
+        }
+      ],
+      "workbench": "io.github.zhhoceanfly.protoview.client",
+      "capabilities": ["test", "connect", "disconnect"]
+    },
+    {
+      "type": "workbench",
+      "id": "io.github.zhhoceanfly.protoview.client",
+      "label": "ApiMan",
+      "description": "Protobuf browser and API client (gRPC / HTTP / SSE / WebSocket).",
+      "icon": "assets/plugin.svg"
+    },
+    {
+      "type": "command",
+      "id": "io.github.zhhoceanfly.protoview.open",
+      "label": "Open ApiMan",
+      "icon": "assets/plugin.svg",
+      "action": {
+        "type": "open-workbench",
+        "workbench": "io.github.zhhoceanfly.protoview.client",
+        "presentation": "tab"
+      }
+    },
+    {
+      "type": "menus",
+      "id": "io.github.zhhoceanfly.protoview.menus",
+      "items": [
+        {
+          "location": "appToolbar",
+          "command": "io.github.zhhoceanfly.protoview.open",
+          "group": "navigation",
+          "order": 80,
+          "default_visible": true
+        },
+        {
+          "location": "commandPalette",
+          "command": "io.github.zhhoceanfly.protoview.open",
+          "group": "secondary",
+          "order": 1
+        }
+      ]
+    }
+  ],
+  "localizations": {
+    "zh-CN": {
+      "name": "ApiMan",
+      "description": "在 DBX 中浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口。",
+      "contributions": {
+        "io.github.zhhoceanfly.protoview.connection": {
+          "label": "ApiMan",
+          "description": "基于 Protobuf 的 gRPC / HTTP 接口调试；调用地址在 Client 环境里配置。",
+          "fields": {
+            "display_name": { "label": "名称" },
+            "source_mode": { "label": "Proto 来源", "options": { "directory": "本地目录", "git": "Git 仓库" } },
+            "dir_path": { "label": "Proto 目录", "placeholder": "选择包含 .proto 的文件夹" },
+            "git_url": { "label": "Git 地址", "placeholder": "https://github.com/org/repo.git" },
+            "git_branch": { "label": "Git 分支", "placeholder": "main" }
+          }
+        },
+        "io.github.zhhoceanfly.protoview.client": {
+          "label": "ApiMan",
+          "description": "Protobuf 浏览与 API 调试（gRPC / HTTP / SSE / WebSocket）。"
+        },
+        "io.github.zhhoceanfly.protoview.open": {
+          "label": "打开 ApiMan"
+        }
+      }
+    }
+  }
+}

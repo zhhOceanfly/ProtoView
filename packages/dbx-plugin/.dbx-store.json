@@ -1,0 +1,17 @@
+{
+  "name": "ApiMan",
+  "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX.",
+  "icon": "assets/plugin.svg",
+  "tags": ["protobuf", "grpc", "api", "http", "websocket"],
+  "permissions": ["host.workbench", "host.events", "host.storage"],
+  "source": "https://github.com/zhhOceanfly/ProtoView",
+  "homepage": "https://github.com/zhhOceanfly/ProtoView",
+  "license": "MIT",
+  "releaseNotes": "Initial DBX plugin: ApiMan workbench with Node sidecar.",
+  "localizations": {
+    "zh-CN": {
+      "name": "ApiMan",
+      "description": "在 DBX 中浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口。"
+    }
+  }
+}

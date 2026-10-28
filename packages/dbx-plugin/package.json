@@ -1,0 +1,22 @@
+{
+  "name": "@zhhoceanfly/protoview-dbx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ApiMan (ProtoView) as a DBX (.dbxp) plugin",
+  "license": "MIT",
+  "scripts": {
+    "build": "node ./run-build.js",
+    "build:ui": "node ./run-build.js --ui-only",
+    "build:ui:watch": "node ./run-build.js --ui-only --watch",
+    "package": "npm run build && npx --yes @dbx-app/plugin-cli package . --output-dir dist",
+    "dev": "node ../../scripts/check-node-for-dbx-dev.js && npm run build && npx --yes @dbx-app/plugin-cli dev --path . --port 5190"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/proto-loader": "^0.8.1",
+    "protobufjs": "^7.5.4"
+  }
+}

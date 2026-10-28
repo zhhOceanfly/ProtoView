@@ -1,6 +1,19 @@
 (() => {
+  ensureLocalStorageShim();
   const isVsCodeWebview = typeof acquireVsCodeApi === "function";
-  const vscode = isVsCodeWebview ? acquireVsCodeApi() : createWsBridge();
+  const isDbxWorkbench = typeof window !== "undefined" && !!window.dbxPlugin;
+  if (isDbxWorkbench) {
+    document.title = "ApiMan";
+    const brand = document.querySelector(".brand");
+    if (brand) brand.innerHTML = "Api<span>Man</span>";
+    const crumb = document.querySelector(".doc-crumbs span");
+    if (crumb && crumb.textContent === "ProtoView") crumb.textContent = "ApiMan";
+  }
+  const vscode = isVsCodeWebview
+    ? acquireVsCodeApi()
+    : isDbxWorkbench
+      ? createDbxBridge()
+      : createWsBridge();
   const THEME_KEY = "protoview.client.theme";
   const SIDEBAR_BREAKPOINT = 960;
   const DRAFT_KEY = "protoview.client.drafts";
@@ -8,6 +21,131 @@
   /** null=跟宽度走；true/false=手动覆盖（窗口跨过断点后清除） */
   let sidebarManual = null;
   let sidebarWasNarrow = null;
+
+  /** DBX opaque-origin sandboxes reject localStorage; keep an in-memory shim. */
+  function ensureLocalStorageShim() {
+    try {
+      const k = "__protoview_ls_probe__";
+      window.localStorage.setItem(k, "1");
+      window.localStorage.removeItem(k);
+      return;
+    } catch {
+      /* fall through */
+    }
+    const mem = new Map();
+    const shim = {
+      getItem(key) {
+        return mem.has(String(key)) ? mem.get(String(key)) : null;
+      },
+      setItem(key, value) {
+        mem.set(String(key), String(value));
+      },
+      removeItem(key) {
+        mem.delete(String(key));
+      },
+      clear() {
+        mem.clear();
+      },
+      key(index) {
+        return [...mem.keys()][index] ?? null;
+      },
+      get length() {
+        return mem.size;
+      },
+    };
+    try {
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        get() {
+          return shim;
+        },
+      });
+    } catch {
+      /* ignore if locked */
+    }
+  }
+
+  /** DBX workbench: same postMessage protocol via Sidecar JSON-RPC + client/push events. */
+  function createDbxBridge() {
+    const api = window.dbxPlugin;
+    const queue = [];
+    let ready = false;
+
+    function pushToUi(data) {
+      window.dispatchEvent(new MessageEvent("message", { data }));
+    }
+
+    function handleHostEvent(ev) {
+      if (!ev) return;
+      // Host may deliver { method, params } or the params object itself.
+      if (ev.method === "client/push") {
+        pushToUi(ev.params || {});
+        return;
+      }
+      if (ev.params && ev.params.type) {
+        pushToUi(ev.params);
+        return;
+      }
+      if (ev.type) pushToUi(ev);
+    }
+
+    void (async () => {
+      try {
+        await api.ready;
+        if (typeof api.onEvent === "function") {
+          api.onEvent(handleHostEvent);
+        }
+        // Apply DBX theme tokens when available
+        try {
+          const appearance = api.theme?.appearance;
+          if (appearance === "light" || appearance === "dark") {
+            document.documentElement.setAttribute("data-theme", appearance);
+            document.documentElement.setAttribute("data-dbx-theme", appearance);
+          }
+        } catch { /* ignore */ }
+        window.addEventListener("dbx-plugin-env", (event) => {
+          const appearance = event?.detail?.theme?.appearance || api.theme?.appearance;
+          if (appearance === "light" || appearance === "dark") {
+            document.documentElement.setAttribute("data-theme", appearance);
+          }
+        });
+        ready = true;
+        while (queue.length) {
+          const msg = queue.shift();
+          void api.invoke("client/message", { message: msg }).catch((err) => {
+            pushToUi({
+              type: "toast",
+              level: "err",
+              text: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+      } catch (err) {
+        pushToUi({
+          type: "toast",
+          level: "err",
+          text: `DBX Host 初始化失败: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    })();
+
+    return {
+      postMessage(msg) {
+        if (!ready) {
+          queue.push(msg || {});
+          return;
+        }
+        void api.invoke("client/message", { message: msg || {} }).catch((err) => {
+          pushToUi({
+            type: "toast",
+            level: "err",
+            text: err instanceof Error ? err.message : String(err),
+          });
+        });
+      },
+      dispose() {},
+    };
+  }
 
   /** Browser / CLI: talk to local Node host over WebSocket (same message protocol as the extension). */
   function createWsBridge() {
@@ -1191,7 +1329,7 @@
         lastError: data.source.lastError || "",
       };
     }
-    els.sourceMeta.textContent = state.catalog.sourceLabel || "ProtoView Client";
+    els.sourceMeta.textContent = state.catalog.sourceLabel || (isDbxWorkbench ? "ApiMan" : "ProtoView Client");
     if (data.qr) state.qr = data.qr;
     renderEnvSelect();
     renderTree();
