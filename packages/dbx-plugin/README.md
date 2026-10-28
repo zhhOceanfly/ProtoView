@@ -2,7 +2,13 @@
 
 将 ApiMan（ProtoView Client）以 DBX 插件（`.dbxp`）形式运行：Workbench UI + Node Sidecar（复用仓库内 `ClientHost` / gRPC 等核心）。
 
-商店展示名：**ApiMan**；稳定插件 ID 仍为 `io.github.zhhoceanfly.protoview`。
+商店展示名：**ApiMan**；稳定插件 ID 为 `io.github.zhhoceanfly.protoview`；publisher 为 **`zhhoceanfly`**。
+
+**运行时：** 打包时下载官方 Node 到 `runtime/node/` 一并打进 `.dbxp`，用户无需本机安装 Node。Go 启动器优先用内置二进制（仍声明 `host.binary`）。
+
+**体积 / 许可：** `runtime/node_modules/` 来自 sidecar 的 npm 依赖（`@grpc/grpc-js` 等），来源与许可见包内 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)（打进 `.dbxp`，见 `dbx-plugin.toml` 的 `include`）。
+
+商店候选文件必须命名为 `candidates/io.github.zhhoceanfly.protoview.json`（不要多一层 `candidates.` 前缀）。素材在 `store/`。
 
 ## 快速开始
 
@@ -22,7 +28,7 @@ npm run dev:dbx
 
 试装：在 DBX「插件中心」开启未签名开发包，安装 `dist/*.dbxp`。
 
-运行已安装插件的 Sidecar 仍只需 **Node.js ≥ 18** 在 PATH 中；仅 `dbx-plugin dev` 要求 22+。
+正式包自带 Node；仅本地 `dbx-plugin dev` 要求宿主 Node 22+。
 
 ## 上架
 

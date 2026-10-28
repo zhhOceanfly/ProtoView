@@ -3,9 +3,9 @@
   "manifest_version": 1,
   "id": "io.github.zhhoceanfly.protoview",
   "name": "ApiMan",
-  "version": "0.1.0",
-  "publisher": "zoceanfly",
-  "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX.",
+  "version": "0.1.1",
+  "publisher": "zhhoceanfly",
+  "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX. Requires Node.js >= 18 on PATH (sidecar runs runtime/sidecar.js via node).",
   "icon": "assets/plugin.svg",
   "source": "https://github.com/zhhOceanfly/ProtoView",
   "homepage": "https://github.com/zhhOceanfly/ProtoView",
@@ -16,7 +16,8 @@
   "permissions": [
     "host.workbench",
     "host.events",
-    "host.storage"
+    "host.storage",
+    "host.binary"
   ],
   "entrypoints": {
     "ui": {
@@ -131,7 +132,7 @@
   "localizations": {
     "zh-CN": {
       "name": "ApiMan",
-      "description": "在 DBX 中浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口。",
+      "description": "在 DBX 中浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口。需要本机已安装 Node.js ≥ 18 且在 PATH 中。",
       "contributions": {
         "io.github.zhhoceanfly.protoview.connection": {
           "label": "ApiMan",

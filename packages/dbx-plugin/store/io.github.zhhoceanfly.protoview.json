@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.zhhoceanfly.protoview",
+  "publisher": "zhhoceanfly",
+  "version": "0.1.1",
+  "name": "ApiMan",
+  "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX. Ships bundled Node under runtime/node plus npm deps in runtime/node_modules (see THIRD_PARTY_NOTICES.md); host.binary.",
+  "icon": "https://raw.githubusercontent.com/zhhOceanfly/ProtoView/dbx-v0.1.1/packages/dbx-plugin/assets/plugin.svg",
+  "tags": ["protobuf", "grpc", "api", "http", "websocket"],
+  "permissions": ["host.workbench", "host.events", "host.storage", "host.binary"],
+  "source": "https://github.com/zhhOceanfly/ProtoView/tree/dbx-v0.1.1",
+  "homepage": "https://github.com/zhhOceanfly/ProtoView",
+  "license": "MIT",
+  "releaseNotes": "v0.1.1: publisher zhhoceanfly; host.binary; bundled Node in runtime/node; LICENSE + THIRD_PARTY_NOTICES.md document runtime/node_modules (@grpc/grpc-js Apache-2.0, @grpc/proto-loader Apache-2.0, protobufjs BSD-3-Clause) and Node MIT.",
+  "localizations": {
+    "zh-CN": {
+      "name": "ApiMan",
+      "description": "在 DBX 中浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口。包内自带 Node（runtime/node）及 npm 依赖（runtime/node_modules，许可见 THIRD_PARTY_NOTICES.md）。"
+    }
+  },
+  "targets": [
+    {
+      "target": "darwin-arm64",
+      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.1/io.github.zhhoceanfly.protoview-0.1.1-darwin-arm64.dbxp",
+      "sha256": "REPLACE_AFTER_RELEASE",
+      "size": 1
+    },
+    {
+      "target": "linux-x64",
+      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.1/io.github.zhhoceanfly.protoview-0.1.1-linux-x64.dbxp",
+      "sha256": "REPLACE_AFTER_RELEASE",
+      "size": 1
+    },
+    {
+      "target": "windows-x64",
+      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.1/io.github.zhhoceanfly.protoview-0.1.1-windows-x64.dbxp",
+      "sha256": "REPLACE_AFTER_RELEASE",
+      "size": 1
+    }
+  ]
+}

@@ -22,8 +22,10 @@
 插件身份（发布后勿改 `id` / `publisher`）：
 
 - `id`: `io.github.zhhoceanfly.protoview`
-- `publisher`: `zoceanfly`
+- `publisher`: `zhhoceanfly`（须与 id 命名空间一致）
 - Workbench: `io.github.zhhoceanfly.protoview.client`
+- 权限含 `host.binary`（Go 启动器会 `spawn node`）
+- 运行机需要 **Node.js ≥ 18** 在 PATH
 
 ---
 
@@ -139,8 +141,8 @@ wc -c dist/*.dbxp
 
 1. Fork `t8y2/dbx-store`
 2. 在 PR 中加入：
-   - `publishers/zoceanfly.json` ← 见本目录 `store/publishers.zoceanfly.json`
-   - `candidates/io.github.zhhoceanfly.protoview.json` ← 以 `store/candidates.*.json` 为模板，填真实 `targets[].url/sha256/size`
+   - `publishers/zhhoceanfly.json` ← 见本目录 `store/publishers.zhhoceanfly.json`
+   - `candidates/io.github.zhhoceanfly.protoview.json` ← 见本目录 `store/io.github.zhhoceanfly.protoview.json`（填真实 sha256/size）
 3. 按 PR 模板填写：能力、权限、是否有原生 Sidecar、数据/网络访问说明
 4. **不要**提交：`.dbxp` 二进制、完整插件源码、签名私钥、`verified: true`、已签名包 URL
 5. CI 会保持红色并提示 `open candidate(s) awaiting DBX Store signing`——这是预期行为，不是作者侧失败

@@ -10,7 +10,7 @@ const path = require("path");
 const readline = require("readline");
 
 const PLUGIN_ID = "io.github.zhhoceanfly.protoview";
-const PLUGIN_VERSION = "0.1.0";
+const PLUGIN_VERSION = "0.1.1";
 
 const coreDir = path.join(__dirname, "core");
 const { ClientHost } = require(path.join(coreDir, "hostCore.js"));

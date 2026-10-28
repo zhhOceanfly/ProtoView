@@ -6,7 +6,7 @@ directory = "backend"
 binary = "protoview-dbx"
 
 [package]
-include = ["assets", "ui", "runtime"]
+include = ["assets", "ui", "runtime", "LICENSE", "THIRD_PARTY_NOTICES.md"]
 
 # Call node directly — npm.cmd uses CMD, which rejects UNC cwd (`\\?\C:\...`) on Windows.
 [dev]

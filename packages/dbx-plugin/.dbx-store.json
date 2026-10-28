@@ -1,17 +1,17 @@
 {
   "name": "ApiMan",
-  "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX.",
+  "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX. Requires Node.js >= 18 on PATH.",
   "icon": "assets/plugin.svg",
   "tags": ["protobuf", "grpc", "api", "http", "websocket"],
-  "permissions": ["host.workbench", "host.events", "host.storage"],
+  "permissions": ["host.workbench", "host.events", "host.storage", "host.binary"],
   "source": "https://github.com/zhhOceanfly/ProtoView",
   "homepage": "https://github.com/zhhOceanfly/ProtoView",
   "license": "MIT",
-  "releaseNotes": "Initial DBX plugin: ApiMan workbench with Node sidecar.",
+  "releaseNotes": "v0.1.1: publisher zhhoceanfly; host.binary; bundled Node; LICENSE + THIRD_PARTY_NOTICES for runtime/node_modules.",
   "localizations": {
     "zh-CN": {
       "name": "ApiMan",
-      "description": "在 DBX 中浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口。"
+      "description": "在 DBX 中浏览 Protobuf，并用 gRPC / HTTP / SSE / WebSocket 调试接口。需要本机 Node.js ≥ 18。"
     }
   }
 }

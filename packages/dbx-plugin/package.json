@@ -1,8 +1,8 @@
 {
   "name": "@zhhoceanfly/protoview-dbx",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "ApiMan (ProtoView) as a DBX (.dbxp) plugin",
+  "description": "ApiMan (ProtoView) as a DBX (.dbxp) plugin; requires Node.js >= 18 on PATH",
   "license": "MIT",
   "scripts": {
     "build": "node ./run-build.js",
