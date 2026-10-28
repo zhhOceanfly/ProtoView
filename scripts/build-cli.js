@@ -52,13 +52,30 @@ function copyDir(src, dest) {
 }
 
 /** packages/cli 是独立包，根目录 npm ci 不会装它的依赖；缺了 tsc 会报 TS2307 */
-function ensureCliDeps() {
+function missingCliDeps() {
   const required = ["ws", "@types/ws", "@grpc/grpc-js", "@grpc/proto-loader", "protobufjs"];
-  const missing = required.filter((name) => !fs.existsSync(path.join(cliRoot, "node_modules", ...name.split("/"))));
+  return required.filter((name) => !fs.existsSync(path.join(cliRoot, "node_modules", ...name.split("/"))));
+}
+
+function ensureCliDeps() {
+  const missing = missingCliDeps();
   if (!missing.length) return;
-  console.error(`[build-cli] packages/cli 缺少依赖：${missing.join(", ")}`);
-  console.error("[build-cli] 请先执行：npm ci --prefix packages/cli");
-  process.exit(1);
+  console.warn(`[build-cli] packages/cli 缺少依赖：${missing.join(", ")}，自动安装…`);
+  const hasLock = fs.existsSync(path.join(cliRoot, "package-lock.json"));
+  const cmd = hasLock ? "npm ci --include=dev" : "npm install --include=dev";
+  try {
+    execSync(cmd, { cwd: cliRoot, stdio: "inherit" });
+  } catch (error) {
+    console.error(`[build-cli] 自动安装失败（${cmd}）：${error?.message || error}`);
+    console.error("[build-cli] 请手动执行：npm ci --prefix packages/cli");
+    process.exit(1);
+  }
+  const still = missingCliDeps();
+  if (still.length) {
+    console.error(`[build-cli] 安装后仍缺少：${still.join(", ")}`);
+    console.error("[build-cli] 请手动执行：npm ci --prefix packages/cli");
+    process.exit(1);
+  }
 }
 
 ensureCliDeps();

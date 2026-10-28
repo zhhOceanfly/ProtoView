@@ -53,9 +53,9 @@ jobs:
         run: npm ci
 
       # packages/cli 是独立包（有自己的 package-lock），根目录 npm ci 不会装它的
-      # 依赖，缺 ws / @types/ws 会让 tsc 报 TS2307
+      # 依赖，缺 ws / @types/ws 会让 tsc 报 TS2307（build-cli 里也有自动兜底）
       - name: Install CLI dependencies
-        run: npm ci --prefix packages/cli
+        run: npm ci --prefix packages/cli --include=dev
 
       - name: Build CLI
         run: npm run build:cli
