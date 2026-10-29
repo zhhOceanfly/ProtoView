@@ -4,7 +4,7 @@
 
 商店展示名：**ApiMan**；稳定插件 ID 为 `io.github.zhhoceanfly.protoview`；publisher 为 **`zhhoceanfly`**。
 
-**运行时：** 打包时下载官方 Node 到 `runtime/node/` 一并打进 `.dbxp`，用户无需本机安装 Node。Go 启动器优先用内置二进制（仍声明 `host.binary`）。
+**运行要求：** 本机安装 **Node.js ≥ 18** 并在 PATH 中（Go 启动器通过 `node` 拉起 `runtime/sidecar.js`，manifest 声明 `host.binary`）。找不到或版本过低时会报错并给出安装指引。
 
 **体积 / 许可：** `runtime/node_modules/` 来自 sidecar 的 npm 依赖（`@grpc/grpc-js` 等），来源与许可见包内 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)（打进 `.dbxp`，见 `dbx-plugin.toml` 的 `include`）。
 
@@ -28,7 +28,7 @@ npm run dev:dbx
 
 试装：在 DBX「插件中心」开启未签名开发包，安装 `dist/*.dbxp`。
 
-正式包自带 Node；仅本地 `dbx-plugin dev` 要求宿主 Node 22+。
+运行已安装插件仍需 **Node.js ≥ 18** 在 PATH；仅本地 `dbx-plugin dev` 要求宿主 Node 22+。
 
 ## 上架
 

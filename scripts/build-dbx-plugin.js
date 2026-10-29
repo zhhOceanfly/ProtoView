@@ -133,18 +133,12 @@ function buildRuntime() {
     rmrf(tmpOut);
   }
 
-  const runtimePkg = {
-    name: "protoview-dbx-runtime",
-    private: true,
-    version: "0.1.0",
-    main: "sidecar.js",
-    dependencies: {
-      "@grpc/grpc-js": "^1.14.6",
-      "@grpc/proto-loader": "^0.8.1",
-      protobufjs: "^7.5.4",
-    },
-  };
-  fs.writeFileSync(path.join(runtimeDest, "package.json"), `${JSON.stringify(runtimePkg, null, 2)}\n`);
+  // Do NOT rewrite tracked runtime/package.json — that dirties the git tree and
+  // causes Go binaries to stamp vcs.modified=true (store review rejects this).
+  const runtimePkgPath = path.join(runtimeDest, "package.json");
+  if (!fs.existsSync(runtimePkgPath)) {
+    throw new Error(`missing ${runtimePkgPath}`);
+  }
 
   console.log("[build-dbx] npm install runtime deps …");
   // --no-bin-links: avoid node_modules/.bin symlinks (dbx-plugin package rejects them).

@@ -7,7 +7,7 @@
   "source": "https://github.com/zhhOceanfly/ProtoView",
   "homepage": "https://github.com/zhhOceanfly/ProtoView",
   "license": "MIT",
-  "releaseNotes": "v0.1.1: publisher zhhoceanfly; host.binary; bundled Node; LICENSE + THIRD_PARTY_NOTICES for runtime/node_modules.",
+  "releaseNotes": "v0.1.1: publisher zhhoceanfly; host.binary; requires Node.js >= 18 on PATH; LICENSE + THIRD_PARTY_NOTICES for runtime/node_modules.",
   "localizations": {
     "zh-CN": {
       "name": "ApiMan",

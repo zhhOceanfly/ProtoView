@@ -1,14 +1,12 @@
 # Third-party notices (ApiMan DBX runtime)
 
-## Bundled Node.js
+## Runtime requirement (Node.js)
 
-`runtime/node/` contains an official Node.js binary downloaded at package build
-time from `https://nodejs.org/dist/` (see `runtime/node/VERSION` / `README.md`).
-Node.js is MIT-licensed; upstream `LICENSE` is copied into that folder when
-present in the archive.
-
-The Go launcher prefers this bundled binary (`host.binary`); PATH Node is only a
-fallback for local development if the bundle is missing.
+The Go launcher (`bin/protoview-dbx`, `host.binary`) resolves `node` / `node.exe`
+via `PATH` (`exec.LookPath`) and runs `runtime/sidecar.js`. **Node.js ≥ 18 must
+be installed on the host.** If Node is missing or too old, the launcher exits
+non-zero with an actionable install hint (https://nodejs.org/). This package
+does **not** bundle a Node binary under `runtime/node/`.
 
 ## npm dependencies in `runtime/node_modules/`
 

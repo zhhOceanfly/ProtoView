@@ -51,6 +51,20 @@ jobs:
         working-directory: .
         run: npm run build:dbx
 
+      # Go stamps vcs.modified=true if tracked files changed during build (e.g. rewriting
+      # runtime/package.json). Store review rejects dirty VCS. Assert clean + allow
+      # only gitignored build outputs before compiling the launcher.
+      - name: Assert git tree clean for Go VCS stamp
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Working tree dirty before package — Go would stamp vcs.modified=true:"
+            git status --porcelain
+            exit 1
+          fi
+
       - name: Package .dbxp
         run: npx --yes @dbx-app/plugin-cli package . --output-dir dist
 
@@ -152,7 +166,13 @@ jobs:
           if not plugin_id:
               plugin_id = "io.github.zhhoceanfly.protoview"
           if not version:
-              version = "0.0.0"
+              try:
+                  import pathlib
+                  man = json.loads(pathlib.Path("packages/dbx-plugin/manifest.json").read_text(encoding="utf-8"))
+                  version = man.get("version") or "0.0.0"
+                  plugin_id = man.get("id") or plugin_id
+              except Exception:
+                  version = "0.0.0"
           doc = {
               "schemaVersion": 1,
               "id": plugin_id,
