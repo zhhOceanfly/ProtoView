@@ -1,0 +1,35 @@
+{
+  "plugin": {
+    "id": "io.github.zhhoceanfly.protoview",
+    "publisher": "zhhoceanfly",
+    "version": "0.1.1",
+    "name": "ApiMan",
+    "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX. Requires Node.js >= 18 on PATH (sidecar runs runtime/sidecar.js via node).",
+    "permissions": [
+      "host.binary",
+      "host.events",
+      "host.storage",
+      "host.workbench"
+    ]
+  },
+  "artifacts": [
+    {
+      "target": "darwin-arm64",
+      "url": "io.github.zhhoceanfly.protoview-0.1.1-darwin-arm64.dbxp",
+      "sha256": "a43b9564077a68664aa48d1ba29ce1919e19a9fc50463bbf8024412f1e11c5a1",
+      "size": 4239752
+    },
+    {
+      "target": "linux-x64",
+      "url": "io.github.zhhoceanfly.protoview-0.1.1-linux-x64.dbxp",
+      "sha256": "6de6e9e7391c50ffa52692bbc4411c67ef796dd9774c375b1038068b38ea6cd5",
+      "size": 4348141
+    },
+    {
+      "target": "windows-x64",
+      "url": "io.github.zhhoceanfly.protoview-0.1.1-windows-x64.dbxp",
+      "sha256": "8c55a4919c0fe1dd071e587559d848e59fc6e1863985b771d46587ab0e1e6d89",
+      "size": 4416164
+    }
+  ]
+}

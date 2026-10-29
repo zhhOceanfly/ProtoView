@@ -105,23 +105,30 @@ dist/<plugin-id>-<version>-<target>.artifact.json
 | npm CLI | `cli-v0.1.5` | `publish-npm-cli.yml` |
 | DBX | `dbx-v0.1.0` | `publish-dbx-plugin.yml` |
 
-`release-candidates.json` 示意（字段以 CLI 实际输出为准）：
+`release-candidates.json` 必须符合 `t8y2/dbx-store` 的 `scripts/sync-release-candidate.mjs`（`plugin` + `artifacts`，不是旧的 `id/version/targets`）：
 
 ```json
 {
-  "schemaVersion": 1,
-  "id": "io.github.zhhoceanfly.protoview",
-  "version": "0.1.0",
-  "targets": [
+  "plugin": {
+    "id": "io.github.zhhoceanfly.protoview",
+    "publisher": "zhhoceanfly",
+    "version": "0.1.1",
+    "name": "ApiMan",
+    "description": "…",
+    "permissions": ["host.workbench", "host.events", "host.storage", "host.binary"]
+  },
+  "artifacts": [
     {
       "target": "windows-x64",
-      "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.0/io.github.zhhoceanfly.protoview-0.1.0-windows-x64.dbxp",
+      "url": "io.github.zhhoceanfly.protoview-0.1.1-windows-x64.dbxp",
       "sha256": "<64 hex>",
       "size": 123456
     }
   ]
 }
 ```
+
+`artifacts[].url` 可用裸文件名（推荐）或指向同一 tag 的完整 GitHub Release HTTPS URL。
 
 计算哈希与大小（示例）：
 

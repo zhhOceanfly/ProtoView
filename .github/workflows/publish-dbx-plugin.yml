@@ -112,24 +112,31 @@ jobs:
             exit 1
           fi
           python3 <<'PY'
-          import json, glob, os, hashlib
+          # Shape must match t8y2/dbx-store scripts/sync-release-candidate.mjs:
+          #   { "plugin": { id, publisher, version, name?, description?, permissions? },
+          #     "artifacts": [ { target, url, sha256, size } ] }
+          # (NOT the legacy { schemaVersion, id, version, targets } form.)
+          import json, os, re, hashlib
           from pathlib import Path
+
           root = Path("out-release")
           files = sorted(root.glob("*.dbxp"))
           if not files:
               raise SystemExit("no .dbxp files")
-          # Prefer CLI-generated artifact json when present
-          targets = []
-          version = None
-          plugin_id = None
+
+          man = json.loads(Path("packages/dbx-plugin/manifest.json").read_text(encoding="utf-8"))
+          plugin_id = man.get("id") or "io.github.zhhoceanfly.protoview"
+          publisher = man.get("publisher") or "zhhoceanfly"
+          version = man.get("version")
+          if not version:
+              raise SystemExit("manifest.json missing version")
+
+          artifacts = []
           for dbxp in files:
-              art = Path(str(dbxp) + "").with_suffix("").name  # strip .dbxp via name parse
-              # expect name: <id>-<version>-<target>.dbxp
               name = dbxp.name
               if not name.endswith(".dbxp"):
                   continue
               stem = name[:-5]
-              # find matching artifact.json
               art_path = root / f"{stem}.artifact.json"
               sha = hashlib.sha256(dbxp.read_bytes()).hexdigest()
               size = dbxp.stat().st_size
@@ -137,49 +144,45 @@ jobs:
               if art_path.exists():
                   data = json.loads(art_path.read_text(encoding="utf-8"))
                   target = data.get("target") or target
-                  version = version or data.get("version")
-                  plugin_id = plugin_id or data.get("id")
                   sha = data.get("sha256") or sha
                   size = int(data.get("size") or size)
+                  if data.get("id"):
+                      plugin_id = data["id"]
+                  if data.get("version"):
+                      version = data["version"]
               else:
-                  # parse target from filename suffix
-                  parts = stem.rsplit("-", 2)
-                  if len(parts) >= 3:
-                      target = parts[-1] if parts[-2][0].isdigit() is False else "-".join(parts[-2:])
-                      # better: last segment after version
-                      # id may contain dots; version is semver; target is last token(s)
-                      import re
-                      m = re.match(r"^(?P<id>.+)-(?P<ver>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)(-(?P<tgt>.+))?$", stem)
-                      if m:
-                          plugin_id = plugin_id or m.group("id")
-                          version = version or m.group("ver")
-                          target = m.group("tgt") or target
-              tag = os.environ.get("GITHUB_REF_NAME", "")
-              repo = os.environ.get("GITHUB_REPOSITORY", "zhhOceanfly/ProtoView")
-              url = f"https://github.com/{repo}/releases/download/{tag}/{dbxp.name}"
-              targets.append({
+                  m = re.match(
+                      r"^(?P<id>.+)-(?P<ver>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)(-(?P<tgt>.+))?$",
+                      stem,
+                  )
+                  if m:
+                      plugin_id = m.group("id") or plugin_id
+                      version = m.group("ver") or version
+                      target = m.group("tgt") or target
+              # Bare filename preferred; sync rebuilds the GitHub Release URL.
+              artifacts.append({
                   "target": target,
-                  "url": url,
+                  "url": name,
                   "sha256": sha,
                   "size": size,
               })
-          if not plugin_id:
-              plugin_id = "io.github.zhhoceanfly.protoview"
-          if not version:
-              try:
-                  import pathlib
-                  man = json.loads(pathlib.Path("packages/dbx-plugin/manifest.json").read_text(encoding="utf-8"))
-                  version = man.get("version") or "0.0.0"
-                  plugin_id = man.get("id") or plugin_id
-              except Exception:
-                  version = "0.0.0"
-          doc = {
-              "schemaVersion": 1,
+
+          artifacts.sort(key=lambda a: a["target"])
+          identity = {
               "id": plugin_id,
+              "publisher": publisher,
               "version": version,
-              "targets": targets,
+              "name": man.get("name") or "ApiMan",
+              "description": man.get("description") or "",
           }
-          (root / "release-candidates.json").write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+          perms = man.get("permissions") or []
+          if isinstance(perms, list) and perms:
+              identity["permissions"] = sorted({p for p in perms if isinstance(p, str) and p})
+
+          doc = {"plugin": identity, "artifacts": artifacts}
+          (root / "release-candidates.json").write_text(
+              json.dumps(doc, indent=2) + "\n", encoding="utf-8"
+          )
           print(json.dumps(doc, indent=2))
           PY
 
