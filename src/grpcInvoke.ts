@@ -415,6 +415,32 @@ function endSession(session: LiveStreamSession, ok: boolean, error?: string): vo
   session.onEnd?.({ streamId: session.id, ok, error, messages: session.messages });
 }
 
+/** 建连后短等：主机不可达等错误常在 call 创建后异步冒泡，避免先返回假 CONNECTED */
+function waitForEarlyStreamFailure(
+  session: LiveStreamSession,
+  ms: number,
+): Promise<{ failed: boolean; error?: string }> {
+  if (session.settled) {
+    return Promise.resolve({ failed: true, error: "stream closed" });
+  }
+  return new Promise((resolve) => {
+    const prev = session.onEnd;
+    let done = false;
+    const finish = (failed: boolean, error?: string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      session.onEnd = prev;
+      resolve({ failed, error });
+    };
+    const timer = setTimeout(() => finish(false), ms);
+    session.onEnd = (event) => {
+      prev?.(event);
+      finish(true, event.error || (!event.ok ? "stream closed" : undefined));
+    };
+  });
+}
+
 async function prepareGrpcCall(catalog: Catalog, req: GrpcInvokeRequest): Promise<{
   client: grpc.Client;
   method: string;
@@ -533,6 +559,18 @@ export async function openGrpcStream(
       });
       liveStreams.set(streamId, session);
       void responsePromise;
+      const early = await waitForEarlyStreamFailure(session, 300);
+      if (early.failed || session.settled || !liveStreams.has(streamId)) {
+        return {
+          ...base,
+          ok: false,
+          status: "ERROR",
+          ms: Date.now() - started,
+          error: early.error || "建流失败",
+          streamId,
+          body: [],
+        };
+      }
       return { ...base, ok: true, status: "CONNECTED", ms: Date.now() - started, streamId, body: [] };
     }
 
@@ -561,6 +599,18 @@ export async function openGrpcStream(
       endSession(session, true);
     });
     liveStreams.set(streamId, session);
+    const early = await waitForEarlyStreamFailure(session, 300);
+    if (early.failed || session.settled || !liveStreams.has(streamId)) {
+      return {
+        ...base,
+        ok: false,
+        status: "ERROR",
+        ms: Date.now() - started,
+        error: early.error || "建流失败",
+        streamId,
+        body: [],
+      };
+    }
     return { ...base, ok: true, status: "CONNECTED", ms: Date.now() - started, streamId, body: [] };
   } catch (error) {
     const grpcError = error as { code?: number; details?: string; message?: string };

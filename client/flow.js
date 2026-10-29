@@ -660,10 +660,13 @@
         ? `${proto} · ${streamTag} · ${hit ? `${hit.pkg.name}.${hit.service.name}` : (node.package || "")}`
         : `${proto} · ${hit ? `${hit.pkg.name}.${hit.service.name}` : (node.package || "")}`;
       const closed = Boolean(node.result?.streamClosed);
-      const live = !closed && (Boolean(node.streamId) || node.result?.streaming);
+      // 建流/写入已失败时即使仍挂着 streamId，也不显示 live CONNECTED
+      const live = !closed
+        && node.result?.ok !== false
+        && (Boolean(node.streamId) || Boolean(node.result?.streaming));
       const status = live ? "ok" : closed || node.result?.ok === false ? "fail" : node.result?.ok === true ? "ok" : "";
       const streamClass = normalizeNodeProtocol(node.protocol) === "grpc" ? `stream-${streamCssClass(hit?.rpc)}` : "";
-      const badgeClass = live ? "live" : closed ? "fail" : status;
+      const badgeClass = live ? "live" : closed || node.result?.ok === false ? "fail" : status;
       const badgeText = closed
         ? (node.result.status || "stream close")
         : `${node.result?.status || ""}${node.result?.ms != null ? ` · ${node.result.ms}ms` : ""}`;
@@ -3401,9 +3404,10 @@
     stopNodeHeartbeat(node);
     stopNodeSendTasks(node);
     node.streamId = null;
+    const errText = extra.error != null && String(extra.error).trim() ? String(extra.error).trim() : "";
     node.result = {
       ok: false,
-      status: "stream close",
+      status: errText ? (errText.length > 48 ? `${errText.slice(0, 48)}…` : errText) : "stream close",
       streamClosed: true,
       streaming: false,
       error: extra.error,
@@ -3836,6 +3840,26 @@
       // 建流后按各任务的延迟自动发送（没配延迟的任务只能手动发）
       scheduleNodeSendTasks(node, vars);
       await sleep(400);
+      // 等待期间若链路已断（streamEnded → markStreamClosed），勿再盖回 CONNECTED
+      if (!node.streamId || node.result?.streamClosed) {
+        const fail = {
+          ok: false,
+          status: node.result?.status || "ERROR",
+          ms: node.result?.ms ?? opened.ms,
+          error: node.result?.error,
+          body: node.streamMessages || [],
+        };
+        pushHistory(node, {
+          kind,
+          ok: false,
+          status: fail.status,
+          ms: fail.ms,
+          error: fail.error,
+          body: fail.body,
+        });
+        render();
+        return fail;
+      }
       const messages = node.streamMessages || [];
       node.result = {
         ok: true,
