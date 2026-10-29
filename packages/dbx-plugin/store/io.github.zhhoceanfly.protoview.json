@@ -11,7 +11,7 @@
   "source": "https://github.com/zhhOceanfly/ProtoView/tree/dbx-v0.1.1",
   "homepage": "https://github.com/zhhOceanfly/ProtoView",
   "license": "MIT",
-  "releaseNotes": "v0.1.1: publisher zhhoceanfly; host.binary; requires Node.js >= 18 on PATH; LICENSE + THIRD_PARTY_NOTICES.md for runtime/node_modules (@grpc/grpc-js Apache-2.0, @grpc/proto-loader Apache-2.0, protobufjs BSD-3-Clause). Sidecar fails with an actionable message if Node is missing or too old.",
+  "releaseNotes": "v0.1.1: publisher zhhoceanfly; host.binary; requires Node.js >= 18 on PATH; LICENSE + THIRD_PARTY_NOTICES.md for runtime/node_modules (@grpc/grpc-js Apache-2.0, @grpc/proto-loader Apache-2.0, protobufjs BSD-3-Clause). Sidecar fails with an actionable message if Node is missing or too old. Clean rebuild (vcs.modified=false); runGhz/openEditor use execFile without shell.",
   "localizations": {
     "zh-CN": {
       "name": "ApiMan",
@@ -22,20 +22,20 @@
     {
       "target": "darwin-arm64",
       "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.1/io.github.zhhoceanfly.protoview-0.1.1-darwin-arm64.dbxp",
-      "sha256": "a43b9564077a68664aa48d1ba29ce1919e19a9fc50463bbf8024412f1e11c5a1",
-      "size": 4239752
+      "sha256": "4f6830767d86d705e9c614eaf8c8884811fd020bd9e0cb9ad06e6b83b46bc763",
+      "size": 4241460
     },
     {
       "target": "linux-x64",
       "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.1/io.github.zhhoceanfly.protoview-0.1.1-linux-x64.dbxp",
-      "sha256": "6de6e9e7391c50ffa52692bbc4411c67ef796dd9774c375b1038068b38ea6cd5",
-      "size": 4348141
+      "sha256": "2c1c2eea5cb5944f10d69ea99000f9eb50dd41b0e1a668a931cb9131aad2a00d",
+      "size": 4349845
     },
     {
       "target": "windows-x64",
       "url": "https://github.com/zhhOceanfly/ProtoView/releases/download/dbx-v0.1.1/io.github.zhhoceanfly.protoview-0.1.1-windows-x64.dbxp",
-      "sha256": "8c55a4919c0fe1dd071e587559d848e59fc6e1863985b771d46587ab0e1e6d89",
-      "size": 4416164
+      "sha256": "d54ebb1525f30dd2d1bb732553bb27e0f64a2fb4becad3c4379ee5f2b19e798b",
+      "size": 4417853
     }
   ]
 }

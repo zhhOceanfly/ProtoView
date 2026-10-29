@@ -26,12 +26,14 @@
 
 Yes:
 - Go launcher `bin/protoview-dbx` uses `exec.LookPath("node")` and spawns `runtime/sidecar.js` (**requires host.binary**).
-- **Requires Node.js ≥ 18 on PATH.** Missing/old Node prints an actionable stderr message and exits non-zero (does not hang).
+- **Requires Node.js ≥ 18 on PATH.** Missing/old Node prints an actionable stderr message and exits non-zero (does not hang). Does **not** bundle Node under `runtime/node/`.
 - May invoke `git` for Proto sync; local FS under plugin data / selected dirs.
-- Ships `LICENSE` (MIT) and `THIRD_PARTY_NOTICES.md` documenting `runtime/node_modules` (npm: `@grpc/grpc-js` Apache-2.0, etc.). Does not bundle Node.
+- Ships `LICENSE` (MIT, copyright zhhoceanfly) and `THIRD_PARTY_NOTICES.md` for `runtime/node_modules` (`@grpc/grpc-js` / `@grpc/proto-loader` Apache-2.0, `protobufjs` BSD-3-Clause).
+- `runGhz` / open-editor paths use `execFile` / argv (no `shell: true`).
+- Go binaries stamped with `vcs.modified=false` on tag `dbx-v0.1.1`.
 - Icon: `assets/plugin.svg` only.
 
 ## Files in this PR
 
 - `publishers/zhhoceanfly.json` (replace prior `zoceanfly` if present)
-- `candidates/io.github.zhhoceanfly.protoview.json` (**exact filename**, no `candidates.` prefix)
+- `candidates/io.github.zhhoceanfly.protoview.json` (**exact filename**, no `candidates.` prefix; pins match Release `dbx-v0.1.1` / `release-candidates.json`)
