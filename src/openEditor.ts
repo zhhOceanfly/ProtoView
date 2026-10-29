@@ -1,6 +1,9 @@
-import { exec, spawn } from "child_process";
+import { execFile, spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 export interface OpenEditorResult {
   ok: boolean;
@@ -33,7 +36,7 @@ export async function openInEditor(
 
   for (const name of autoCandidates()) {
     if (!(await commandExists(name))) continue;
-    const result = await runKnown(name, abs, ln);
+    const result = await runKnown(name, file, ln);
     if (result.ok) return result;
   }
 
@@ -52,10 +55,12 @@ function autoCandidates(): string[] {
 
 async function runConfigured(spec: string, file: string, line: number): Promise<OpenEditorResult> {
   if (spec.includes("{file}") || spec.includes("{line}")) {
-    const cmd = spec
-      .replaceAll("{file}", quote(file))
-      .replaceAll("{line}", String(line));
-    return runShell(cmd, `自定义：${spec}`);
+    const tokens = tokenizeCommand(spec).map((token) =>
+      token.replaceAll("{file}", file).replaceAll("{line}", String(line)),
+    );
+    if (!tokens.length) return { ok: false, detail: "空命令模板" };
+    const [command, ...args] = tokens;
+    return runDetached(command, args, `自定义：${spec}`);
   }
   const name = spec.split(/\s+/)[0] || spec;
   return runKnown(name, file, line);
@@ -80,46 +85,103 @@ async function runKnown(name: string, file: string, line: number): Promise<OpenE
   return runDetached(name, ["-g", `${file}:${line}`], `${name} -g …`);
 }
 
-function runDetached(command: string, args: string[], label: string): Promise<OpenEditorResult> {
-  return new Promise((resolve) => {
-    try {
-      const child = spawn(command, args, {
-        shell: true,
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      child.on("error", (error) => {
-        resolve({ ok: false, detail: error.message });
-      });
-      child.unref();
-      // 编辑器常驻进程，spawn 成功即视为已拉起
-      setTimeout(() => resolve({ ok: true, detail: label }), 80);
-    } catch (error) {
-      resolve({ ok: false, detail: error instanceof Error ? error.message : String(error) });
+/** 简单空白分词（支持 "..." / '...'），不经 shell 展开 */
+function tokenizeCommand(spec: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < spec.length; i += 1) {
+    const ch = spec[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      else cur += ch;
+      continue;
     }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (cur) {
+        out.push(cur);
+        cur = "";
+      }
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/**
+ * Windows CreateProcess 风格转义单个参数（用于不得已走 cmd.exe /c 时）。
+ * @see https://learn.microsoft.com/en-us/archive/blogs/twistylittlepassagesallalike/everyone-quotes-command-line-arguments-the-wrong-way
+ */
+function quoteWinArg(arg: string): string {
+  if (!arg.length) return '""';
+  if (!/[\s"]/g.test(arg)) return arg;
+  return `"${arg.replace(/(\\*)"/g, "$1$1\\\"").replace(/(\\+)$/g, "$1$1")}"`;
+}
+
+function spawnArgv(command: string, args: string[]) {
+  const argv = args.map(String);
+  // Windows 上 code/cursor 常为 .cmd shim；不能 shell:true，改由 cmd.exe /d /s /c + 逐参转义
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(command)) {
+    const line = [quoteWinArg(command), ...argv.map(quoteWinArg)].join(" ");
+    return spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", line], {
+      shell: false,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      windowsVerbatimArguments: true,
+    });
+  }
+  return spawn(command, argv, {
+    shell: false,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
   });
 }
 
-function runShell(command: string, label: string): Promise<OpenEditorResult> {
+function runDetached(command: string, args: string[], label: string): Promise<OpenEditorResult> {
   return new Promise((resolve) => {
-    exec(command, { windowsHide: true }, (error) => {
-      if (error) resolve({ ok: false, detail: error.message });
-      else resolve({ ok: true, detail: label });
-    });
+    void (async () => {
+      try {
+        let cmd = command;
+        if (process.platform === "win32" && !path.isAbsolute(command) && !/[\\/]/.test(command)) {
+          cmd = (await resolveOnPath(command)) || command;
+        }
+        const child = spawnArgv(cmd, args);
+        child.on("error", (error) => {
+          resolve({ ok: false, detail: error.message });
+        });
+        child.unref();
+        // 编辑器常驻进程，spawn 成功即视为已拉起
+        setTimeout(() => resolve({ ok: true, detail: label }), 80);
+      } catch (error) {
+        resolve({ ok: false, detail: error instanceof Error ? error.message : String(error) });
+      }
+    })();
   });
+}
+
+async function resolveOnPath(name: string): Promise<string | undefined> {
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await execFileAsync("where.exe", [name], { windowsHide: true });
+      const hits = stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      // 优先 .exe，避免不必要的 cmd shim
+      return hits.find((h) => /\.exe$/i.test(h)) || hits[0];
+    }
+    const { stdout } = await execFileAsync("which", [name]);
+    return stdout.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
+  } catch {
+    return undefined;
+  }
 }
 
 function commandExists(name: string): Promise<boolean> {
-  const check = process.platform === "win32"
-    ? `where ${name}`
-    : `command -v ${name}`;
-  return new Promise((resolve) => {
-    exec(check, { windowsHide: true }, (error) => resolve(!error));
-  });
-}
-
-function quote(file: string): string {
-  if (!/[\s"']/.test(file)) return file;
-  return `"${file.replace(/"/g, '\\"')}"`;
+  return resolveOnPath(name).then((hit) => Boolean(hit));
 }

@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { execFile } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
@@ -276,14 +276,16 @@ export class ClientPanel {
   private async runGhz(args: string[], id: string, binary = "ghz"): Promise<void> {
     if (!this.panel) return;
     const cmd = (binary || "ghz").trim() || "ghz";
-    this.post({ type: "ghzProgress", id, text: `运行: ${cmd} ${args.join(" ")}\n` });
+    const argv = Array.isArray(args) ? args.map((a) => String(a)) : [];
+    this.post({ type: "ghzProgress", id, text: `运行: ${cmd} ${argv.join(" ")}\n` });
     await new Promise<void>((resolve) => {
-      const child = spawn(cmd, args, { shell: true, windowsHide: true });
+      // execFile + argv：避免 shell:true 下用户路径 / host / metadata 注入
+      const child = execFile(cmd, argv, { windowsHide: true, shell: false });
       const push = (chunk: Buffer) => {
         this.post({ type: "ghzProgress", id, text: chunk.toString() });
       };
-      child.stdout.on("data", push);
-      child.stderr.on("data", push);
+      child.stdout?.on("data", push);
+      child.stderr?.on("data", push);
       child.on("error", (error) => {
         this.post({
           type: "ghzResult",
