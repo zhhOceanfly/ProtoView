@@ -204,7 +204,8 @@
     "publish:cli": "npm run build:cli && npm publish ./packages/cli --access public --registry https://registry.npmjs.org/",
     "build:dbx": "node scripts/build-dbx-plugin.js",
     "package:dbx": "npm run build:dbx && npm run package --prefix packages/dbx-plugin",
-    "dev:dbx": "npm run build:dbx && npm run dev --prefix packages/dbx-plugin"
+    "dev:dbx": "npm run build:dbx && npm run dev --prefix packages/dbx-plugin",
+    "store:lf:dbx": "npm run store:lf --prefix packages/dbx-plugin"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

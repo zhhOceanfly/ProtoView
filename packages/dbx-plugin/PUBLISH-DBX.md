@@ -150,9 +150,16 @@ wc -c dist/*.dbxp
 2. 在 PR 中加入：
    - `publishers/zhhoceanfly.json` ← 见本目录 `store/publishers.zhhoceanfly.json`
    - `candidates/io.github.zhhoceanfly.protoview.json` ← 见本目录 `store/io.github.zhhoceanfly.protoview.json`（填真实 sha256/size）
-3. 按 PR 模板填写：能力、权限、是否有原生 Sidecar、数据/网络访问说明
-4. **不要**提交：`.dbxp` 二进制、完整插件源码、签名私钥、`verified: true`、已签名包 URL
-5. CI 会保持红色并提示 `open candidate(s) awaiting DBX Store signing`——这是预期行为，不是作者侧失败
+3. 提交前把商店模板转成 LF（Windows 默认 CRLF 不影响校验，但 finalize 会输出 LF）：
+   ```bash
+   npm run store:lf:dbx          # 仓库根目录
+   # 或：npm run store:lf --prefix packages/dbx-plugin
+   ```
+4. 按 PR 模板填写：能力、权限、是否有原生 Sidecar、数据/网络访问说明（可用本目录 `store/PR-BODY.md`）
+5. **开 PR 时勾选 “Allow edits from maintainers”**（允许维护者编辑）。  
+   若不勾选（`maintainerCanModify=false`），签名 Workflow **无法 push 回你的 fork 分支**，只能产出 `signed-catalog-patch`，由维护者自行合进 `t8y2/dbx-store` 的 `main` 再关 PR。想让签名直接回写候选分支，必须开此选项，或改用本仓分支向 `t8y2/dbx-store` 提 PR。
+6. **不要**提交：`.dbxp` 二进制、完整插件源码、签名私钥、`verified: true`、已签名包 URL
+7. CI 会保持红色并提示 `open candidate(s) awaiting DBX Store signing`——这是预期行为，不是作者侧失败
 
 可选：另提 PR 把本仓库登记到 `automation/plugin-sources.json`（`autoUpdate: true`），之后版本可由商店同步机器人自动开候选 PR。
 
@@ -175,12 +182,31 @@ wc -c dist/*.dbxp
 
 ## 6. 后续版本更新
 
-1. 改代码，**递增** `manifest.json` 的 `version`（禁止覆盖同版本 Release 资产）
+1. 改代码，**递增** `manifest.json` 的 `version`（禁止覆盖同版本 Release 资产；R2 上同路径签名包也不可覆盖）
 2. 新 Tag + 新候选 Release
 3. 自动同步或手动只提交 **新版本** 的 `candidates/<id>.json`
-4. 等待签名合并
+4. 开 PR 时勾选 **Allow edits from maintainers**（否则签名 bot 无法回写 fork 分支，只能出 patch）
+5. 等待签名合并
 
 插件 Bug 在本仓库修；只有目录/文案/哈希等商店元数据才进 `dbx-store`。
+
+### 6.1 `checksums.json` 字段名（下版必查）
+
+商店签名工具认的是：
+
+```json
+{ "algorithm": "sha256", "files": { "...": "..." } }
+```
+
+若打成 `"hash": "sha256"`，校验阶段会报 `Candidate package uses an unsupported checksum algorithm`（体验差；最终可能仍靠 R2 已签名包硬签）。
+
+本仓库 `npm run package`（及 CI）在 `plugin-cli package` 之后会跑 `package:normalize`：若发现旧字段 `hash` 则改成 `algorithm` 并刷新 `.artifact.json` 的 sha256/size。手工检查：
+
+```bash
+# 解压任意 .dbxp 后
+python -c "import zipfile,json; z=zipfile.ZipFile('dist/*.dbxp'); print(json.loads(z.read('checksums.json')).keys())"
+# 应含 algorithm，不应含 hash
+```
 
 ---
 

@@ -37,3 +37,7 @@ Yes:
 
 - `publishers/zhhoceanfly.json` (replace prior `zoceanfly` if present)
 - `candidates/io.github.zhhoceanfly.protoview.json` (**exact filename**, no `candidates.` prefix; pins match Release `dbx-v0.1.1` / `release-candidates.json`)
+
+## Maintainer edits
+
+Please keep **Allow edits from maintainers** enabled on this PR so the Sign workflow can push signed catalog updates back to the PR branch. If disabled, signing only emits a `signed-catalog-patch` for maintainers to apply on `main`.

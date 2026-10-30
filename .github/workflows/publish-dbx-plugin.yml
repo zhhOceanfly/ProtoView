@@ -68,6 +68,10 @@ jobs:
       - name: Package .dbxp
         run: npx --yes @dbx-app/plugin-cli package . --output-dir dist
 
+      # Store signing expects checksums.json "algorithm":"sha256" (not legacy "hash").
+      - name: Normalize checksums.json field name
+        run: node ./scripts/normalize-dbxp-checksums.js dist
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:

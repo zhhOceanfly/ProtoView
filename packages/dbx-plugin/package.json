@@ -8,8 +8,10 @@
     "build": "node ./run-build.js",
     "build:ui": "node ./run-build.js --ui-only",
     "build:ui:watch": "node ./run-build.js --ui-only --watch",
-    "package": "npm run build && npx --yes @dbx-app/plugin-cli package . --output-dir dist",
-    "dev": "node ../../scripts/check-node-for-dbx-dev.js && npm run build && npx --yes @dbx-app/plugin-cli dev --path . --port 5190"
+    "package": "npm run build && npx --yes @dbx-app/plugin-cli package . --output-dir dist && npm run package:normalize",
+    "package:normalize": "node ./scripts/normalize-dbxp-checksums.js dist",
+    "dev": "node ../../scripts/check-node-for-dbx-dev.js && npm run build && npx --yes @dbx-app/plugin-cli dev --path . --port 5190",
+    "store:lf": "node ./scripts/lf-store-json.js"
   },
   "engines": {
     "node": ">=18"
