@@ -883,6 +883,27 @@
     openEdit(node.id);
   }
 
+  function duplicateNode(nodeId) {
+    const node = flow.nodes.find((item) => item.id === nodeId);
+    if (!node) return;
+    const data = JSON.parse(JSON.stringify(serializeNode(node)));
+    data.id = uid(isStartNode(node) ? "s" : node.kind === "variable" ? "v" : "n");
+    data.x = node.x + 32;
+    data.y = node.y + 32;
+    while (flow.nodes.some((item) => Math.abs(item.x - data.x) < 24 && Math.abs(item.y - data.y) < 24)) {
+      data.x += 32;
+      data.y += 32;
+    }
+    if (isStartNode(node)) {
+      data.vars = {};
+      data.varsAt = 0;
+    }
+    delete data.sendHistory;
+    flow.nodes.push(normalizeNode(data));
+    commit();
+    render();
+  }
+
   function addNode(rpcId, x, y, label) {
     if (!rpcId) return false;
     try {
@@ -4526,6 +4547,7 @@
       hideMenu();
       if (!nodeId || !act) return;
       if (act === "edit") openEdit(nodeId);
+      if (act === "duplicate") duplicateNode(nodeId);
       if (act === "view-resp") {
         const n = flow.nodes.find((item) => item.id === nodeId);
         if (n && !isStartNode(n)) openHistory(nodeId);
