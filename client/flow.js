@@ -1125,6 +1125,7 @@
       const act = btn.getAttribute("data-flow-act");
       let show = true;
       if (act === "run") show = Boolean(node?.rpcId && !isStart);
+      if (act === "view-definition") show = Boolean(node?.rpcId && !isStart && node.kind !== "variable");
       if (act === "view-resp") show = !isStart && node?.kind !== "variable";
       if (act === "send-msg") show = canSendMsg;
       if (act === "close-stream") show = canSendMsg && hasLive;
@@ -4659,6 +4660,11 @@
       hideMenu();
       if (!nodeId || !act) return;
       if (act === "run") void runSingleNode(nodeId);
+      if (act === "view-definition") {
+        const node = flow.nodes.find((item) => item.id === nodeId);
+        if (node?.rpcId && api()?.showRpcDefinition?.(node.rpcId)) closeFlow();
+        else void notify("找不到接口，请检查 Proto 来源");
+      }
       if (act === "edit") openEdit(nodeId);
       if (act === "duplicate") duplicateNode(nodeId);
       if (act === "view-resp") {

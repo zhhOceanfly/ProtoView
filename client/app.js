@@ -2423,6 +2423,12 @@
 
   window.ProtoViewClient = {
     findRpc,
+    showRpcDefinition(id) {
+      if (!findRpc(id)) return false;
+      selectRpc(id);
+      setTab("docs");
+      return true;
+    },
     displayResponseEnums,
     getType(typeId) {
       if (!typeId) return undefined;
