@@ -31,6 +31,7 @@
     recvCapture: null,
     /** 全量「运行链路」进行中 */
     flowRunning: false,
+    nodeRunning: false,
     /** 正在单步/链路执行的起始步骤 id → true */
     stepRunning: Object.create(null),
     /** 跨步骤共享变量（提取结果累积，便于步骤二单独跑时用步骤一的 token） */
@@ -1112,6 +1113,7 @@
     for (const btn of menu.querySelectorAll("[data-flow-act]")) {
       const act = btn.getAttribute("data-flow-act");
       let show = true;
+      if (act === "run") show = Boolean(node?.rpcId && !isStart);
       if (act === "view-resp") show = !isStart && node?.kind !== "variable";
       if (act === "send-msg") show = canSendMsg;
       if (act === "close-stream") show = canSendMsg && hasLive;
@@ -4273,7 +4275,7 @@
   }
 
   async function runFlow() {
-    if (flow.flowRunning) return;
+    if (flow.flowRunning || flow.nodeRunning) return;
     const client = api();
     if (!client?.invokeOnce) {
       void notify("请在 VS Code ProtoView Client 中运行链路调试");
@@ -4304,7 +4306,7 @@
 
   async function runStartStep(startId) {
     // 同一步骤正在跑则忽略；其它步骤可并行点运行
-    if (flow.stepRunning[startId]) return;
+    if (flow.stepRunning[startId] || flow.nodeRunning) return;
     const start = flow.nodes.find((n) => n.id === startId && isStartNode(n));
     if (!start) return;
     const client = api();
@@ -4322,6 +4324,43 @@
       }
     } finally {
       delete flow.stepRunning[startId];
+      save();
+      render();
+    }
+  }
+
+  async function runSingleNode(nodeId) {
+    if (flow.nodeRunning || flow.flowRunning || Object.keys(flow.stepRunning).length) {
+      void notify("链路正在运行，请等待完成");
+      return;
+    }
+    const node = flow.nodes.find((item) => item.id === nodeId && item.rpcId);
+    const client = api();
+    const hit = node && client?.findRpc?.(node.rpcId);
+    if (!node || !hit || !client?.invokeOnce) {
+      void notify("找不到接口，请检查 Proto 来源");
+      return;
+    }
+    const owners = flow.nodes.filter((item) => isStartNode(item) && rpcNodesOfStep(item.id).some((rpc) => rpc.id === nodeId));
+    if (owners.length > 1) {
+      void notify("该接口属于多个起始步骤，请调整连线后再单独运行");
+      return;
+    }
+    const step = owners[0];
+    node.ownerStepId = step?.id || "";
+    const vars = { ...flow.sharedVars };
+    flow.nodeRunning = true;
+    node.result = { ok: true, status: "运行中", ms: 0 };
+    render();
+    try {
+      const result = await invokeRpcNode(client, node, hit, vars, "run", step);
+      flow.sharedVars = { ...flow.sharedVars, ...vars };
+      if (!result.ok) void notify(`${node.name || hit.rpc.name}: ${result.error || result.status || "调用失败"}`);
+    } catch (error) {
+      node.result = { ok: false, status: "ERROR", error: error?.message || String(error), ms: 0 };
+      void notify(node.result.error);
+    } finally {
+      flow.nodeRunning = false;
       save();
       render();
     }
@@ -4583,6 +4622,7 @@
       const nodeId = flow.menuNodeId;
       hideMenu();
       if (!nodeId || !act) return;
+      if (act === "run") void runSingleNode(nodeId);
       if (act === "edit") openEdit(nodeId);
       if (act === "duplicate") duplicateNode(nodeId);
       if (act === "view-resp") {
