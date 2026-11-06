@@ -890,11 +890,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .flow-start-edit.hidden,
 .flow-stream-plan.hidden { display: none !important; }
-.flow-variable-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.flow-variable-row { display: grid; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.flow-variable-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text); font-size: 12px; font-weight: 600; }
+.flow-variable-parameters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; }
 .flow-variable-row label { display: grid; gap: 4px; min-width: 0; }
 .flow-variable-row input, .flow-variable-row select { min-width: 0; width: 100%; }
 .flow-variable-row select { border: 1px solid var(--border); background: var(--input); color: var(--text); border-radius: 8px; padding: 8px 10px; }
-.flow-variable-row .flow-variable-remove { justify-self: end; }
+.flow-variable-row .flow-variable-remove { width: 28px; height: 28px; padding: 0; }
 .flow-stream-heartbeat {
   display: grid;
   grid-template-columns: 1fr 1fr;

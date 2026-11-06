@@ -1942,16 +1942,18 @@
 
   function renderVariableRows(rows) {
     $("flowVariableRows").innerHTML = rows.map((row, index) => `<div class="flow-variable-row" data-variable-row>
-      <label>处理方式 <select data-field="operation">
+      <div class="flow-variable-heading"><span>操作 ${index + 1}</span><button class="icon-btn flow-variable-remove" data-variable-remove="${index}" type="button" title="删除操作" aria-label="删除操作">✕</button></div>
+      <label class="flow-variable-operation">处理方式 <select data-field="operation">
         <option value="set"${row.operation === "set" ? " selected" : ""}>设置固定值</option>
         <option value="append"${row.operation === "append" ? " selected" : ""}>追加文本</option>
         <option value="random"${row.operation === "random" ? " selected" : ""}>随机字符串 / 后缀</option>
       </select></label>
+      <div class="flow-variable-parameters">
+        <label${row.operation === "set" ? ' class="hidden"' : ""}>输入变量${row.operation === "random" ? "（可留空）" : ""} <input data-field="input" value="${esc(row.input)}" placeholder="变量名" /></label>
+        <label${row.operation === "random" ? ' class="hidden"' : ""}>${row.operation === "set" ? "固定值" : "追加文本"} <input data-field="text" value="${esc(row.text)}" /></label>
+        <label${row.operation !== "random" ? ' class="hidden"' : ""}>随机长度 <input data-field="length" type="number" min="1" max="64" value="${esc(row.length)}" /></label>
+      </div>
       <label>输出变量 <input data-field="output" value="${esc(row.output)}" placeholder="变量名" /></label>
-      <label${row.operation === "set" ? ' class="hidden"' : ""}>输入变量${row.operation === "random" ? "（可留空）" : ""} <input data-field="input" value="${esc(row.input)}" placeholder="变量名" /></label>
-      <label${row.operation === "random" ? ' class="hidden"' : ""}>文本 <input data-field="text" value="${esc(row.text)}" /></label>
-      <label${row.operation !== "random" ? ' class="hidden"' : ""}>随机长度 <input data-field="length" type="number" min="1" max="64" value="${esc(row.length)}" /></label>
-      <button class="icon-btn flow-variable-remove" data-variable-remove="${index}" type="button" title="删除操作" aria-label="删除操作">✕</button>
     </div>`).join("");
   }
 
