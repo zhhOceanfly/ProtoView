@@ -3437,21 +3437,30 @@
 
   // ===== 画布模板 =====
 
-  const TPL_KEY = "protoview.client.flow.templates";
+  let userTemplates = [];
+  let templateBusy = false;
 
-  function loadUserTemplates() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(TPL_KEY) || "[]");
-      return Array.isArray(raw) ? raw : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveUserTemplates(list) {
-    try {
-      localStorage.setItem(TPL_KEY, JSON.stringify(list.slice(0, 30)));
-    } catch { /* ignore */ }
+  function requestTemplates(type, payload) {
+    return new Promise((resolve, reject) => {
+      const id = uid("request");
+      const timeout = setTimeout(() => {
+        window.removeEventListener("message", handler);
+        reject(new Error("模板操作超时"));
+      }, 10000);
+      const handler = (event) => {
+        if (event.data?.type !== "templatesResult" || event.data.id !== id) return;
+        clearTimeout(timeout);
+        window.removeEventListener("message", handler);
+        if (event.data.error) reject(new Error(event.data.error));
+        else resolve(event.data.templates);
+      };
+      window.addEventListener("message", handler);
+      if (!api()?.postHost?.(type, payload, id)) {
+        clearTimeout(timeout);
+        window.removeEventListener("message", handler);
+        reject(new Error("模板需要在项目中使用"));
+      }
+    });
   }
 
   /** 模板里的接口按「包.服务/方法」重新映射到当前工程的 rpcId */
@@ -3487,7 +3496,7 @@
         const rpcs = api()?.listRpcs?.() || [];
         return rpcs.some((item) => item.name === tpl.requiresRpc);
       });
-    const users = loadUserTemplates();
+    const users = userTemplates;
     const items = [
       ...builtins.map((tpl) => ({ ...tpl, builtin: true })),
       ...users.map((tpl) => ({ ...tpl, builtin: false })),
@@ -3515,7 +3524,7 @@
 
   function currentTemplateById(id) {
     const builtins = Array.isArray(window.ProtoViewFlowTemplates) ? window.ProtoViewFlowTemplates : [];
-    return builtins.find((tpl) => tpl.id === id) || loadUserTemplates().find((tpl) => tpl.id === id) || null;
+    return builtins.find((tpl) => tpl.id === id) || userTemplates.find((tpl) => tpl.id === id) || null;
   }
 
   async function loadFlowTemplate(id) {
@@ -3528,29 +3537,45 @@
     importData(data);
   }
 
-  function saveCurrentAsTemplate() {
+  async function saveCurrentAsTemplate() {
+    if (templateBusy) return;
     const name = ($("flowTplName")?.value || "").trim() || `模板 ${new Date().toLocaleString()}`;
-    const list = loadUserTemplates();
-    list.unshift({
+    const template = {
       id: uid("tpl"),
       name,
       at: Date.now(),
       data: flowSnapshot(),
-    });
-    saveUserTemplates(list);
-    if ($("flowTplName")) $("flowTplName").value = "";
-    renderFlowTplList();
-    void notify(`已保存模板「${name}」`);
+    };
+    templateBusy = true;
+    try {
+      userTemplates = await requestTemplates("saveTemplate", template);
+      if ($("flowTplName")) $("flowTplName").value = "";
+      renderFlowTplList();
+      void notify(`已保存模板「${name}」`);
+    } catch (error) { void notify(`保存模板失败：${error.message || error}`); }
+    finally { templateBusy = false; }
   }
 
-  function deleteFlowTemplate(id) {
-    saveUserTemplates(loadUserTemplates().filter((tpl) => tpl.id !== id));
-    renderFlowTplList();
+  async function deleteFlowTemplate(id) {
+    if (templateBusy) return;
+    templateBusy = true;
+    try {
+      userTemplates = await requestTemplates("deleteTemplate", { id });
+      renderFlowTplList();
+    } catch (error) { void notify(`删除模板失败：${error.message || error}`); }
+    finally { templateBusy = false; }
   }
 
-  function openFlowTemplates() {
+  async function openFlowTemplates() {
     renderFlowTplList();
     $("flowTplModal")?.classList.add("show");
+    if (templateBusy) return;
+    templateBusy = true;
+    try {
+      userTemplates = await requestTemplates("loadTemplates");
+      renderFlowTplList();
+    } catch (error) { void notify(`加载模板失败：${error.message || error}`); }
+    finally { templateBusy = false; }
   }
 
   async function submitSendTask() {

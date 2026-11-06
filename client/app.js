@@ -1338,8 +1338,11 @@
     }
   }
 
+  let activeEnvStorageKey = "protoview.client.activeEnvId";
+
   function persistEnvs() {
-    const payload = { activeEnvId: state.activeEnvId, envs: state.envs };
+    try { localStorage.setItem(activeEnvStorageKey, state.activeEnvId); } catch { /* ignore */ }
+    const payload = { envs: state.envs };
     if (vscode) vscode.postMessage({ type: "saveEnvs", payload });
     else localStorage.setItem("protoview.client.envs", JSON.stringify(payload));
   }
@@ -1351,7 +1354,7 @@
       const data = JSON.parse(raw);
       if (Array.isArray(data.envs) && data.envs.length) {
         state.envs = data.envs;
-        state.activeEnvId = data.activeEnvId || data.envs[0].id;
+        state.activeEnvId = localStorage.getItem(activeEnvStorageKey) || data.envs[0].id;
       }
     } catch {
       // ignore
@@ -1361,9 +1364,12 @@
   function applyBootstrap(data) {
     const prevSelected = state.selected?.id;
     if (data.catalog) state.catalog = data.catalog;
+    activeEnvStorageKey = `protoview.client.activeEnvId:${data.workspaceKey || "default"}`;
     if (data.envs && Array.isArray(data.envs.envs) && data.envs.envs.length) {
       state.envs = data.envs.envs;
-      state.activeEnvId = data.envs.activeEnvId || state.envs[0].id;
+      let savedId = "";
+      try { savedId = localStorage.getItem(activeEnvStorageKey) || ""; } catch { /* ignore */ }
+      state.activeEnvId = state.envs.some((env) => env.id === savedId) ? savedId : state.envs[0].id;
     }
     if (data.source && typeof data.source === "object") {
       const mode = data.source.mode === "git" ? "git" : "directory";
@@ -2469,9 +2475,9 @@
     streamWrite,
     streamClose,
     decodeBytes,
-    postHost(type, payload) {
+    postHost(type, payload, id) {
       if (!vscode) return false;
-      vscode.postMessage(payload === undefined ? { type } : { type, payload });
+      vscode.postMessage({ type, ...(payload === undefined ? {} : { payload }), ...(id ? { id } : {}) });
       return true;
     },
     isVsCodeHost: () => isVsCodeWebview,

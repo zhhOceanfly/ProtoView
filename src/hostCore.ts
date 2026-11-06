@@ -150,6 +150,10 @@ export class ClientHost {
       await saveEnvFileAt(this.workspaceRoot, message.payload);
       return;
     }
+    if ((type === "loadTemplates" || type === "saveTemplate" || type === "deleteTemplate") && message.id) {
+      await handleTemplates(this.workspaceRoot, type, message.id, message.payload, send);
+      return;
+    }
     if (type === "readSource" && message.file) {
       const abs = path.resolve(String(message.file));
       const line = Math.max(1, Math.floor(Number(message.line || 1) || 1));
@@ -260,6 +264,7 @@ export class ClientHost {
     const envs = await loadEnvFileAt(this.workspaceRoot);
     send({
       type: "bootstrap",
+      workspaceKey: this.workspaceRoot,
       catalog: toClientCatalog(this.catalog, this.sourceLabel(), this.showGoogle),
       envs,
       source: {
@@ -314,7 +319,7 @@ export async function loadEnvFileAt(root: string): Promise<ClientEnvFile> {
     const data = JSON.parse(text) as ClientEnvFile;
     if (!Array.isArray(data.envs) || !data.envs.length) return defaultEnvFile();
     return {
-      activeEnvId: data.activeEnvId || data.envs[0].id,
+      activeEnvId: "",
       envs: data.envs,
     };
   } catch {
@@ -326,7 +331,33 @@ export async function saveEnvFileAt(root: string, data: ClientEnvFile): Promise<
   const dir = path.join(root, ".protoview");
   const file = path.join(dir, "environments.json");
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  await fs.writeFile(file, `${JSON.stringify({ envs: data.envs }, null, 2)}\n`, "utf8");
+}
+
+export async function handleTemplates(root: string, type: string, id: string, payload: unknown, send: HostSend): Promise<void> {
+  try {
+    if (!root) throw new Error("请先打开工作区");
+    const dir = path.join(root, ".protoview", "templates");
+    if (type !== "loadTemplates") {
+      const template = payload as { id?: unknown } | undefined;
+      if (typeof template?.id !== "string" || !/^tpl_[a-z0-9_]+$/i.test(template.id)) throw new Error("模板 ID 无效");
+      const file = path.join(dir, `${template.id}.json`);
+      if (type === "saveTemplate") {
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(file, `${JSON.stringify(template, null, 2)}\n`, "utf8");
+      } else {
+        await fs.unlink(file);
+      }
+    }
+    let files: string[] = [];
+    try { files = await fs.readdir(dir); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    const templates = await Promise.all(files.filter((file) => /^tpl_[a-z0-9_]+\.json$/i.test(file)).map(async (file) => JSON.parse(await fs.readFile(path.join(dir, file), "utf8"))));
+    templates.sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
+    send({ type: "templatesResult", id, templates });
+  } catch (error) {
+    send({ type: "templatesResult", id, error: (error as Error).message });
+  }
 }
 
 async function runGhz(

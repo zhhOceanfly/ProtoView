@@ -14,6 +14,7 @@ import { cancelStress, runStress } from "./grpcStress";
 import { dispatchInvoke } from "./invokeDispatch";
 import { openSource } from "./panel";
 import { ProtoSourceConfig } from "./source";
+import { handleTemplates } from "./hostCore";
 
 export interface ClientSourceState {
   /** Client 弹层：directory | git（侧边栏仍用 workspace | git） */
@@ -192,6 +193,10 @@ export class ClientPanel {
         void vscode.window.setStatusBarMessage("ProtoView Client 环境已保存", 2000);
         return;
       }
+      if ((message.type === "loadTemplates" || message.type === "saveTemplate" || message.type === "deleteTemplate") && message.id) {
+        await handleTemplates(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "", message.type, message.id, message.payload, (result) => this.post(result));
+        return;
+      }
       if (message.type === "openSource" && message.file) {
         await openSource(message.file, Number(message.line || 1));
         return;
@@ -313,6 +318,7 @@ export class ClientPanel {
     const qr = this.panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "donate-wechat.png"));
     this.post({
       type: "bootstrap",
+      workspaceKey: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "",
       catalog: toClientCatalog(this.catalog, this.sourceLabel, this.showGoogle),
       envs,
       source: this.sourceState,
@@ -743,7 +749,7 @@ export class ClientPanel {
         <button class="icon-btn" id="closeFlowTpl" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note">把当前画布存成模板，之后可在任意工程里一键载入；节点会按「包/服务/方法」重新对应到本工程的 proto。</p>
+        <p class="stress-note">模板保存在当前工作区的 .protoview/templates 目录。</p>
         <div class="flow-tpl-save">
           <input id="flowTplName" placeholder="模板名称，如：玩家登录 + 事件流" />
           <button class="btn" id="saveFlowTplBtn" type="button">保存当前画布</button>
@@ -994,7 +1000,7 @@ export async function loadEnvFile(): Promise<ClientEnvFile> {
     const data = JSON.parse(text) as ClientEnvFile;
     if (!Array.isArray(data.envs) || !data.envs.length) return defaultEnvFile();
     return {
-      activeEnvId: data.activeEnvId || data.envs[0].id,
+      activeEnvId: "",
       envs: data.envs,
     };
   } catch {
@@ -1009,5 +1015,5 @@ export async function saveEnvFile(data: ClientEnvFile): Promise<void> {
     return;
   }
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  await fs.writeFile(file, `${JSON.stringify({ envs: data.envs }, null, 2)}\n`, "utf8");
 }
