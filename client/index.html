@@ -265,6 +265,12 @@
           <label>运行次数 <input id="flowStartRuns" type="number" min="1" max="9999" value="1" /></label>
           <label>间隔(秒) <input id="flowStartInterval" type="number" min="0" step="0.1" value="1" /></label>
           <label class="flow-check"><input id="flowStartEnabled" type="checkbox" checked /> 全量运行时启用本步骤</label>
+          <h4 class="flow-edit-h">根 Metadata</h4>
+          <table class="meta-table flow-edit-table">
+            <thead><tr><th>Name</th><th>Value（可用 {{var}}）</th><th></th></tr></thead>
+            <tbody id="flowStartMetaBody"></tbody>
+          </table>
+          <button class="btn" id="flowAddStartMetaBtn" type="button">添加 Metadata</button>
           <p class="stress-note">本起始步骤之后的接口会按拓扑顺序重复执行「运行次数」次，每次之间等待「间隔」秒（默认 1 次 / 1 秒）。节点上的开关可快速启停；「运行」按钮可单独跑本步骤。</p>
         </div>
         <div id="flowRpcEditFields">

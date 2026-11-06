@@ -379,6 +379,7 @@
           ? Number(node.intervalSec)
           : 1,
         enabled: node.enabled !== false,
+        metadata: Array.isArray(node.metadata) ? node.metadata : [],
         x: node.x,
         y: node.y,
         vars: node.vars && typeof node.vars === "object" ? node.vars : {},
@@ -498,6 +499,7 @@
           ? Number(item.intervalSec)
           : 1,
         enabled: item.enabled !== false,
+        metadata: Array.isArray(item.metadata) ? item.metadata.map((row) => ({ name: String(row?.name || ""), value: String(row?.value || "") })) : [],
         x: Number.isFinite(Number(item.x)) ? Number(item.x) : 40,
         y: Number.isFinite(Number(item.y)) ? Number(item.y) : 40,
         vars: item.vars && typeof item.vars === "object" ? { ...item.vars } : {},
@@ -841,6 +843,7 @@
           runs: 1,
           intervalSec: 1,
           enabled: true,
+          metadata: [],
           x: Number.isFinite(x) ? x : Math.max(40, center.x - 40),
           y: Number.isFinite(y) ? y : Math.max(40, center.y - 80 + index * 24),
           vars: {},
@@ -1648,6 +1651,7 @@
         $("flowStartInterval").value = String(intervalSec);
       }
       if ($("flowStartEnabled")) $("flowStartEnabled").checked = node.enabled !== false;
+      renderStartMeta(node.metadata || []);
       $("flowEditModal").classList.add("show");
       return;
     }
@@ -1861,6 +1865,21 @@
     </tr>`).join("");
   }
 
+  function renderStartMeta(rows) {
+    $("flowStartMetaBody").innerHTML = rows.map((row, index) => `<tr>
+      <td><input data-start-meta-name="${index}" value="${esc(row.name)}" placeholder="authorization" /></td>
+      <td><input data-start-meta-value="${index}" value="${esc(row.value)}" placeholder="Bearer {{token}}" /></td>
+      <td><button class="link danger" type="button" data-start-meta-del="${index}">删除</button></td>
+    </tr>`).join("");
+  }
+
+  function readStartMeta() {
+    return Array.from(document.querySelectorAll("[data-start-meta-name]"), (input) => ({
+      name: input.value,
+      value: document.querySelector(`[data-start-meta-value="${input.getAttribute("data-start-meta-name")}"]`)?.value || "",
+    }));
+  }
+
   function saveEdit() {
     const node = flow.nodes.find((n) => n.id === flow.editNodeId);
     if (!node) return;
@@ -1870,6 +1889,7 @@
       const intervalRaw = Number($("flowStartInterval")?.value);
       node.intervalSec = Number.isFinite(intervalRaw) && intervalRaw >= 0 ? intervalRaw : 1;
       node.enabled = $("flowStartEnabled") ? Boolean($("flowStartEnabled").checked) : node.enabled !== false;
+      node.metadata = readStartMeta();
       $("flowEditModal").classList.remove("show");
       flow.editNodeId = null;
       commit();
@@ -2698,14 +2718,13 @@
       void notify(env.error);
       return null;
     }
-    if (node.streamId && node.streamHost === env.host) return node.streamId;
+    const owners = flow.nodes.filter((item) => isStartNode(item) && rpcNodesOfStep(item.id).some((rpc) => rpc.id === node.id));
+    const owner = owners.find((item) => item.id === node.ownerStepId) || (owners.length === 1 ? owners[0] : null);
+    if (!owner && owners.length > 1) { void notify("该接口属于多个步骤，请先运行对应步骤"); return null; }
+    const metadata = mergedMetadata(owner, node, flow.sharedVars);
+    const streamMetadata = JSON.stringify(metadata);
+    if (node.streamId && node.streamHost === env.host && node.streamMetadata === streamMetadata) return node.streamId;
     if (node.streamId) await closeNodeStream(node);
-    const metadata = {};
-    for (const row of node.metadata || []) {
-      const name = (row.name || "").trim();
-      if (!name) continue;
-      metadata[name] = row.value || "";
-    }
     node.result = { ok: true, status: "连接中", ms: 0, streaming: true };
     render();
     const opened = await client.streamOpen({
@@ -2725,6 +2744,7 @@
     }
     node.streamId = opened.streamId;
     node.streamHost = env.host;
+    node.streamMetadata = streamMetadata;
     node.lastStreamId = opened.streamId;
     node.streamMessages = node.streamMessages || [];
     node.result = {
@@ -3028,19 +3048,16 @@
       seen.add(id);
       const node = flow.nodes.find((n) => n.id === id);
       if (!node) continue;
-      if (!isStartNode(node)) out.push(node);
+      if (isStartNode(node)) continue;
+      out.push(node);
       for (const edge of flow.edges.filter((e) => e.from === id)) queue.push(edge.to);
     }
     return out;
   }
 
   function nodeInvokePayload(node, hit) {
-    const metadata = {};
-    for (const row of node.metadata || []) {
-      const name = (row.name || "").trim();
-      if (!name) continue;
-      metadata[name] = row.value || "";
-    }
+    const step = flow.nodes.find((item) => item.id === flow.stressStepId && isStartNode(item));
+    const metadata = mergedMetadata(step, node, flow.sharedVars);
     const protocol = normalizeNodeProtocol(node.protocol);
     return {
       protocol,
@@ -3548,6 +3565,15 @@
     });
   }
 
+  function mergedMetadata(step, node, vars) {
+    const entries = new Map();
+    for (const row of [...(step?.metadata || []), ...(node.metadata || [])]) {
+      const name = String(row.name || "").trim();
+      if (name) entries.set(name.toLowerCase(), [name, interpolate(row.value, vars || {})]);
+    }
+    return Object.fromEntries(entries.values());
+  }
+
   function isLongIntType(type) {
     return /^(int64|uint64|sint64|fixed64|sfixed64)$/i.test(String(type || ""));
   }
@@ -3812,18 +3838,13 @@
     return applied;
   }
 
-  async function invokeRpcNode(client, node, hit, vars, kind) {
+  async function invokeRpcNode(client, node, hit, vars, kind, step) {
     const env = nodeEnvironment(node);
     if (env.error) {
       node.result = { ok: false, status: "环境错误", error: env.error, ms: 0 };
       return node.result;
     }
-    const metadata = {};
-    for (const row of node.metadata || []) {
-      const name = (row.name || "").trim();
-      if (!name) continue;
-      metadata[name] = interpolate(row.value, vars);
-    }
+    const metadata = mergedMetadata(step, node, vars);
     const protocol = normalizeNodeProtocol(node.protocol);
     const body = buildBody(node.message, vars, hit.rpc.requestFields || []);
     const payload = {
@@ -3867,6 +3888,7 @@
       }
       node.streamId = opened.streamId;
       node.streamHost = env.host;
+      node.streamMetadata = JSON.stringify(metadata);
       node.lastStreamId = opened.streamId;
       node.result = {
         ok: true,
@@ -4043,7 +4065,7 @@
             if (!hit) continue;
             if (startId) node.ownerStepId = startId;
             const incoming = flow.edges.filter((e) => e.to === nodeId);
-            const result = await invokeRpcNode(client, node, hit, vars, kind);
+            const result = await invokeRpcNode(client, node, hit, vars, kind, seg.start);
             for (const edge of incoming) edge.status = result.ok ? "ok" : "fail";
             // 写回共享变量，供其它步骤单独运行时使用
             flow.sharedVars = { ...flow.sharedVars, ...vars };
@@ -4351,6 +4373,18 @@
       node.metadata = node.metadata || [];
       node.metadata.push({ name: "", value: "" });
       renderFlowMeta(node);
+    });
+    $("flowAddStartMetaBtn")?.addEventListener("click", () => {
+      const rows = readStartMeta();
+      rows.push({ name: "", value: "" });
+      renderStartMeta(rows);
+    });
+    $("flowStartMetaBody")?.addEventListener("click", (event) => {
+      const del = event.target.closest("[data-start-meta-del]");
+      if (!del) return;
+      const rows = readStartMeta();
+      rows.splice(Number(del.getAttribute("data-start-meta-del")), 1);
+      renderStartMeta(rows);
     });
     $("flowMetaBody")?.addEventListener("click", (event) => {
       const del = event.target.closest("[data-flow-meta-del]");
