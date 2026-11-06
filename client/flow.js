@@ -32,6 +32,7 @@
     /** 全量「运行链路」进行中 */
     flowRunning: false,
     nodeRunning: false,
+    bypassStatus: new Map(),
     /** 正在单步/链路执行的起始步骤 id → true */
     stepRunning: Object.create(null),
     /** 跨步骤共享变量（提取结果累积，便于步骤二单独跑时用步骤一的 token） */
@@ -51,6 +52,7 @@
     stressAbort: false,
   };
   const HISTORY_LIMIT = 80;
+  let nodeClipboard = null;
   const FLOAT_TOOLS_KEY = "protoview.client.flow.tools";
   const UNDO_LIMIT = 40;
   /** 上一次提交后的画布快照（用于撤销对比） */
@@ -109,6 +111,7 @@
   function commit() {
     const snap = flowEditSnapshot();
     if (lastSnapshot && snap !== lastSnapshot) {
+      flow.bypassStatus.clear();
       flow.undo.push(lastSnapshot);
       if (flow.undo.length > UNDO_LIMIT) flow.undo.shift();
       flow.redo = [];
@@ -367,6 +370,7 @@
   function serializeNode(node) {
     if (node.kind === "variable") {
       return { id: node.id, kind: "variable", name: node.name, x: node.x, y: node.y,
+        enabled: node.enabled !== false, vars: node.vars || {}, varsAt: Number(node.varsAt) || 0,
         operations: node.operations.map((item) => ({ ...item })) };
     }
     if (isStartNode(node)) {
@@ -392,6 +396,9 @@
       rpcId: node.rpcId,
       name: node.name,
       package: node.package,
+      enabled: node.enabled !== false,
+      vars: node.vars || {},
+      varsAt: Number(node.varsAt) || 0,
       x: node.x,
       y: node.y,
       message: node.message,
@@ -492,6 +499,9 @@
     const id = String(item.id || "").trim() || uid("n");
     if (item.kind === "variable") {
       return { id, kind: "variable", name: String(item.name || "变量处理"),
+        enabled: item.enabled !== false,
+        vars: item.vars && typeof item.vars === "object" ? { ...item.vars } : {},
+        varsAt: Number(item.varsAt) || 0,
         x: Number.isFinite(Number(item.x)) ? Number(item.x) : 40,
         y: Number.isFinite(Number(item.y)) ? Number(item.y) : 40,
         operations: (Array.isArray(item.operations) ? item.operations : [item]).map((op) => ({
@@ -527,6 +537,9 @@
       rpcId,
       name: String(item.name || rpcId),
       package: String(item.package || ""),
+      enabled: item.enabled !== false,
+      vars: item.vars && typeof item.vars === "object" ? { ...item.vars } : {},
+      varsAt: Number(item.varsAt) || 0,
       x: Number.isFinite(Number(item.x)) ? Number(item.x) : 40,
       y: Number.isFinite(Number(item.y)) ? Number(item.y) : 40,
       message: item.message && typeof item.message === "object" ? item.message : {},
@@ -663,9 +676,10 @@
     world.innerHTML = flow.nodes.map((node) => {
       if (node.kind === "variable") {
         const status = node.result?.ok === true ? "ok" : node.result?.ok === false ? "fail" : "";
-        return `<div class="flow-node ${status}" data-node="${esc(node.id)}" style="left:${node.x}px;top:${node.y}px">
+        return `<div class="flow-node ${status}${node.enabled === false ? " disabled" : ""}" data-node="${esc(node.id)}" style="left:${node.x}px;top:${node.y}px">
           <div class="flow-node-head" data-drag="${esc(node.id)}"><div class="flow-node-icon">{ }</div>
           <div class="flow-node-text"><strong>${esc(node.name)}</strong><span>变量处理</span></div></div>
+          ${nodeActions(node)}
           <div class="flow-node-result ${status || "idle"}">${esc(node.result?.status || "未运行")}</div>
           <div class="flow-port in" data-port-in="${esc(node.id)}" title="连入"></div>
           <div class="flow-port out" data-port-out="${esc(node.id)}" title="连出"></div></div>`;
@@ -726,7 +740,7 @@
       const badge = node.result
         ? `<div class="flow-node-result ${badgeClass}">${esc(badgeText)}</div>`
         : `<div class="flow-node-result idle">未运行</div>`;
-      return `<div class="flow-node ${status} ${streamClass}" data-node="${esc(node.id)}" style="left:${node.x}px;top:${node.y}px">
+      return `<div class="flow-node ${status} ${streamClass}${node.enabled === false ? " disabled" : ""}" data-node="${esc(node.id)}" style="left:${node.x}px;top:${node.y}px">
         <div class="flow-node-head" data-drag="${esc(node.id)}">
           <div class="flow-node-icon">⇢</div>
           <div class="flow-node-text">
@@ -734,6 +748,7 @@
             <span>${esc(sub)}</span>
           </div>
         </div>
+        ${nodeActions(node)}
         ${badge}
         <div class="flow-port in" data-port-in="${esc(node.id)}" title="连入"></div>
         <div class="flow-port out" data-port-out="${esc(node.id)}" title="连出"></div>
@@ -748,15 +763,23 @@
       const to = flow.nodes.find((n) => n.id === edge.to);
       if (!from || !to) return "";
       const d = edgePathD(edgeFromPoint(from), edgeToPoint(to));
-      const cls = edge.status === "ok" ? "ok" : edge.status === "fail" ? "fail" : "";
+      const disabled = (!isStartNode(from) && from.enabled === false) || (!isStartNode(to) && to.enabled === false);
+      const cls = disabled ? "disabled" : edge.status === "ok" ? "ok" : edge.status === "fail" ? "fail" : "";
       // 透明粗线负责命中（易选中），细线负责显示
       return `<g class="flow-edge-group" data-edge-group="${esc(edge.id)}">
         <path class="flow-edge-hit" data-edge="${esc(edge.id)}" d="${d}" />
         <path class="flow-edge ${cls}" data-edge="${esc(edge.id)}" d="${d}" />
       </g>`;
     }).join("");
+    const bypassLines = bypassConnections(new Set(flow.nodes.filter((node) => !isStartNode(node) && node.enabled === false).map((node) => node.id)))
+      .map(({ from, to }) => {
+        const start = flow.nodes.find((node) => node.id === from);
+        const end = flow.nodes.find((node) => node.id === to);
+        const status = flow.bypassStatus.get(JSON.stringify([from, to])) || "";
+        return start && end ? `<path class="flow-edge flow-edge-bypass ${status}" d="${bypassPathD(start, end)}"><title>跳过禁用节点</title></path>` : "";
+      }).join("");
     // 末尾保留一条预览线：从端口拖出时立即跟随指针
-    svg.innerHTML = `${lines}<path class="flow-edge preview" id="flowEdgePreview" d="" />`;
+    svg.innerHTML = `${lines}${bypassLines}<path class="flow-edge preview" id="flowEdgePreview" d="" />`;
     paintEdgeSelection();
     paintLinkPreview();
     svg.setAttribute("width", "4000");
@@ -764,6 +787,21 @@
     applyTransform();
     updateVarsBadge();
     save();
+  }
+
+  function nodeActions(node) {
+    const enabled = node.enabled !== false;
+    const busy = flow.nodeRunning === node.id;
+    const count = Object.keys(node.vars || {}).length;
+    const runnable = node.kind === "variable" || Boolean(api()?.findRpc?.(node.rpcId));
+    return `<div class="flow-start-actions">
+      <label class="flow-start-switch" title="链路运行时是否执行本节点">
+        <input type="checkbox" data-node-toggle="${esc(node.id)}"${enabled ? " checked" : ""} />
+        <span>${enabled ? "启用" : "禁用"}</span>
+      </label>
+      ${runnable ? `<button type="button" class="flow-start-run-btn" data-node-run="${esc(node.id)}"${busy ? " disabled" : ""}>${busy ? "运行中" : "运行"}</button>` : ""}
+      <button type="button" class="flow-start-var-btn" data-node-vars="${esc(node.id)}" title="查看本节点产生的变量">变量${count ? ` ${count}` : ""}</button>
+    </div>`;
   }
 
   const EDGE_NODE_W = 200;
@@ -779,6 +817,35 @@
 
   function edgePathD(a, b) {
     return `M ${a.x} ${a.y} C ${a.x + 60} ${a.y}, ${b.x - 60} ${b.y}, ${b.x} ${b.y}`;
+  }
+
+  function bypassPathD(start, end) {
+    const a = edgeFromPoint(start);
+    const b = edgeToPoint(end);
+    const left = Math.min(a.x, b.x);
+    const right = Math.max(a.x, b.x);
+    const obstacles = flow.nodes.filter((node) => node.enabled === false && !isStartNode(node)
+      && node.id !== start.id && node.id !== end.id
+      && node.x < right && node.x + EDGE_NODE_W > left);
+    if (!obstacles.length) return edgePathD(a, b);
+    const top = Math.min(a.y, b.y, ...obstacles.map((node) => node.y)) - 24;
+    const rightGap = obstacles.filter((node) => node.x >= a.x).reduce((gap, node) => Math.min(gap, node.x - a.x), 32);
+    const leftGap = obstacles.filter((node) => node.x + EDGE_NODE_W <= b.x).reduce((gap, node) => Math.min(gap, b.x - node.x - EDGE_NODE_W), 32);
+    const exitX = a.x + Math.max(0, rightGap / 2);
+    const entryX = b.x - Math.max(0, leftGap / 2);
+    const points = [a, { x: exitX, y: a.y }, { x: exitX, y: top }, { x: entryX, y: top }, { x: entryX, y: b.y }, b];
+    let path = `M ${a.x} ${a.y}`;
+    for (let i = 1; i < points.length - 1; i++) {
+      const prev = points[i - 1], point = points[i], next = points[i + 1];
+      const inLength = Math.hypot(point.x - prev.x, point.y - prev.y);
+      const outLength = Math.hypot(next.x - point.x, next.y - point.y);
+      const radius = Math.min(16, inLength / 2, outLength / 2);
+      if (!radius) { path += ` L ${point.x} ${point.y}`; continue; }
+      const before = { x: point.x + (prev.x - point.x) * radius / inLength, y: point.y + (prev.y - point.y) * radius / inLength };
+      const after = { x: point.x + (next.x - point.x) * radius / outLength, y: point.y + (next.y - point.y) * radius / outLength };
+      path += ` L ${before.x} ${before.y} Q ${point.x} ${point.y} ${after.x} ${after.y}`;
+    }
+    return `${path} L ${b.x} ${b.y}`;
   }
 
   function paintEdgeSelection() {
@@ -901,15 +968,20 @@
 
   function duplicateNode(nodeId) {
     const ids = flow.selectedNodeIds.has(nodeId) ? flow.selectedNodeIds : new Set([nodeId]);
-    const nodes = flow.nodes.filter((node) => ids.has(node.id));
+    const nodes = flow.nodes.filter((node) => ids.has(node.id)).map(serializeNode);
+    const edges = flow.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to));
+    pasteNodes(nodes, edges, 32);
+  }
+
+  function pasteNodes(nodes, edges, offset) {
     if (!nodes.length) return;
     const mapping = new Map();
     for (const node of nodes) {
-      const data = JSON.parse(JSON.stringify(serializeNode(node)));
+      const data = JSON.parse(JSON.stringify(node));
       data.id = uid(isStartNode(node) ? "s" : node.kind === "variable" ? "v" : "n");
       mapping.set(node.id, data.id);
-      data.x = node.x + 32;
-      data.y = node.y + 32;
+      data.x = node.x + offset;
+      data.y = node.y + offset;
       if (isStartNode(node)) {
         const names = new Set(flow.nodes.filter(isStartNode).map((item) => item.name));
         const baseName = `${node.name || "步骤"} 副本`;
@@ -919,10 +991,12 @@
         data.vars = {};
         data.varsAt = 0;
       }
+      data.vars = {};
+      data.varsAt = 0;
       delete data.sendHistory;
       flow.nodes.push(normalizeNode(data));
     }
-    for (const edge of [...flow.edges]) {
+    for (const edge of edges) {
       if (mapping.has(edge.from) && mapping.has(edge.to)) {
         flow.edges.push({ id: uid("e"), from: mapping.get(edge.from), to: mapping.get(edge.to), status: "idle" });
       }
@@ -934,14 +1008,44 @@
 
   function deleteNodes(ids) {
     const selected = new Set(ids);
+    const bypass = bypassConnections(selected);
     for (const node of flow.nodes) if (selected.has(node.id) && node.streamId) void closeNodeStream(node);
     flow.nodes = flow.nodes.filter((node) => !selected.has(node.id));
     flow.edges = flow.edges.filter((edge) => !selected.has(edge.from) && !selected.has(edge.to));
+    for (const edge of bypass) flow.edges.push({ id: uid("e"), ...edge, status: "idle" });
     if (!flow.edges.some((edge) => edge.id === flow.selectedEdgeId)) flow.selectedEdgeId = null;
     if (selected.has(flow.varsStepId)) flow.varsStepId = null;
     flow.selectedNodeIds.clear();
     commit();
     render();
+  }
+
+  function bypassConnections(skipped) {
+    const result = [];
+    const pairs = new Set(flow.edges.map((edge) => JSON.stringify([edge.from, edge.to])));
+    const outgoing = new Map();
+    for (const edge of flow.edges) {
+      if (!outgoing.has(edge.from)) outgoing.set(edge.from, []);
+      outgoing.get(edge.from).push(edge.to);
+    }
+    for (const edge of flow.edges) {
+      if (skipped.has(edge.from) || !skipped.has(edge.to)) continue;
+      const queue = [edge.to];
+      const seen = new Set();
+      while (queue.length) {
+        const id = queue.shift();
+        if (seen.has(id)) continue;
+        seen.add(id);
+        for (const next of outgoing.get(id) || []) {
+          if (skipped.has(next)) queue.push(next);
+          else if (next !== edge.from) {
+            const key = JSON.stringify([edge.from, next]);
+            if (!pairs.has(key)) { pairs.add(key); result.push({ from: edge.from, to: next }); }
+          }
+        }
+      }
+    }
+    return result;
   }
 
   function addNode(rpcId, x, y, label) {
@@ -1128,7 +1232,6 @@
     for (const btn of menu.querySelectorAll("[data-flow-act]")) {
       const act = btn.getAttribute("data-flow-act");
       let show = true;
-      if (act === "run") show = Boolean(node?.rpcId && !isStart);
       if (act === "view-definition") show = Boolean(node?.rpcId && !isStart && node.kind !== "variable");
       if (act === "view-resp") show = !isStart && node?.kind !== "variable";
       if (act === "send-msg") show = canSendMsg;
@@ -2921,7 +3024,7 @@
     const vars = { ...(flow.sharedVars || {}) };
     const applied = applyExtracts(cfg || node, decoded, vars);
     flow.sharedVars = vars;
-    recordStepVars(ownerStepIdFor(node), applied);
+    recordStepVars(ownerStepIdFor(node), applied, node);
     updateVarsBadge();
   }
 
@@ -2977,7 +3080,7 @@
         const vars = { ...(flow.sharedVars || {}) };
         const applied = applyExtracts(cfg || node, decoded, vars);
         flow.sharedVars = vars;
-        recordStepVars(ownerStepIdFor(node), applied);
+        recordStepVars(ownerStepIdFor(node), applied, node);
         updateVarsBadge();
       }
       const seq = base + raw.length - i;
@@ -3128,7 +3231,7 @@
 
   function varsStep() {
     if (!flow.varsStepId) return null;
-    return flow.nodes.find((n) => n.id === flow.varsStepId && isStartNode(n)) || null;
+    return flow.nodes.find((n) => n.id === flow.varsStepId) || null;
   }
 
   function renderVarsModal() {
@@ -3143,7 +3246,7 @@
       title.textContent = `${name} · 变量（${keys.length}）`;
     }
     if (!keys.length) {
-      el.innerHTML = `<div class="flow-msg-empty">这个步骤还没有变量：在任务的「解析后变量赋值」里填变量名，运行/收到对应消息后就会写到这里</div>`;
+      el.innerHTML = `<div class="flow-msg-empty">暂无变量</div>`;
       return;
     }
     el.innerHTML = keys.map((key) => {
@@ -3161,9 +3264,9 @@
   }
 
   function openVarsModal(stepId) {
-    const step = flow.nodes.find((n) => n.id === stepId && isStartNode(n));
+    const step = flow.nodes.find((n) => n.id === stepId);
     if (!step) {
-      void notify("请从起始步骤节点上的「变量」按钮打开");
+      void notify("找不到节点");
       return;
     }
     flow.varsStepId = step.id;
@@ -3176,7 +3279,7 @@
     if (!step) return;
     step.vars = {};
     step.varsAt = 0;
-    for (const key of Object.keys(flow.sharedVars || {})) {
+    if (isStartNode(step)) for (const key of Object.keys(flow.sharedVars || {})) {
       // 只清掉该步骤产出且没有别的步骤在用的变量
       const usedElsewhere = flow.nodes.some((n) => (
         n.id !== step.id && isStartNode(n) && n.vars && Object.prototype.hasOwnProperty.call(n.vars, key)
@@ -3992,10 +4095,15 @@
   }
 
   /** 把本次提取到的变量记到对应步骤节点上（步骤卡片里的「变量」按钮看的就是它） */
-  function recordStepVars(stepId, applied) {
-    if (!stepId || !applied) return;
+  function recordStepVars(stepId, applied, node) {
+    if (!applied) return;
     const keys = Object.keys(applied);
     if (!keys.length) return;
+    if (node) {
+      if (!node.vars || typeof node.vars !== "object") node.vars = {};
+      Object.assign(node.vars, applied);
+      node.varsAt = Date.now();
+    }
     const step = flow.nodes.find((n) => n.id === stepId && isStartNode(n));
     if (!step) return;
     if (!step.vars || typeof step.vars !== "object") step.vars = {};
@@ -4012,7 +4120,7 @@
     }
     const decoded = await decodeMessageBytes(node, root, protoFileOf(node));
     const applied = applyExtracts(node, decoded, vars);
-    recordStepVars(ownerStepIdFor(node), applied);
+    recordStepVars(ownerStepIdFor(node), applied, node);
     return applied;
   }
 
@@ -4186,7 +4294,7 @@
         applied[op.output] = value;
       }
       Object.assign(vars, applied);
-      recordStepVars(stepId, applied);
+      recordStepVars(stepId, applied, node);
       node.result = { ok: true, status: "完成", ms: 0 };
     } catch (error) {
       node.result = { ok: false, status: "处理失败", error: error?.message || String(error), ms: 0 };
@@ -4213,6 +4321,14 @@
       : null;
 
     if (!quiet) {
+      if (onlyStartId && targetSeg) {
+        for (const key of flow.bypassStatus.keys()) {
+          const [, to] = JSON.parse(key);
+          if (targetSeg.rpcIds.includes(to)) flow.bypassStatus.delete(key);
+        }
+      } else {
+        flow.bypassStatus.clear();
+      }
       // 单步：只关掉本步骤下游的流，保留其它步骤已建的连接
       if (onlyStartId && targetSeg) {
         await closeSegmentStreams(targetSeg.rpcIds, byId);
@@ -4278,6 +4394,11 @@
               return { ok: false, ms: Math.round(performance.now() - started), error: "已停止", cancelled: true };
             }
             const node = byId.get(nodeId);
+            if (node.enabled === false) {
+              node.result = { ok: true, status: "跳过", ms: 0 };
+              if (!quiet) render();
+              continue;
+            }
             const hit = node.kind === "variable" ? null : client.findRpc(node.rpcId);
             if (!hit && node.kind !== "variable") continue;
             if (startId) node.ownerStepId = startId;
@@ -4285,13 +4406,26 @@
             const result = node.kind === "variable"
               ? runVariableNode(node, vars, startId)
               : await invokeRpcNode(client, node, hit, vars, kind, seg.start);
-            for (const edge of incoming) edge.status = result.ok ? "ok" : "fail";
+            for (const edge of incoming) {
+              const source = byId.get(edge.from);
+              if (source && !isStartNode(source) && source.enabled === false) continue;
+              edge.status = result.ok ? "ok" : "fail";
+            }
+            const disabledIds = new Set(flow.nodes.filter((item) => !isStartNode(item) && item.enabled === false).map((item) => item.id));
+            for (const edge of bypassConnections(disabledIds)) {
+              if (edge.to === nodeId && (edge.from === startId || seg.rpcIds.includes(edge.from))) {
+                flow.bypassStatus.set(JSON.stringify([edge.from, edge.to]), result.ok ? "ok" : "fail");
+              }
+            }
             // 写回共享变量，供其它步骤单独运行时使用
             flow.sharedVars = { ...flow.sharedVars, ...vars };
             if (!quiet) render();
             if (!result.ok) {
               if (!quiet) {
-                for (const edge of flow.edges.filter((e) => e.from === nodeId)) edge.status = "fail";
+                for (const edge of flow.edges.filter((e) => e.from === nodeId)) {
+                  const target = byId.get(edge.to);
+                  if (!target || isStartNode(target) || target.enabled !== false) edge.status = "fail";
+                }
                 render();
               }
               return {
@@ -4375,14 +4509,20 @@
       void notify("链路正在运行，请等待完成");
       return;
     }
-    const node = flow.nodes.find((item) => item.id === nodeId && item.rpcId);
+    const node = flow.nodes.find((item) => item.id === nodeId && !isStartNode(item));
     const client = api();
-    const hit = node && client?.findRpc?.(node.rpcId);
-    if (!node || !hit || !client?.invokeOnce) {
+    const hit = node?.kind === "variable" ? null : client?.findRpc?.(node?.rpcId);
+    if (!node || (node.kind !== "variable" && (!hit || !client?.invokeOnce))) {
       void notify("找不到接口，请检查 Proto 来源");
       return;
     }
-    const owners = flow.nodes.filter((item) => isStartNode(item) && rpcNodesOfStep(item.id).some((rpc) => rpc.id === nodeId));
+    const order = topoSort();
+    if (!order) {
+      void notify("存在环路，请先去掉循环连线");
+      return;
+    }
+    const owners = collectStepSegments(order, new Map(flow.nodes.map((item) => [item.id, item])))
+      .filter((segment) => segment.rpcIds.includes(nodeId)).map((segment) => segment.start);
     if (owners.length > 1) {
       void notify("该接口属于多个起始步骤，请调整连线后再单独运行");
       return;
@@ -4390,13 +4530,15 @@
     const step = owners[0];
     node.ownerStepId = step?.id || "";
     const vars = { ...flow.sharedVars };
-    flow.nodeRunning = true;
+    flow.nodeRunning = node.id;
     node.result = { ok: true, status: "运行中", ms: 0 };
     render();
     try {
-      const result = await invokeRpcNode(client, node, hit, vars, "run", step);
+      const result = node.kind === "variable"
+        ? runVariableNode(node, vars, step?.id)
+        : await invokeRpcNode(client, node, hit, vars, "run", step);
       flow.sharedVars = { ...flow.sharedVars, ...vars };
-      if (!result.ok) void notify(`${node.name || hit.rpc.name}: ${result.error || result.status || "调用失败"}`);
+      if (!result.ok) void notify(`${node.name || hit?.rpc?.name || "节点"}: ${result.error || result.status || "运行失败"}`);
     } catch (error) {
       node.result = { ok: false, status: "ERROR", error: error?.message || String(error), ms: 0 };
       void notify(node.result.error);
@@ -4662,7 +4804,6 @@
       const nodeId = flow.menuNodeId;
       hideMenu();
       if (!nodeId || !act) return;
-      if (act === "run") void runSingleNode(nodeId);
       if (act === "view-definition") {
         const node = flow.nodes.find((item) => item.id === nodeId);
         if (node?.rpcId && api()?.showRpcDefinition?.(node.rpcId)) closeFlow();
@@ -4890,16 +5031,30 @@
     });
 
     stage.addEventListener("change", (event) => {
-      const toggle = event.target.closest?.("[data-start-toggle]");
+      const toggle = event.target.closest?.("[data-start-toggle], [data-node-toggle]");
       if (!toggle) return;
-      const id = toggle.getAttribute("data-start-toggle");
-      const node = flow.nodes.find((n) => n.id === id && isStartNode(n));
+      const id = toggle.getAttribute("data-start-toggle") || toggle.getAttribute("data-node-toggle");
+      const node = flow.nodes.find((n) => n.id === id);
       if (!node) return;
       node.enabled = Boolean(toggle.checked);
       commit();
       render();
     });
     stage.addEventListener("click", (event) => {
+      const nodeRunBtn = event.target.closest?.("[data-node-run]");
+      if (nodeRunBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        void runSingleNode(nodeRunBtn.getAttribute("data-node-run"));
+        return;
+      }
+      const nodeVarsBtn = event.target.closest?.("[data-node-vars]");
+      if (nodeVarsBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        openVarsModal(nodeVarsBtn.getAttribute("data-node-vars"));
+        return;
+      }
       const runBtn = event.target.closest?.("[data-start-run]");
       if (runBtn) {
         event.preventDefault();
@@ -4978,6 +5133,21 @@
         return;
       }
       if (!isFlowOpen() || typing || document.querySelector(".modal-mask.show")) return;
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "c" && flow.selectedNodeIds.size) {
+        const ids = flow.selectedNodeIds;
+        const nodes = flow.nodes.filter((node) => ids.has(node.id)).map(serializeNode);
+        if (nodes.length) {
+          nodeClipboard = JSON.parse(JSON.stringify({ nodes, edges: flow.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)), pastes: 0 }));
+          event.preventDefault();
+        }
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "v" && nodeClipboard) {
+        event.preventDefault();
+        nodeClipboard.pastes += 1;
+        pasteNodes(nodeClipboard.nodes, nodeClipboard.edges, 32 * nodeClipboard.pastes);
+        return;
+      }
       if ((event.key === "Delete" || event.key === "Backspace") && flow.selectedNodeIds.size) {
         event.preventDefault();
         deleteNodes(flow.selectedNodeIds);
