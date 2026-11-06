@@ -367,10 +367,10 @@ export class ClientPanel {
     </aside>
     <div class="sidebar-divider" id="sidebarDivider">
       <div class="sidebar-resize" id="sidebarResize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" tabindex="0"></div>
-      <button class="sidebar-toggle" id="sidebarToggleBtn" type="button" title="收起侧栏" aria-label="收起侧栏">⟨</button>
     </div>
     <main class="main" id="mainClient">
       <div class="topbar">
+        <button class="icon-btn sidebar-toggle" data-sidebar-toggle type="button" title="收起侧栏" aria-label="收起侧栏">◧</button>
         <select class="pill" id="protocolSelect" title="协议">
           <option value="grpc">gRPC</option>
           <option value="http">HTTP</option>
@@ -536,6 +536,7 @@ export class ClientPanel {
     </main>
     <main class="main flow-main hidden" id="mainFlow">
       <div class="flow-topbar">
+        <button class="icon-btn sidebar-toggle" data-sidebar-toggle type="button" title="收起侧栏" aria-label="收起侧栏">◧</button>
         <strong>链路调试</strong>
         <span class="flow-hint">左键框选 · 拖动节点移动 · 右键拖动平移 · 右键节点操作</span>
         <div class="spacer"></div>

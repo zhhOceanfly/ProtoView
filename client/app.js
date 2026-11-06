@@ -330,11 +330,10 @@
     if (!app) return;
     app.classList.toggle("sidebar-collapsed", Boolean(collapsed));
     $("sidebarResize")?.setAttribute("tabindex", collapsed ? "-1" : "0");
-    const toggle = $("sidebarToggleBtn");
-    if (toggle) {
-      toggle.textContent = collapsed ? "⟩" : "⟨";
+    for (const toggle of document.querySelectorAll("[data-sidebar-toggle]")) {
       toggle.title = collapsed ? "展开侧栏" : "收起侧栏";
       toggle.setAttribute("aria-label", toggle.title);
+      toggle.setAttribute("aria-expanded", String(!collapsed));
     }
   }
 
@@ -1634,7 +1633,7 @@
   initSidebarCollapsed();
   initSidebarResize();
   els.themeBtn.addEventListener("click", toggleTheme);
-  $("sidebarToggleBtn")?.addEventListener("click", toggleSidebar);
+  document.querySelectorAll("[data-sidebar-toggle]").forEach((button) => button.addEventListener("click", toggleSidebar));
   $("aiBtn").addEventListener("click", openAi);
   $("closeAiBtn").addEventListener("click", closeAi);
   $("aiShuffle").addEventListener("click", () => {

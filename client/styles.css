@@ -122,23 +122,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .sidebar-resize:hover, .sidebar-resize:focus-visible { background: var(--accent); outline: none; }
 #app.sidebar-collapsed .sidebar-resize { visibility: hidden; }
 .sidebar-toggle {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 22px;
-  height: 28px;
+  flex: 0 0 30px;
   padding: 0;
-  z-index: 3;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--panel);
   color: var(--muted);
   font-size: 16px;
   line-height: 1;
-  cursor: pointer;
 }
-#app.sidebar-collapsed .sidebar-toggle { left: 0; transform: none; }
 .sidebar-toggle:hover, .sidebar-toggle:focus-visible {
   color: var(--text);
   background: var(--panel-2);
