@@ -16,6 +16,7 @@
       : createWsBridge();
   const THEME_KEY = "protoview.client.theme";
   const SIDEBAR_BREAKPOINT = 960;
+  const SIDEBAR_WIDTH_KEY = "protoview.client.sidebarWidth";
   const DRAFT_KEY = "protoview.client.drafts";
   const SPLIT_KEY = "protoview.client.split";
   /** null=跟宽度走；true/false=手动覆盖（窗口跨过断点后清除） */
@@ -328,6 +329,7 @@
     const app = document.getElementById("app");
     if (!app) return;
     app.classList.toggle("sidebar-collapsed", Boolean(collapsed));
+    $("sidebarResize")?.setAttribute("tabindex", collapsed ? "-1" : "0");
     const toggle = $("sidebarToggleBtn");
     if (toggle) {
       toggle.textContent = collapsed ? "⟩" : "⟨";
@@ -351,6 +353,10 @@
   }
 
   function initSidebarCollapsed() {
+    const width = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (Number.isFinite(width) && width >= 200 && width <= 600) {
+      document.getElementById("app")?.style.setProperty("--sidebar-size", `${width}px`);
+    }
     syncSidebarByWidth();
     const app = document.getElementById("app");
     if (!app || typeof ResizeObserver === "undefined") {
@@ -364,6 +370,48 @@
   function toggleSidebar() {
     sidebarManual = !isSidebarCollapsed();
     setSidebarCollapsed(sidebarManual);
+  }
+
+  function initSidebarResize() {
+    const app = $("app");
+    const handle = $("sidebarResize");
+    if (!app || !handle) return;
+    const setWidth = (width) => {
+      const max = Math.max(200, Math.min(600, app.clientWidth - 100));
+      const next = Math.round(Math.min(max, Math.max(200, width)));
+      app.style.setProperty("--sidebar-size", `${next}px`);
+      handle.setAttribute("aria-valuenow", String(next));
+      return next;
+    };
+    let dragging = false;
+    handle.setAttribute("aria-valuemin", "200");
+    handle.setAttribute("aria-valuemax", "600");
+    handle.setAttribute("aria-valuenow", String(Math.round(Number.parseFloat(app.style.getPropertyValue("--sidebar-size")) || 260)));
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || isSidebarCollapsed()) return;
+      dragging = true;
+      handle.setPointerCapture(event.pointerId);
+      document.body.classList.add("sidebar-resizing");
+      event.preventDefault();
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (dragging) setWidth(event.clientX - app.getBoundingClientRect().left);
+    });
+    const finish = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("sidebar-resizing");
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(app.querySelector(".sidebar").getBoundingClientRect().width)));
+    };
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", finish);
+    handle.addEventListener("lostpointercapture", finish);
+    handle.addEventListener("keydown", (event) => {
+      if (isSidebarCollapsed() || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+      event.preventDefault();
+      const width = app.querySelector(".sidebar").getBoundingClientRect().width;
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(setWidth(width + (event.key === "ArrowRight" ? 10 : -10))));
+    });
   }
 
   function esc(value) {
@@ -1584,6 +1632,7 @@
   initTheme();
   initOpenWithUi();
   initSidebarCollapsed();
+  initSidebarResize();
   els.themeBtn.addEventListener("click", toggleTheme);
   $("sidebarToggleBtn")?.addEventListener("click", toggleSidebar);
   $("aiBtn").addEventListener("click", openAi);

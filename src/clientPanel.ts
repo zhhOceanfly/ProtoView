@@ -365,7 +365,10 @@ export class ClientPanel {
       </div>
       <div class="tree" id="tree"></div>
     </aside>
-    <button class="sidebar-rail" id="sidebarToggleBtn" type="button" title="收起侧栏" aria-label="收起侧栏">⟨</button>
+    <div class="sidebar-divider" id="sidebarDivider">
+      <div class="sidebar-resize" id="sidebarResize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" tabindex="0"></div>
+      <button class="sidebar-toggle" id="sidebarToggleBtn" type="button" title="收起侧栏" aria-label="收起侧栏">⟨</button>
+    </div>
     <main class="main" id="mainClient">
       <div class="topbar">
         <select class="pill" id="protocolSelect" title="协议">

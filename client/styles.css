@@ -53,8 +53,8 @@ button { cursor: pointer; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 
 #app {
-  --sidebar-w: 260px;
-  --rail-w: 22px;
+  --sidebar-w: min(var(--sidebar-size, 260px), max(0px, calc(100% - 100px)));
+  --rail-w: 6px;
   --source-w: 0px;
   display: grid;
   grid-template-columns: var(--sidebar-w) var(--rail-w) minmax(0, 1fr) var(--source-w);
@@ -74,7 +74,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   min-width: 0;
   overflow: hidden;
 }
-#app > .sidebar-rail {
+#app > .sidebar-divider {
   grid-column: 2;
   grid-row: 1;
 }
@@ -109,29 +109,45 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   flex-direction: column;
   min-height: 0;
 }
-.sidebar-rail {
+.sidebar-divider {
+  position: relative;
   z-index: 2;
+}
+.sidebar-resize {
   width: 100%;
   height: 100%;
-  margin: 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resize:hover, .sidebar-resize:focus-visible { background: var(--accent); outline: none; }
+#app.sidebar-collapsed .sidebar-resize { visibility: hidden; }
+.sidebar-toggle {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 28px;
   padding: 0;
-  border: 0;
-  border-right: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  border-radius: 0;
-  background: var(--panel-2);
+  z-index: 3;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
 }
-.sidebar-rail:hover {
+#app.sidebar-collapsed .sidebar-toggle { left: 0; transform: none; }
+.sidebar-toggle:hover, .sidebar-toggle:focus-visible {
   color: var(--text);
-  background: var(--hover);
+  background: var(--panel-2);
   border-color: var(--accent);
+}
+body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; user-select: none !important; }
+/* Keep the collapsed sidebar inaccessible without changing its stored width. */
+#app.sidebar-collapsed .sidebar-divider {
+  border: 0;
 }
 .side-head {
   padding: 12px 12px 8px;
@@ -344,6 +360,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     var(--bg);
   cursor: crosshair;
 }
+.flow-selection-box { position: absolute; z-index: 5; pointer-events: none; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.flow-stage.flow-pan-ready, .flow-stage.flow-pan-ready * { cursor: grab; }
+.flow-stage.flow-panning, .flow-stage.flow-panning * { cursor: grabbing; }
+.flow-node.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 .flow-empty {
   position: absolute;
   inset: 0;
@@ -360,10 +380,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 /* 画布右上角浮动工具栏 */
 .flow-float-tools {
   position: absolute;
-.flow-selection-box { position: absolute; z-index: 5; pointer-events: none; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
-.flow-stage.flow-pan-ready, .flow-stage.flow-pan-ready * { cursor: grab; }
-.flow-stage.flow-panning, .flow-stage.flow-panning * { cursor: grabbing; }
-.flow-node.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
   right: 12px;
   top: 12px;
   z-index: 6;
@@ -2351,7 +2367,6 @@ textarea.editor {
 
 /* 窄宽不再上下堆叠侧栏；由 JS 自动收起，右侧自适应 */
 @media (max-width: 900px) {
-  #app { --sidebar-w: 220px; }
   .side-meta-row { flex-wrap: wrap; }
   .topbar { gap: 6px; padding: 8px; }
   .pill { padding: 6px 8px; }
