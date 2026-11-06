@@ -219,6 +219,7 @@
           <button class="flow-float-toggle" id="flowFloatToggle" type="button" title="收起/展开工具栏">⋯</button>
           <div class="flow-float-items" id="flowFloatItems">
             <button class="btn" id="flowAddStartBtn" type="button" title="添加起始步骤（设置本段运行次数）">＋ 起始步骤</button>
+            <button class="btn" id="flowAddVariableBtn" type="button">＋ 变量处理</button>
             <button class="btn" id="flowClearBtn" type="button">清空画布</button>
             <button class="btn" id="flowTplBtn" type="button" title="画布模板">模板</button>
             <button class="btn flow-float-icon" id="flowUndoBtn" type="button" title="撤销 (Ctrl+Z)" disabled>↶</button>
@@ -271,6 +272,11 @@
           </table>
           <button class="btn" id="flowAddStartMetaBtn" type="button">添加 Metadata</button>
           <p class="stress-note">本起始步骤之后的接口会按拓扑顺序重复执行「运行次数」次，每次之间等待「间隔」秒（默认 1 次 / 1 秒）。节点上的开关可快速启停；「运行」按钮可单独跑本步骤。</p>
+        </div>
+        <div id="flowVariableEditFields" class="flow-start-edit hidden">
+          <label>节点名称 <input id="flowVariableName" /></label>
+          <div id="flowVariableRows"></div>
+          <button class="btn" id="flowAddVariableRow" type="button">添加操作</button>
         </div>
         <div id="flowRpcEditFields">
           <div class="flow-node-transport">

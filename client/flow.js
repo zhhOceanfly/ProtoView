@@ -361,6 +361,10 @@
   }
 
   function serializeNode(node) {
+    if (node.kind === "variable") {
+      return { id: node.id, kind: "variable", name: node.name, x: node.x, y: node.y,
+        operations: node.operations.map((item) => ({ ...item })) };
+    }
     if (isStartNode(node)) {
       return {
         id: node.id,
@@ -481,6 +485,16 @@
   function normalizeNode(item) {
     if (!item || typeof item !== "object") return null;
     const id = String(item.id || "").trim() || uid("n");
+    if (item.kind === "variable") {
+      return { id, kind: "variable", name: String(item.name || "变量处理"),
+        x: Number.isFinite(Number(item.x)) ? Number(item.x) : 40,
+        y: Number.isFinite(Number(item.y)) ? Number(item.y) : 40,
+        operations: (Array.isArray(item.operations) ? item.operations : [item]).map((op) => ({
+          input: String(op?.input || ""), output: String(op?.output || ""),
+          operation: String(op?.operation || "set"), text: String(op?.text || ""),
+          length: Math.min(64, Math.max(1, Math.floor(Number(op?.length) || 6))),
+        })), result: null };
+    }
     if (item.kind === "start" || item.kind === "Start") {
       return {
         id,
@@ -634,6 +648,15 @@
     const empty = $("flowEmpty");
     if (empty) empty.classList.toggle("hidden", flow.nodes.length > 0);
     world.innerHTML = flow.nodes.map((node) => {
+      if (node.kind === "variable") {
+        const status = node.result?.ok === true ? "ok" : node.result?.ok === false ? "fail" : "";
+        return `<div class="flow-node ${status}" data-node="${esc(node.id)}" style="left:${node.x}px;top:${node.y}px">
+          <div class="flow-node-head" data-drag="${esc(node.id)}"><div class="flow-node-icon">{ }</div>
+          <div class="flow-node-text"><strong>${esc(node.name)}</strong><span>变量处理</span></div></div>
+          <div class="flow-node-result ${status || "idle"}">${esc(node.result?.status || "未运行")}</div>
+          <div class="flow-port in" data-port-in="${esc(node.id)}" title="连入"></div>
+          <div class="flow-port out" data-port-out="${esc(node.id)}" title="连出"></div></div>`;
+      }
       if (isStartNode(node)) {
         const busy = Boolean(flow.stepRunning[node.id]);
         const status = busy ? "ok" : node.result?.ok === true ? "ok" : node.result?.ok === false ? "fail" : "";
@@ -851,6 +874,15 @@
     }
   }
 
+  function addVariableNode() {
+    const center = canvasCenter();
+    const node = normalizeNode({ id: uid("v"), kind: "variable", x: Math.max(40, center.x), y: Math.max(40, center.y) });
+    flow.nodes.push(node);
+    commit();
+    render();
+    openEdit(node.id);
+  }
+
   function addNode(rpcId, x, y, label) {
     if (!rpcId) return false;
     try {
@@ -1033,7 +1065,7 @@
     for (const btn of menu.querySelectorAll("[data-flow-act]")) {
       const act = btn.getAttribute("data-flow-act");
       let show = true;
-      if (act === "view-resp") show = !isStart;
+      if (act === "view-resp") show = !isStart && node?.kind !== "variable";
       if (act === "send-msg") show = canSendMsg;
       if (act === "close-stream") show = canSendMsg && hasLive;
       btn.classList.toggle("hidden", !show);
@@ -1627,6 +1659,17 @@
     flow.editNodeId = nodeId;
     const startFields = $("flowStartEditFields");
     const rpcFields = $("flowRpcEditFields");
+    const variableFields = $("flowVariableEditFields");
+    variableFields?.classList.toggle("hidden", node.kind !== "variable");
+    if (node.kind === "variable") {
+      startFields?.classList.add("hidden");
+      rpcFields?.classList.add("hidden");
+      $("flowEditTitle").textContent = "编辑 · 变量处理";
+      $("flowVariableName").value = node.name;
+      renderVariableRows(node.operations);
+      $("flowEditModal").classList.add("show");
+      return;
+    }
     if (isStartNode(node)) {
       $("flowEditTitle").textContent = `编辑 · ${node.name || "起始步骤"}`;
       startFields?.classList.remove("hidden");
@@ -1862,6 +1905,35 @@
     </tr>`).join("");
   }
 
+  function readVariableRows() {
+    return Array.from($("flowVariableRows").querySelectorAll("[data-variable-row]"), (row) => ({
+      operation: row.querySelector('[data-field="operation"]').value,
+      input: row.querySelector('[data-field="input"]').value.trim(),
+      output: row.querySelector('[data-field="output"]').value.trim(),
+      text: row.querySelector('[data-field="text"]').value,
+      length: Math.min(64, Math.max(1, Math.floor(Number(row.querySelector('[data-field="length"]').value) || 6))),
+    }));
+  }
+
+  function validVariableName(name) {
+    return /^[\w.-]+$/.test(name) && name !== "__proto__";
+  }
+
+  function renderVariableRows(rows) {
+    $("flowVariableRows").innerHTML = rows.map((row, index) => `<div class="flow-variable-row" data-variable-row>
+      <label>处理方式 <select data-field="operation">
+        <option value="set"${row.operation === "set" ? " selected" : ""}>设置固定值</option>
+        <option value="append"${row.operation === "append" ? " selected" : ""}>追加文本</option>
+        <option value="random"${row.operation === "random" ? " selected" : ""}>随机字符串 / 后缀</option>
+      </select></label>
+      <label>输出变量 <input data-field="output" value="${esc(row.output)}" placeholder="变量名" /></label>
+      <label${row.operation === "set" ? ' class="hidden"' : ""}>输入变量${row.operation === "random" ? "（可留空）" : ""} <input data-field="input" value="${esc(row.input)}" placeholder="变量名" /></label>
+      <label${row.operation === "random" ? ' class="hidden"' : ""}>文本 <input data-field="text" value="${esc(row.text)}" /></label>
+      <label${row.operation !== "random" ? ' class="hidden"' : ""}>随机长度 <input data-field="length" type="number" min="1" max="64" value="${esc(row.length)}" /></label>
+      <button class="icon-btn flow-variable-remove" data-variable-remove="${index}" type="button" title="删除操作" aria-label="删除操作">✕</button>
+    </div>`).join("");
+  }
+
   function readStartMeta() {
     return Array.from(document.querySelectorAll("[data-start-meta-name]"), (input) => ({
       name: input.value,
@@ -1872,6 +1944,22 @@
   function saveEdit() {
     const node = flow.nodes.find((n) => n.id === flow.editNodeId);
     if (!node) return;
+    if (node.kind === "variable") {
+      const operations = readVariableRows();
+      if (!operations.length || operations.some((op) => !validVariableName(op.output)
+        || (op.operation === "append" && !validVariableName(op.input))
+        || (op.operation === "random" && op.input && !validVariableName(op.input)))) {
+        void notify("请添加操作并填写有效变量名（字母、数字、下划线、点或短横线）");
+        return;
+      }
+      node.name = $("flowVariableName").value.trim() || "变量处理";
+      node.operations = operations;
+      $("flowEditModal").classList.remove("show");
+      flow.editNodeId = null;
+      commit();
+      render();
+      return;
+    }
     if (isStartNode(node)) {
       node.name = ($("flowStartName")?.value || "").trim() || node.name || "步骤";
       node.runs = Math.max(1, Math.floor(Number($("flowStartRuns")?.value) || 1));
@@ -3038,7 +3126,7 @@
       const node = flow.nodes.find((n) => n.id === id);
       if (!node) continue;
       if (isStartNode(node)) continue;
-      out.push(node);
+      if (node.kind !== "variable") out.push(node);
       for (const edge of flow.edges.filter((e) => e.from === id)) queue.push(edge.to);
     }
     return out;
@@ -3711,7 +3799,7 @@
         const node = byId.get(id);
         if (!node) continue;
         if (isStartNode(node) || startSet.has(id)) continue;
-        if (node.kind === "rpc" || node.rpcId) rpcIds.push(id);
+        if (node.kind === "rpc" || node.kind === "variable" || node.rpcId) rpcIds.push(id);
         for (const next of outs.get(id) || []) queue.push(next);
       }
       const ordered = order.filter((id) => rpcIds.includes(id));
@@ -3966,6 +4054,45 @@
     return result;
   }
 
+  function runVariableNode(node, vars, stepId) {
+    try {
+      const next = { ...vars };
+      const applied = Object.create(null);
+      if (!node.operations?.length) throw new Error("请至少配置一个操作");
+      for (const [index, op] of node.operations.entries()) {
+        if (!validVariableName(op.output) || (op.operation === "append" && !validVariableName(op.input))
+          || (op.operation === "random" && op.input && !validVariableName(op.input))) throw new Error(`第 ${index + 1} 项变量名无效`);
+        if (op.operation !== "set" && op.input && (!Object.prototype.hasOwnProperty.call(next, op.input) || next[op.input] == null)) {
+          throw new Error(`第 ${index + 1} 项变量不存在：${op.input}`);
+        }
+        let value = op.text || "";
+        if (op.operation === "random") {
+          if (!globalThis.crypto?.getRandomValues) throw new Error("当前环境不支持安全随机数");
+          const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+          const length = Math.min(64, Math.max(1, Math.floor(Number(op.length) || 6)));
+          let suffix = "";
+          while (suffix.length < length) {
+            const bytes = globalThis.crypto.getRandomValues(new Uint8Array(length));
+            for (const byte of bytes) {
+              if (byte < 252) suffix += alphabet[byte % alphabet.length];
+              if (suffix.length === length) break;
+            }
+          }
+          value = (op.input ? String(next[op.input]) : "") + suffix;
+        } else if (op.operation === "append") value = String(next[op.input]) + value;
+        else if (op.operation !== "set") throw new Error(`不支持的处理方式：${op.operation}`);
+        next[op.output] = value;
+        applied[op.output] = value;
+      }
+      Object.assign(vars, applied);
+      recordStepVars(stepId, applied);
+      node.result = { ok: true, status: "完成", ms: 0 };
+    } catch (error) {
+      node.result = { ok: false, status: "处理失败", error: error?.message || String(error), ms: 0 };
+    }
+    return node.result;
+  }
+
   async function executeFlowOnce({ quiet = false, kind = "run", onlyStartId = null } = {}) {
     const client = api();
     if (!client?.invokeOnce) {
@@ -4050,11 +4177,13 @@
               return { ok: false, ms: Math.round(performance.now() - started), error: "已停止", cancelled: true };
             }
             const node = byId.get(nodeId);
-            const hit = client.findRpc(node.rpcId);
-            if (!hit) continue;
+            const hit = node.kind === "variable" ? null : client.findRpc(node.rpcId);
+            if (!hit && node.kind !== "variable") continue;
             if (startId) node.ownerStepId = startId;
             const incoming = flow.edges.filter((e) => e.to === nodeId);
-            const result = await invokeRpcNode(client, node, hit, vars, kind, seg.start);
+            const result = node.kind === "variable"
+              ? runVariableNode(node, vars, startId)
+              : await invokeRpcNode(client, node, hit, vars, kind, seg.start);
             for (const edge of incoming) edge.status = result.ok ? "ok" : "fail";
             // 写回共享变量，供其它步骤单独运行时使用
             flow.sharedVars = { ...flow.sharedVars, ...vars };
@@ -4068,7 +4197,7 @@
                 ok: false,
                 ms: Math.round(performance.now() - started),
                 error: result.error || result.status || "调用失败",
-                failNode: node.name || hit.rpc.name,
+                failNode: node.name || hit?.rpc.name,
               };
             }
           }
@@ -4181,6 +4310,22 @@
     $("flowBtn")?.addEventListener("click", openFlow);
     $("flowCloseBtn")?.addEventListener("click", closeFlow);
     $("flowAddStartBtn")?.addEventListener("click", () => addStartNode());
+    $("flowAddVariableBtn")?.addEventListener("click", addVariableNode);
+    $("flowAddVariableRow")?.addEventListener("click", () => {
+      const rows = readVariableRows();
+      rows.push({ operation: "set", input: "", output: "", text: "", length: 6 });
+      renderVariableRows(rows);
+    });
+    $("flowVariableRows")?.addEventListener("change", (event) => {
+      if (event.target.matches('[data-field="operation"]')) renderVariableRows(readVariableRows());
+    });
+    $("flowVariableRows")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-variable-remove]");
+      if (!button) return;
+      const rows = readVariableRows();
+      rows.splice(Number(button.getAttribute("data-variable-remove")), 1);
+      renderVariableRows(rows);
+    });
     $("flowAddSelectedBtn")?.addEventListener("click", addSelected);
     $("flowClearBtn")?.addEventListener("click", clearCanvas);
     $("flowRunBtn")?.addEventListener("click", () => void runFlow());
