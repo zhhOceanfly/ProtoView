@@ -1893,6 +1893,9 @@
     if (selected.kind === "recv" && body != null && node) {
       body = await decodeMessageBytes(node, body, protoFileOf(node));
     }
+    if (selected.kind !== "send" && node && normalizeNodeProtocol(node.protocol) === "grpc") {
+      body = api()?.displayResponseEnums?.(body, api()?.findRpc?.(node.rpcId)?.rpc?.responseFields) ?? body;
+    }
     const payload = selected.kind === "recv"
       ? {
         index: selected.recvIndex != null ? selected.recvIndex + 1 : undefined,
@@ -1907,7 +1910,7 @@
         error: selected.error || undefined,
         kind: selected.kind,
         at: formatHistoryTime(selected.at),
-        body: selected.body ?? null,
+        body,
       };
     detail.textContent = JSON.stringify(payload, null, 2);
   }
@@ -2008,10 +2011,10 @@
       metadata.push({ name: input.value, value });
     }
     node.metadata = metadata.length ? metadata : [{ name: "", value: "" }];
+    node.inheritMetadata = $("flowNodeInheritMetadata")?.checked !== false;
     const extracts = {};
     // 只取编辑弹窗自己的提取区（收发消息里任务的提取用同样的 data 属性）
     const extractRoot = $("flowExtractBody") || document;
-    node.inheritMetadata = $("flowNodeInheritMetadata")?.checked !== false;
     for (const input of extractRoot.querySelectorAll("[data-flow-extract-path]")) {
       const key = input.getAttribute("data-flow-extract-path");
       const val = input.value.trim();
@@ -2945,10 +2948,13 @@
       const errLine = errors.length
         ? `<div class="flow-recv-err">解析失败：${esc(errors.join("；"))}</div>`
         : "";
+      const shown = normalizeNodeProtocol(node.protocol) === "grpc"
+        ? (api()?.displayResponseEnums?.(decoded, api()?.findRpc?.(node.rpcId)?.rpc?.responseFields) ?? decoded)
+        : decoded;
       cards.push(`<article class="flow-recv-live-item">
         <div class="h"><span>接收 #${seq}${i === 0 ? " · 最新" : ""}</span>${typeTag}<span>${cap?.frozen && i === list.length - 1 ? "已固定" : ""}</span></div>
         ${errLine}
-        <pre>${esc(JSON.stringify(decoded, null, 2))}</pre>
+        <pre>${esc(JSON.stringify(shown, null, 2))}</pre>
       </article>`);
     }
     if (hint) {

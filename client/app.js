@@ -1942,13 +1942,40 @@
     );
   }
 
+  function displayResponseEnums(body, fields) {
+    if (Array.isArray(body)) return body.map((item) => displayResponseEnums(item, fields));
+    if (!body || typeof body !== "object") return body;
+    const result = { ...body };
+    for (const field of fields || []) {
+      if (!Object.prototype.hasOwnProperty.call(result, field.name)) continue;
+      const type = field.typeId ? state.catalog.types?.[field.typeId] : null;
+      if (!type) continue;
+      const convert = (value) => {
+        if (type.kind === "enum") return type.values?.find((item) => item.number === value)?.name ?? value;
+        if (type.kind === "message") return displayResponseEnums(value, type.fields);
+        return value;
+      };
+      const value = result[field.name];
+      if (field.key && value && typeof value === "object" && !Array.isArray(value)) {
+        result[field.name] = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, convert(item)]));
+      } else if (field.repeated && Array.isArray(value)) {
+        result[field.name] = value.map(convert);
+      } else result[field.name] = convert(value);
+    }
+    return result;
+  }
+
   function showInvokeResult(data) {
     const kind = data.ok ? "ok" : "err";
     const timing = typeof data.ms === "number" ? ` · ${data.ms} ms` : "";
     setRespBadge(kind, `${data.status || (data.ok ? "OK" : "ERROR")}${timing}`);
     const parts = [`<div class="resp-line">${esc(data.method || "")}${data.host ? ` · ${esc(data.host)}` : ""}</div>`];
     if (data.error) parts.push(`<pre class="resp-error">${esc(data.error)}</pre>`);
-    if (data.body !== undefined) parts.push(`<pre class="resp-json">${highlightJson(data.body)}</pre>`);
+    if (data.body !== undefined) {
+      const response = state.pendingResponse;
+      const body = response?.protocol === "grpc" ? displayResponseEnums(data.body, response.fields) : data.body;
+      parts.push(`<pre class="resp-json">${highlightJson(body)}</pre>`);
+    }
     els.responseView.innerHTML = `<div class="resp-block">${parts.join("")}</div>`;
   }
 
@@ -1984,6 +2011,7 @@
       message: els.messageEditor.value,
     };
     state.pendingInvoke = payload.id;
+    state.pendingResponse = { protocol, fields: rpc.responseFields };
     pushHistory(payload);
     persistCurrentDraft();
     if (!vscode) {
@@ -2341,6 +2369,7 @@
 
   window.ProtoViewClient = {
     findRpc,
+    displayResponseEnums,
     getType(typeId) {
       if (!typeId) return undefined;
       return state.catalog.types?.[typeId];
