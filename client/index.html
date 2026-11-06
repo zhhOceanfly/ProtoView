@@ -206,6 +206,8 @@
         <strong>链路调试</strong>
         <span class="flow-hint">先加「起始步骤」再连接口 · 从右侧圆点拖出连线 · 点线选中，右键删除</span>
         <div class="spacer"></div>
+        <label class="flow-default-env">链路环境 <select id="flowDefaultEnv"></select></label>
+        <button class="btn" id="flowInheritEnvBtn" type="button" title="将所有接口节点改为跟随链路环境">全部跟随</button>
         <button class="btn" id="flowAddSelectedBtn" type="button">添加选中接口</button>
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
         <button class="btn" id="flowExportBtn" type="button" title="导出当前链路节点与连线配置">导出</button>

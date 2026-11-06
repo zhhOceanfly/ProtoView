@@ -264,6 +264,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   flex-wrap: wrap;
 }
 .flow-hint { color: var(--muted); font-size: 12px; min-width: 0; }
+.flow-default-env { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.flow-default-env select { max-width: 180px; border: 1px solid var(--border); background: var(--input); color: var(--text); border-radius: 4px; padding: 6px; }
 .http-path { flex: 0 1 180px; min-width: 120px; font-family: var(--mono); }
 .flow-node-transport {
   display: flex;

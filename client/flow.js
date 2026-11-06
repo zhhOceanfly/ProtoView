@@ -6,6 +6,7 @@
   const flow = {
     nodes: [],
     edges: [],
+    defaultEnvId: "",
     scale: 1,
     panX: 40,
     panY: 40,
@@ -59,6 +60,7 @@
       const raw = JSON.parse(localStorage.getItem(FLOW_KEY) || "{}");
       flow.nodes = (Array.isArray(raw.nodes) ? raw.nodes : []).map((node) => normalizeNode(node)).filter(Boolean);
       flow.edges = Array.isArray(raw.edges) ? raw.edges : [];
+      flow.defaultEnvId = String(raw.defaultEnvId || "");
       flow.scale = typeof raw.scale === "number" ? raw.scale : 1;
       flow.panX = typeof raw.panX === "number" ? raw.panX : 40;
       flow.panY = typeof raw.panY === "number" ? raw.panY : 40;
@@ -70,6 +72,7 @@
       localStorage.setItem(FLOW_KEY, JSON.stringify({
         nodes: flow.nodes,
         edges: flow.edges,
+        defaultEnvId: flow.defaultEnvId,
         scale: flow.scale,
         panX: flow.panX,
         panY: flow.panY,
@@ -86,6 +89,7 @@
     return JSON.stringify({
       nodes: flow.nodes.map((node) => serializeNode(node)),
       edges: flow.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to })),
+      defaultEnvId: flow.defaultEnvId,
     });
   }
 
@@ -125,12 +129,14 @@
     }
     flow.nodes = (raw.nodes || []).map((node) => normalizeNode(node)).filter(Boolean);
     flow.edges = Array.isArray(raw.edges) ? raw.edges : [];
+    flow.defaultEnvId = String(raw.defaultEnvId || "");
     flow.selectedEdgeId = null;
     flow.link = null;
     flow.stepRunning = Object.create(null);
     flow.varsStepId = flow.nodes.some((n) => n.id === flow.varsStepId) ? flow.varsStepId : null;
     hideMenu();
     hideEdgeMenu();
+    save();
     render();
   }
 
@@ -158,6 +164,7 @@
     return {
       version: 1,
       kind: "protoview.flow",
+      defaultEnvId: flow.defaultEnvId,
       exportedAt: new Date().toISOString(),
       nodes: flow.nodes.map((node) => serializeNode(node)),
       edges: flow.edges.map((edge) => ({
@@ -256,6 +263,7 @@
     }
     flow.nodes = parsed.nodes;
     flow.edges = parsed.edges;
+    flow.defaultEnvId = parsed.defaultEnvId;
     flow.sharedVars = {};
     flow.stepRunning = Object.create(null);
     flow.flowRunning = false;
@@ -315,6 +323,7 @@
       ok: true,
       nodes,
       edges,
+      defaultEnvId: String(raw.defaultEnvId || ""),
       scale: Number.isFinite(Number(raw.scale)) ? Math.min(2.5, Math.max(0.35, Number(raw.scale))) : 1,
       panX: Number.isFinite(Number(raw.panX)) ? Number(raw.panX) : 40,
       panY: Number.isFinite(Number(raw.panY)) ? Number(raw.panY) : 40,
@@ -556,6 +565,14 @@
       .replace(/"/g, "&quot;");
   }
 
+  function nodeEnvironment(node) {
+    const id = node.envId || flow.defaultEnvId || api()?.getActiveEnvId?.() || "";
+    const env = (api()?.listEnvs?.() || []).find((item) => item.id === id);
+    if (!env) return { error: id ? `环境不存在：${id}，请选择有效环境` : "未配置环境，请先选择环境" };
+    if (!String(env.host || "").trim()) return { error: `环境「${env.name}」未配置地址` };
+    return { host: env.host };
+  }
+
   function isFlowOpen() {
     const main = $("mainFlow");
     return Boolean(main && !main.classList.contains("hidden"));
@@ -611,6 +628,15 @@
   }
 
   function render() {
+    const envSelect = $("flowDefaultEnv");
+    if (envSelect) {
+      const envs = api()?.listEnvs?.() || [];
+      const missing = flow.defaultEnvId && !envs.some((env) => env.id === flow.defaultEnvId);
+      envSelect.innerHTML = `<option value="">跟随当前环境</option>`
+        + (missing ? `<option value="${esc(flow.defaultEnvId)}">环境不存在：${esc(flow.defaultEnvId)}</option>` : "")
+        + envs.map((env) => `<option value="${esc(env.id)}">${esc(env.name)}</option>`).join("");
+      envSelect.value = flow.defaultEnvId;
+    }
     const world = $("flowWorld");
     const svg = $("flowEdges");
     if (!world || !svg) return;
@@ -867,7 +893,7 @@
           protocol: "grpc",
           httpMethod: hit?.rpc.httpVerb || "POST",
           httpPath: hit?.rpc.httpPath || "/",
-          envId: api()?.getActiveEnvId?.() || "",
+          envId: "",
           streamPlan: normalizeStreamPlan({}),
           bytesDecode: {},
           decodeExtra: [],
@@ -1573,10 +1599,12 @@
     if (pathEl) pathEl.value = node.httpPath || hit?.rpc.httpPath || "/";
     if (envEl) {
       const envs = api()?.listEnvs?.() || [];
-      const selected = node.envId || api()?.getActiveEnvId?.() || "";
-      envEl.innerHTML = envs.map((env) => `<option value="${esc(env.id)}"${env.id === selected ? " selected" : ""}>${esc(env.name)}</option>`).join("")
-        || `<option value="">未配置环境</option>`;
-      if (selected) envEl.value = selected;
+      const selected = node.envId || "";
+      const missing = selected && !envs.some((env) => env.id === selected);
+      envEl.innerHTML = `<option value="">跟随链路环境</option>`
+        + (missing ? `<option value="${esc(selected)}">环境不存在：${esc(selected)}</option>` : "")
+        + envs.map((env) => `<option value="${esc(env.id)}">${esc(env.name)}</option>`).join("");
+      envEl.value = selected;
     }
     syncNodeTransportUi();
   }
@@ -1869,7 +1897,7 @@
     node.protocol = normalizeNodeProtocol($("flowNodeProtocol")?.value);
     node.httpMethod = $("flowNodeHttpMethod")?.value || (node.protocol === "sse" ? "GET" : "POST");
     node.httpPath = $("flowNodeHttpPath")?.value || "/";
-    node.envId = $("flowNodeEnv")?.value || node.envId || "";
+    node.envId = $("flowNodeEnv")?.value ?? node.envId ?? "";
     const hit = api()?.findRpc?.(node.rpcId);
     if (hit?.rpc?.requestStream && node.protocol === "grpc") {
       const intervalRaw = $("flowStreamHbInterval")?.value;
@@ -2665,7 +2693,13 @@
   async function ensureNodeStream(node, hit, openBody) {
     const client = api();
     if (!client?.streamOpen) return null;
-    if (node.streamId) return node.streamId;
+    const env = nodeEnvironment(node);
+    if (env.error) {
+      void notify(env.error);
+      return null;
+    }
+    if (node.streamId && node.streamHost === env.host) return node.streamId;
+    if (node.streamId) await closeNodeStream(node);
     const metadata = {};
     for (const row of node.metadata || []) {
       const name = (row.name || "").trim();
@@ -2676,7 +2710,7 @@
     render();
     const opened = await client.streamOpen({
       protocol: "grpc",
-      host: client.resolveHost?.(node.envId) || "",
+      host: env.host,
       package: hit.pkg.name,
       service: hit.service.name,
       method: hit.rpc.name,
@@ -2690,6 +2724,7 @@
       return null;
     }
     node.streamId = opened.streamId;
+    node.streamHost = env.host;
     node.lastStreamId = opened.streamId;
     node.streamMessages = node.streamMessages || [];
     node.result = {
@@ -3011,7 +3046,7 @@
       protocol,
       httpMethod: node.httpMethod || (protocol === "sse" ? "GET" : "POST"),
       httpPath: node.httpPath || "/",
-      host: api()?.resolveHost?.(node.envId) || "",
+      host: nodeEnvironment(node).host || "",
       package: hit.pkg.name,
       service: hit.service.name,
       method: hit.rpc.name,
@@ -3053,6 +3088,7 @@
   function buildFlowGhzArgs() {
     const entry = flowStressNodeEntry();
     if (!entry || normalizeNodeProtocol(entry.node.protocol) !== "grpc") return null;
+    if (nodeEnvironment(entry.node).error) return null;
     const payload = nodeInvokePayload(entry.node, entry.hit);
     const concurrency = Math.max(1, Number($("flowStressGhzConcurrency")?.value || 20));
     const total = Math.max(1, Number($("flowStressGhzTotal")?.value || 200));
@@ -3070,6 +3106,9 @@
   }
 
   function buildFlowGhzCommand() {
+    const entry = flowStressNodeEntry();
+    const env = entry && nodeEnvironment(entry.node);
+    if (env?.error) return `# ${env.error}`;
     const args = buildFlowGhzArgs();
     if (!args) return "# 仅 gRPC 支持 ghz";
     const binary = ($("flowStressGhzPath")?.value || "").trim() || "ghz";
@@ -3117,6 +3156,8 @@
     const entry = flowStressNodeEntry();
     const client = api();
     if (!entry || !client?.invokeOnce) return;
+    const env = nodeEnvironment(entry.node);
+    if (env.error) { void notify(env.error); return; }
     const concurrency = Math.min(10, Math.max(1, Number($("flowStressConcurrency")?.value || 1)));
     const total = Math.min(200, Math.max(1, Number($("flowStressTotal")?.value || 1)));
     const payload = nodeInvokePayload(entry.node, entry.hit);
@@ -3210,6 +3251,9 @@
   }
 
   function runFlowGhz() {
+    const entry = flowStressNodeEntry();
+    const env = entry && nodeEnvironment(entry.node);
+    if (env?.error) { void notify(env.error); return; }
     const args = buildFlowGhzArgs();
     if (!args) {
       void notify("ghz 仅支持 gRPC 接口");
@@ -3769,6 +3813,11 @@
   }
 
   async function invokeRpcNode(client, node, hit, vars, kind) {
+    const env = nodeEnvironment(node);
+    if (env.error) {
+      node.result = { ok: false, status: "环境错误", error: env.error, ms: 0 };
+      return node.result;
+    }
     const metadata = {};
     for (const row of node.metadata || []) {
       const name = (row.name || "").trim();
@@ -3781,7 +3830,7 @@
       protocol,
       httpMethod: node.httpMethod || (protocol === "sse" ? "GET" : hit.rpc.httpVerb || "POST"),
       httpPath: interpolate(node.httpPath || hit.rpc.httpPath || "/", vars),
-      host: client.resolveHost?.(node.envId) || "",
+      host: env.host,
       package: hit.pkg.name,
       service: hit.service.name,
       method: hit.rpc.name,
@@ -3817,6 +3866,7 @@
         return opened;
       }
       node.streamId = opened.streamId;
+      node.streamHost = env.host;
       node.lastStreamId = opened.streamId;
       node.result = {
         ok: true,
@@ -4123,6 +4173,19 @@
     $("flowAddSelectedBtn")?.addEventListener("click", addSelected);
     $("flowClearBtn")?.addEventListener("click", clearCanvas);
     $("flowRunBtn")?.addEventListener("click", () => void runFlow());
+    $("flowDefaultEnv")?.addEventListener("change", (event) => {
+      flow.defaultEnvId = event.target.value;
+      commit();
+      render();
+    });
+    $("flowInheritEnvBtn")?.addEventListener("click", () => {
+      void askConfirm("将所有接口节点改为跟随链路环境？").then((ok) => {
+        if (!ok) return;
+        for (const node of flow.nodes) if (!isStartNode(node)) node.envId = "";
+        commit();
+        render();
+      });
+    });
     $("flowUndoBtn")?.addEventListener("click", undoStep);
     $("flowRedoBtn")?.addEventListener("click", redoStep);
     // 浮动工具栏展开/收起（状态记在 localStorage）
