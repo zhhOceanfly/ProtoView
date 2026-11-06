@@ -569,7 +569,6 @@ export class ClientPanel {
         <div class="flow-world" id="flowWorld"></div>
       </div>
       <div class="flow-menu hidden" id="flowMenu" style="display:none">
-        <button type="button" data-flow-act="run">单独运行</button>
         <button type="button" data-flow-act="view-definition">查看定义</button>
         <button type="button" data-flow-act="edit">编辑</button>
         <button type="button" data-flow-act="duplicate">复制节点</button>
@@ -698,7 +697,7 @@ export class ClientPanel {
         <button class="icon-btn" id="closeFlowVars" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note">这些是「解析后变量赋值」写进来的值，发送时用 <code>{{变量名}}</code> 引用。</p>
+        <p class="stress-note">发送时可用 <code>{{变量名}}</code> 引用。</p>
         <div id="flowVarsBody" class="flow-vars-list"></div>
       </div>
       <div class="modal-foot">

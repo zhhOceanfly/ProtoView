@@ -505,6 +505,7 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 .flow-node-start.disabled .flow-node-result {
   opacity: 0.62;
 }
+.flow-node.disabled:not(.flow-node-start) { opacity: 0.55; filter: grayscale(1); }
 .flow-node-start.running {
   border-color: var(--accent);
 }
@@ -989,8 +990,10 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   stroke-width: 2.5;
   pointer-events: stroke;
 }
+.flow-edge-bypass { stroke-dasharray: 7 5; pointer-events: none; }
 .flow-edge.ok { stroke: var(--ok); }
 .flow-edge.fail { stroke: var(--danger); }
+.flow-edge.disabled { stroke: var(--muted); opacity: 0.45; }
 /* 透明粗线只负责命中，方便点选/右键 */
 .flow-edge-hit {
   fill: none;
