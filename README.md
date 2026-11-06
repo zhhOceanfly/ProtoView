@@ -4,7 +4,7 @@
 
 Rider 等环境可用 npm CLI：`npx @zhhoceanfly/protoview` 在浏览器打开同一套 Client。
 
-当前扩展版本：**0.1.5** · CLI：`@zhhoceanfly/protoview@0.1.5`
+当前扩展版本：**0.1.6** · CLI：`@zhhoceanfly/protoview@0.1.5`
 
 ## 功能概览
 
