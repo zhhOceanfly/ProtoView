@@ -6,7 +6,6 @@
   const flow = {
     nodes: [],
     edges: [],
-    defaultEnvId: "",
     scale: 1,
     panX: 40,
     panY: 40,
@@ -60,7 +59,6 @@
       const raw = JSON.parse(localStorage.getItem(FLOW_KEY) || "{}");
       flow.nodes = (Array.isArray(raw.nodes) ? raw.nodes : []).map((node) => normalizeNode(node)).filter(Boolean);
       flow.edges = Array.isArray(raw.edges) ? raw.edges : [];
-      flow.defaultEnvId = String(raw.defaultEnvId || "");
       flow.scale = typeof raw.scale === "number" ? raw.scale : 1;
       flow.panX = typeof raw.panX === "number" ? raw.panX : 40;
       flow.panY = typeof raw.panY === "number" ? raw.panY : 40;
@@ -72,7 +70,6 @@
       localStorage.setItem(FLOW_KEY, JSON.stringify({
         nodes: flow.nodes,
         edges: flow.edges,
-        defaultEnvId: flow.defaultEnvId,
         scale: flow.scale,
         panX: flow.panX,
         panY: flow.panY,
@@ -89,7 +86,6 @@
     return JSON.stringify({
       nodes: flow.nodes.map((node) => serializeNode(node)),
       edges: flow.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to })),
-      defaultEnvId: flow.defaultEnvId,
     });
   }
 
@@ -129,7 +125,6 @@
     }
     flow.nodes = (raw.nodes || []).map((node) => normalizeNode(node)).filter(Boolean);
     flow.edges = Array.isArray(raw.edges) ? raw.edges : [];
-    flow.defaultEnvId = String(raw.defaultEnvId || "");
     flow.selectedEdgeId = null;
     flow.link = null;
     flow.stepRunning = Object.create(null);
@@ -164,7 +159,6 @@
     return {
       version: 1,
       kind: "protoview.flow",
-      defaultEnvId: flow.defaultEnvId,
       exportedAt: new Date().toISOString(),
       nodes: flow.nodes.map((node) => serializeNode(node)),
       edges: flow.edges.map((edge) => ({
@@ -263,7 +257,6 @@
     }
     flow.nodes = parsed.nodes;
     flow.edges = parsed.edges;
-    flow.defaultEnvId = parsed.defaultEnvId;
     flow.sharedVars = {};
     flow.stepRunning = Object.create(null);
     flow.flowRunning = false;
@@ -323,7 +316,6 @@
       ok: true,
       nodes,
       edges,
-      defaultEnvId: String(raw.defaultEnvId || ""),
       scale: Number.isFinite(Number(raw.scale)) ? Math.min(2.5, Math.max(0.35, Number(raw.scale))) : 1,
       panX: Number.isFinite(Number(raw.panX)) ? Number(raw.panX) : 40,
       panY: Number.isFinite(Number(raw.panY)) ? Number(raw.panY) : 40,
@@ -568,7 +560,7 @@
   }
 
   function nodeEnvironment(node) {
-    const id = node.envId || flow.defaultEnvId || api()?.getActiveEnvId?.() || "";
+    const id = node.envId || api()?.getActiveEnvId?.() || "";
     const env = (api()?.listEnvs?.() || []).find((item) => item.id === id);
     if (!env) return { error: id ? `环境不存在：${id}，请选择有效环境` : "未配置环境，请先选择环境" };
     if (!String(env.host || "").trim()) return { error: `环境「${env.name}」未配置地址` };
@@ -633,11 +625,8 @@
     const envSelect = $("flowDefaultEnv");
     if (envSelect) {
       const envs = api()?.listEnvs?.() || [];
-      const missing = flow.defaultEnvId && !envs.some((env) => env.id === flow.defaultEnvId);
-      envSelect.innerHTML = `<option value="">跟随当前环境</option>`
-        + (missing ? `<option value="${esc(flow.defaultEnvId)}">环境不存在：${esc(flow.defaultEnvId)}</option>` : "")
-        + envs.map((env) => `<option value="${esc(env.id)}">${esc(env.name)}</option>`).join("");
-      envSelect.value = flow.defaultEnvId;
+      envSelect.innerHTML = envs.map((env) => `<option value="${esc(env.id)}">${esc(env.name)}</option>`).join("");
+      envSelect.value = api()?.getActiveEnvId?.() || "";
     }
     const world = $("flowWorld");
     const svg = $("flowEdges");
@@ -1604,7 +1593,7 @@
       const envs = api()?.listEnvs?.() || [];
       const selected = node.envId || "";
       const missing = selected && !envs.some((env) => env.id === selected);
-      envEl.innerHTML = `<option value="">跟随链路环境</option>`
+      envEl.innerHTML = `<option value="">跟随当前环境</option>`
         + (missing ? `<option value="${esc(selected)}">环境不存在：${esc(selected)}</option>` : "")
         + envs.map((env) => `<option value="${esc(env.id)}">${esc(env.name)}</option>`).join("");
       envEl.value = selected;
@@ -4196,17 +4185,8 @@
     $("flowClearBtn")?.addEventListener("click", clearCanvas);
     $("flowRunBtn")?.addEventListener("click", () => void runFlow());
     $("flowDefaultEnv")?.addEventListener("change", (event) => {
-      flow.defaultEnvId = event.target.value;
-      commit();
+      api()?.setActiveEnvId?.(event.target.value);
       render();
-    });
-    $("flowInheritEnvBtn")?.addEventListener("click", () => {
-      void askConfirm("将所有接口节点改为跟随链路环境？").then((ok) => {
-        if (!ok) return;
-        for (const node of flow.nodes) if (!isStartNode(node)) node.envId = "";
-        commit();
-        render();
-      });
     });
     $("flowUndoBtn")?.addEventListener("click", undoStep);
     $("flowRedoBtn")?.addEventListener("click", redoStep);

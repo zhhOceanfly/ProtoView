@@ -536,6 +536,7 @@ export class ClientPanel {
         <strong>链路调试</strong>
         <span class="flow-hint">先加「起始步骤」再连接口 · 从右侧圆点拖出连线 · 点线选中，右键删除</span>
         <div class="spacer"></div>
+        <label class="flow-default-env">当前环境 <select id="flowDefaultEnv"></select></label>
         <button class="btn" id="flowAddSelectedBtn" type="button">添加选中接口</button>
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
         <button class="btn" id="flowExportBtn" type="button" title="导出当前链路节点与连线配置">导出</button>
@@ -591,6 +592,12 @@ export class ClientPanel {
           <label>运行次数 <input id="flowStartRuns" type="number" min="1" max="9999" value="1" /></label>
           <label>间隔(秒) <input id="flowStartInterval" type="number" min="0" step="0.1" value="1" /></label>
           <label class="flow-check"><input id="flowStartEnabled" type="checkbox" checked /> 全量运行时启用本步骤</label>
+          <h4 class="flow-edit-h">根 Metadata</h4>
+          <table class="meta-table flow-edit-table">
+            <thead><tr><th>Name</th><th>Value（可用 {{var}}）</th><th></th></tr></thead>
+            <tbody id="flowStartMetaBody"></tbody>
+          </table>
+          <button class="btn" id="flowAddStartMetaBtn" type="button">添加 Metadata</button>
           <p class="stress-note">本起始步骤之后的接口会按拓扑顺序重复执行「运行次数」次，每次之间等待「间隔」秒（默认 1 次 / 1 秒）。节点上的开关可快速启停；「运行」按钮可单独跑本步骤。</p>
         </div>
         <div id="flowRpcEditFields">

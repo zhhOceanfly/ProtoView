@@ -2402,6 +2402,10 @@
     getSelectedRpcLabel: () => state.selected?.name || "",
     listEnvs: () => state.envs.map((env) => ({ id: env.id, name: env.name, host: env.host || "" })),
     getActiveEnvId: () => state.activeEnvId,
+    setActiveEnvId(id) {
+      if (!state.envs.some((env) => env.id === id)) return;
+      applyEnvId(id);
+    },
     resolveHost(envId) {
       const env = state.envs.find((item) => item.id === envId) || activeEnv();
       return env?.host || "";
