@@ -610,6 +610,8 @@
       stage.style.position = "relative";
     }
     document.getElementById("app")?.classList.add("flow-mode");
+    const flowBtn = $("flowBtn");
+    if (flowBtn) { flowBtn.textContent = "返回 Client"; flowBtn.title = "返回 Client"; }
     hideMenu();
     hideEdgeMenu();
     flow.link = null;
@@ -626,6 +628,8 @@
     client?.classList.remove("hidden");
     if (client) client.style.display = "";
     document.getElementById("app")?.classList.remove("flow-mode");
+    const flowBtn = $("flowBtn");
+    if (flowBtn) { flowBtn.textContent = "链路调试"; flowBtn.title = "链路调试"; }
     $("flowStage")?.classList.remove("flow-connecting");
     hideMenu();
     hideEdgeMenu();
@@ -4441,8 +4445,7 @@
     load();
     resetUndo();
     hideMenu();
-    $("flowBtn")?.addEventListener("click", openFlow);
-    $("flowCloseBtn")?.addEventListener("click", closeFlow);
+    $("flowBtn")?.addEventListener("click", () => isFlowOpen() ? closeFlow() : openFlow());
     $("flowAddStartBtn")?.addEventListener("click", () => addStartNode());
     $("flowAddVariableBtn")?.addEventListener("click", addVariableNode);
     $("flowAddVariableRow")?.addEventListener("click", () => {
