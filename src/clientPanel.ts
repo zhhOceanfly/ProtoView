@@ -551,7 +551,6 @@ export class ClientPanel {
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
         <button class="btn" id="flowExportBtn" type="button" title="导出当前链路节点与连线配置">导出</button>
         <button class="btn" id="flowImportBtn" type="button" title="从文件导入链路配置">导入</button>
-        <button class="btn" id="flowCloseBtn" type="button">返回 Client</button>
       </div>
       <div class="flow-stage" id="flowStage">
         <div class="flow-empty" id="flowEmpty">点右上角「＋ 起始步骤」，再拖入接口并连线</div>

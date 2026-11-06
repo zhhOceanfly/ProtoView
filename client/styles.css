@@ -252,6 +252,12 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   background: linear-gradient(120deg, #2563eb, #ea580c);
   box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.4);
 }
+#app.flow-mode .side-flow-btn.primary {
+  background: #087f5b;
+  color: #fff;
+  box-shadow: none;
+  animation: none;
+}
 @keyframes sideFlowPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); transform: translateY(0); }
   50% { box-shadow: 0 0 10px 2px rgba(37, 99, 235, 0.28); transform: translateY(-0.5px); }
