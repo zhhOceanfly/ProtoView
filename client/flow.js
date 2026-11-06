@@ -6,6 +6,7 @@
   const flow = {
     nodes: [],
     edges: [],
+    selectedNodeIds: new Set(),
     scale: 1,
     panX: 40,
     panY: 40,
@@ -125,6 +126,7 @@
     }
     flow.nodes = (raw.nodes || []).map((node) => normalizeNode(node)).filter(Boolean);
     flow.edges = Array.isArray(raw.edges) ? raw.edges : [];
+    flow.selectedNodeIds.clear();
     flow.selectedEdgeId = null;
     flow.link = null;
     flow.stepRunning = Object.create(null);
@@ -257,6 +259,7 @@
     }
     flow.nodes = parsed.nodes;
     flow.edges = parsed.edges;
+    flow.selectedNodeIds.clear();
     flow.sharedVars = {};
     flow.stepRunning = Object.create(null);
     flow.flowRunning = false;
@@ -728,6 +731,9 @@
         <div class="flow-port out" data-port-out="${esc(node.id)}" title="连出"></div>
       </div>`;
     }).join("");
+    for (const el of world.querySelectorAll("[data-node]")) {
+      el.classList.toggle("selected", flow.selectedNodeIds.has(el.getAttribute("data-node")));
+    }
 
     const lines = flow.edges.map((edge) => {
       const from = flow.nodes.find((n) => n.id === edge.from);
@@ -886,22 +892,38 @@
   }
 
   function duplicateNode(nodeId) {
-    const node = flow.nodes.find((item) => item.id === nodeId);
-    if (!node) return;
-    const data = JSON.parse(JSON.stringify(serializeNode(node)));
-    data.id = uid(isStartNode(node) ? "s" : node.kind === "variable" ? "v" : "n");
-    data.x = node.x + 32;
-    data.y = node.y + 32;
-    while (flow.nodes.some((item) => Math.abs(item.x - data.x) < 24 && Math.abs(item.y - data.y) < 24)) {
-      data.x += 32;
-      data.y += 32;
+    const ids = flow.selectedNodeIds.has(nodeId) ? flow.selectedNodeIds : new Set([nodeId]);
+    const nodes = flow.nodes.filter((node) => ids.has(node.id));
+    if (!nodes.length) return;
+    const mapping = new Map();
+    for (const node of nodes) {
+      const data = JSON.parse(JSON.stringify(serializeNode(node)));
+      data.id = uid(isStartNode(node) ? "s" : node.kind === "variable" ? "v" : "n");
+      mapping.set(node.id, data.id);
+      data.x = node.x + 32;
+      data.y = node.y + 32;
+      if (isStartNode(node)) { data.vars = {}; data.varsAt = 0; }
+      delete data.sendHistory;
+      flow.nodes.push(normalizeNode(data));
     }
-    if (isStartNode(node)) {
-      data.vars = {};
-      data.varsAt = 0;
+    for (const edge of [...flow.edges]) {
+      if (mapping.has(edge.from) && mapping.has(edge.to)) {
+        flow.edges.push({ id: uid("e"), from: mapping.get(edge.from), to: mapping.get(edge.to), status: "idle" });
+      }
     }
-    delete data.sendHistory;
-    flow.nodes.push(normalizeNode(data));
+    flow.selectedNodeIds = new Set(mapping.values());
+    commit();
+    render();
+  }
+
+  function deleteNodes(ids) {
+    const selected = new Set(ids);
+    for (const node of flow.nodes) if (selected.has(node.id) && node.streamId) void closeNodeStream(node);
+    flow.nodes = flow.nodes.filter((node) => !selected.has(node.id));
+    flow.edges = flow.edges.filter((edge) => !selected.has(edge.from) && !selected.has(edge.to));
+    if (!flow.edges.some((edge) => edge.id === flow.selectedEdgeId)) flow.selectedEdgeId = null;
+    if (selected.has(flow.varsStepId)) flow.varsStepId = null;
+    flow.selectedNodeIds.clear();
     commit();
     render();
   }
@@ -1057,6 +1079,7 @@
       await closeAllStreams();
       flow.nodes = [];
       flow.edges = [];
+      flow.selectedNodeIds.clear();
       flow.sharedVars = {};
       flow.stepRunning = Object.create(null);
       flow.flowRunning = false;
@@ -1085,12 +1108,14 @@
       || Boolean(node?.result?.streaming)
     );
     const hasLive = Boolean(node?.streamId);
+    const multi = flow.selectedNodeIds.has(nodeId) && flow.selectedNodeIds.size > 1;
     for (const btn of menu.querySelectorAll("[data-flow-act]")) {
       const act = btn.getAttribute("data-flow-act");
       let show = true;
       if (act === "view-resp") show = !isStart && node?.kind !== "variable";
       if (act === "send-msg") show = canSendMsg;
       if (act === "close-stream") show = canSendMsg && hasLive;
+      if (multi && act !== "duplicate" && act !== "delete") show = false;
       btn.classList.toggle("hidden", !show);
     }
     menu.style.left = `${x}px`;
@@ -4572,14 +4597,7 @@
         }
       }
       if (act === "delete") {
-        const n = flow.nodes.find((item) => item.id === nodeId);
-        if (n?.streamId) void closeNodeStream(n);
-        flow.nodes = flow.nodes.filter((item) => item.id !== nodeId);
-        flow.edges = flow.edges.filter((e) => e.from !== nodeId && e.to !== nodeId);
-        if (!flow.edges.some((e) => e.id === flow.selectedEdgeId)) flow.selectedEdgeId = null;
-        if (flow.varsStepId === nodeId) flow.varsStepId = null;
-        commit();
-        render();
+        deleteNodes(flow.selectedNodeIds.has(nodeId) ? flow.selectedNodeIds : [nodeId]);
       }
     });
     $("closeFlowHistory")?.addEventListener("click", () => {
@@ -4620,29 +4638,72 @@
 
     let panning = false;
     let panOrigin = null;
+    let panMoved = false;
+    let suppressContextMenu = false;
+    let selection = null;
+    const selectionBox = document.createElement("div");
+    selectionBox.className = "flow-selection-box hidden";
+    stage.appendChild(selectionBox);
     stage.addEventListener("pointerdown", (event) => {
-      const onBlank = event.target === stage || event.target.id === "flowEdges" || event.target.classList?.contains("flow-edges");
+      const onBlank = !event.target.closest?.("[data-node], [data-edge], button, input, select, .flow-float-tools")
+        && (event.target === stage || event.target.closest?.("#flowEdges, #flowWorld"));
       if (onBlank) {
         // 点空白处取消连线选中
         if (flow.selectedEdgeId) selectEdge(null);
         hideEdgeMenu();
       }
-      if (event.button === 1 || event.altKey || onBlank) {
+      if (event.button === 1 || event.button === 2 || (event.button === 0 && event.altKey)) {
         panning = true;
-        panOrigin = { x: event.clientX - flow.panX, y: event.clientY - flow.panY };
+        stage.classList.add("flow-panning");
+        panMoved = false;
+        panOrigin = { x: event.clientX - flow.panX, y: event.clientY - flow.panY, startX: event.clientX, startY: event.clientY, button: event.button };
+        if (event.button !== 2) stage.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      } else if (event.button === 0 && onBlank) {
+        const rect = stage.getBoundingClientRect();
+        selection = { x: event.clientX - rect.left, y: event.clientY - rect.top, moved: false };
+        flow.selectedNodeIds.clear();
+        render();
         stage.setPointerCapture(event.pointerId);
+        event.preventDefault();
       }
     });
     stage.addEventListener("pointermove", (event) => {
-      if (!panning || !panOrigin) return;
-      flow.panX = event.clientX - panOrigin.x;
-      flow.panY = event.clientY - panOrigin.y;
-      applyTransform();
+      if (panning && panOrigin) {
+        if (Math.hypot(event.clientX - panOrigin.startX, event.clientY - panOrigin.startY) > 3) panMoved = true;
+        if (panMoved) {
+          if (!stage.hasPointerCapture(event.pointerId)) stage.setPointerCapture(event.pointerId);
+          flow.panX = event.clientX - panOrigin.x;
+          flow.panY = event.clientY - panOrigin.y;
+          applyTransform();
+        }
+      }
+      if (selection) {
+        const rect = stage.getBoundingClientRect();
+        const x = event.clientX - rect.left, y = event.clientY - rect.top;
+        if (Math.hypot(x - selection.x, y - selection.y) > 3) selection.moved = true;
+        if (!selection.moved) return;
+        const left = Math.min(x, selection.x), top = Math.min(y, selection.y);
+        const right = Math.max(x, selection.x), bottom = Math.max(y, selection.y);
+        Object.assign(selectionBox.style, { left: `${left}px`, top: `${top}px`, width: `${right - left}px`, height: `${bottom - top}px` });
+        selectionBox.classList.remove("hidden");
+        flow.selectedNodeIds.clear();
+        for (const el of stage.querySelectorAll(".flow-node[data-node]")) {
+          const box = el.getBoundingClientRect();
+          if (box.right >= rect.left + left && box.left <= rect.left + right && box.bottom >= rect.top + top && box.top <= rect.top + bottom) {
+            flow.selectedNodeIds.add(el.getAttribute("data-node"));
+          }
+          el.classList.toggle("selected", flow.selectedNodeIds.has(el.getAttribute("data-node")));
+        }
+      }
     });
     stage.addEventListener("pointerup", () => {
-      if (panning) save();
+      if (panning && panMoved) { save(); if (panOrigin?.button === 2) { suppressContextMenu = true; setTimeout(() => { suppressContextMenu = false; }, 500); } }
       panning = false;
+      stage.classList.remove("flow-panning");
       panOrigin = null;
+      selection = null;
+      selectionBox.classList.add("hidden");
     });
 
     stage.addEventListener("dragover", (event) => {
@@ -4665,11 +4726,11 @@
       addNode(rpcId, pos.x - 100, pos.y - 30, label);
     });
 
-    let dragNode = null;
-    let dragOffset = null;
+    let dragNodes = null;
+    let dragOrigin = null;
 
     stage.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || event.altKey) return;
       const out = event.target.closest?.("[data-port-out]");
       if (out) {
         const fromId = out.getAttribute("data-port-out");
@@ -4690,9 +4751,12 @@
         const id = head.getAttribute("data-drag");
         const node = flow.nodes.find((n) => n.id === id);
         if (!node) return;
-        dragNode = node;
-        const pos = screenToWorld(event.clientX, event.clientY);
-        dragOffset = { x: pos.x - node.x, y: pos.y - node.y };
+        if (!flow.selectedNodeIds.has(id)) {
+          flow.selectedNodeIds = new Set([id]);
+          render();
+        }
+        dragNodes = flow.nodes.filter((item) => flow.selectedNodeIds.has(item.id)).map((item) => ({ node: item, x: item.x, y: item.y }));
+        dragOrigin = screenToWorld(event.clientX, event.clientY);
         stage.setPointerCapture(event.pointerId);
         event.stopPropagation();
       }
@@ -4705,10 +4769,9 @@
         paintLinkPreview();
         return;
       }
-      if (dragNode && dragOffset) {
+      if (dragNodes && dragOrigin) {
         const pos = screenToWorld(event.clientX, event.clientY);
-        dragNode.x = pos.x - dragOffset.x;
-        dragNode.y = pos.y - dragOffset.y;
+        for (const item of dragNodes) { item.node.x = item.x + pos.x - dragOrigin.x; item.node.y = item.y + pos.y - dragOrigin.y; }
         render();
       }
     });
@@ -4721,13 +4784,20 @@
         const toId = linkTargetAt(event.clientX, event.clientY, fromId);
         if (toId) connectNodes(fromId, toId);
       }
-      if (dragNode) {
-        dragNode = null;
-        dragOffset = null;
+      if (dragNodes) {
+        dragNodes = null;
+        dragOrigin = null;
         commit();
       }
     });
     stage.addEventListener("pointercancel", () => {
+      if (dragNodes) {
+        for (const item of dragNodes) { item.node.x = item.x; item.node.y = item.y; }
+        render();
+      }
+      panning = false; panOrigin = null; selection = null; dragNodes = null; dragOrigin = null;
+      stage.classList.remove("flow-panning");
+      selectionBox.classList.add("hidden");
       if (!flow.link) return;
       flow.link = null;
       stage.classList.remove("flow-connecting");
@@ -4772,6 +4842,11 @@
     });
 
     stage.addEventListener("contextmenu", (event) => {
+      if (suppressContextMenu || (panning && panMoved)) {
+        suppressContextMenu = false;
+        event.preventDefault();
+        return;
+      }
       const edgeEl = event.target.closest?.("[data-edge]");
       if (edgeEl) {
         event.preventDefault();
@@ -4784,6 +4859,7 @@
       }
       const nodeEl = event.target.closest("[data-node]");
       if (!nodeEl) {
+        event.preventDefault();
         hideMenu();
         hideEdgeMenu();
         return;
@@ -4791,13 +4867,16 @@
       event.preventDefault();
       event.stopPropagation();
       hideEdgeMenu();
-      showMenu(event.clientX, event.clientY, nodeEl.getAttribute("data-node"));
+      const id = nodeEl.getAttribute("data-node");
+      if (!flow.selectedNodeIds.has(id)) { flow.selectedNodeIds = new Set([id]); render(); }
+      showMenu(event.clientX, event.clientY, id);
     });
     document.addEventListener("click", (event) => {
       if (!event.target.closest("#flowMenu")) hideMenu();
       if (!event.target.closest("#flowEdgeMenu")) hideEdgeMenu();
     });
     document.addEventListener("keydown", (event) => {
+      if (event.key === "Alt" && isFlowOpen()) stage.classList.add("flow-pan-ready");
       const active = document.activeElement;
       const tag = active?.tagName;
       const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || active?.isContentEditable;
@@ -4813,11 +4892,23 @@
         redoStep();
         return;
       }
-      if (!flow.selectedEdgeId || !isFlowOpen()) return;
+      if (!isFlowOpen() || typing || document.querySelector(".modal-mask.show")) return;
+      if ((event.key === "Delete" || event.key === "Backspace") && flow.selectedNodeIds.size) {
+        event.preventDefault();
+        deleteNodes(flow.selectedNodeIds);
+        return;
+      }
+      if (!flow.selectedEdgeId) return;
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (typing) return;
       event.preventDefault();
       deleteEdge(flow.selectedEdgeId);
+    });
+    document.addEventListener("keyup", (event) => {
+      if (event.key === "Alt") stage.classList.remove("flow-pan-ready");
+    });
+    window.addEventListener("blur", () => {
+      stage.classList.remove("flow-pan-ready", "flow-panning");
     });
     window.addEventListener("resize", hideEdgeMenu);
 
