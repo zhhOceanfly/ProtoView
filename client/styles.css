@@ -2317,6 +2317,7 @@ textarea.editor {
 .flow-tpl-actions { display: flex; align-items: center; gap: 8px; }
 .modal-body { padding: 14px; display: grid; gap: 10px; }
 .modal-body label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.modal-body label.flow-check { display: flex; align-items: center; gap: 8px; }
 .modal-body input, .modal-body textarea {
   border: 1px solid var(--border);
   background: var(--input);

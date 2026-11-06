@@ -650,6 +650,7 @@ export class ClientPanel {
             <div id="flowMsgBody" class="flow-msg-tree"></div>
           </div>
           <h4 class="flow-edit-h">Metadata</h4>
+          <label class="flow-check"><input id="flowNodeInheritMetadata" type="checkbox" checked /> 携带步骤根 Metadata</label>
           <table class="meta-table flow-edit-table">
             <thead><tr><th>Name</th><th>Value（可用 {{var}}）</th><th></th></tr></thead>
             <tbody id="flowMetaBody"></tbody>

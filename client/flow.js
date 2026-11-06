@@ -392,6 +392,7 @@
       y: node.y,
       message: node.message,
       metadata: Array.isArray(node.metadata) ? node.metadata : [{ name: "", value: "" }],
+      inheritMetadata: node.inheritMetadata !== false,
       extracts: node.extracts && typeof node.extracts === "object" ? node.extracts : {},
       protocol: node.protocol || "grpc",
       httpMethod: node.httpMethod || "POST",
@@ -531,6 +532,7 @@
           value: String(row?.value || ""),
         }))
         : [{ name: "", value: "" }],
+      inheritMetadata: item.inheritMetadata !== false,
       extracts: item.extracts && typeof item.extracts === "object" ? { ...item.extracts } : {},
       history: Array.isArray(item.history) ? item.history : [],
       protocol: normalizeNodeProtocol(item.protocol),
@@ -1636,6 +1638,7 @@
     const methodEl = $("flowNodeHttpMethod");
     const pathEl = $("flowNodeHttpPath");
     const envEl = $("flowNodeEnv");
+    if ($("flowNodeInheritMetadata")) $("flowNodeInheritMetadata").checked = node.inheritMetadata !== false;
     if (protoEl) protoEl.value = protocol;
     if (methodEl) {
       methodEl.value = node.httpMethod
@@ -2008,6 +2011,7 @@
     const extracts = {};
     // 只取编辑弹窗自己的提取区（收发消息里任务的提取用同样的 data 属性）
     const extractRoot = $("flowExtractBody") || document;
+    node.inheritMetadata = $("flowNodeInheritMetadata")?.checked !== false;
     for (const input of extractRoot.querySelectorAll("[data-flow-extract-path]")) {
       const key = input.getAttribute("data-flow-extract-path");
       const val = input.value.trim();
@@ -3667,7 +3671,7 @@
 
   function mergedMetadata(step, node, vars) {
     const entries = new Map();
-    for (const row of [...(step?.metadata || []), ...(node.metadata || [])]) {
+    for (const row of [...(node.inheritMetadata === false ? [] : (step?.metadata || [])), ...(node.metadata || [])]) {
       const name = String(row.name || "").trim();
       if (name) entries.set(name.toLowerCase(), [name, interpolate(row.value, vars || {})]);
     }
