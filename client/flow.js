@@ -903,7 +903,15 @@
       mapping.set(node.id, data.id);
       data.x = node.x + 32;
       data.y = node.y + 32;
-      if (isStartNode(node)) { data.vars = {}; data.varsAt = 0; }
+      if (isStartNode(node)) {
+        const names = new Set(flow.nodes.filter(isStartNode).map((item) => item.name));
+        const baseName = `${node.name || "步骤"} 副本`;
+        data.name = baseName;
+        let number = 2;
+        while (names.has(data.name)) data.name = `${baseName} ${number++}`;
+        data.vars = {};
+        data.varsAt = 0;
+      }
       delete data.sendHistory;
       flow.nodes.push(normalizeNode(data));
     }
