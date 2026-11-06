@@ -653,6 +653,9 @@
     if (!world || !svg) return;
     const empty = $("flowEmpty");
     if (empty) empty.classList.toggle("hidden", flow.nodes.length > 0);
+    const order = topoSort();
+    const starts = new Set(flow.nodes.filter(isStartNode).map((node) => node.id));
+    const stepOrder = new Map((order || []).filter((id) => starts.has(id)).map((id, index) => [id, index + 1]));
     world.innerHTML = flow.nodes.map((node) => {
       if (node.kind === "variable") {
         const status = node.result?.ok === true ? "ok" : node.result?.ok === false ? "fail" : "";
@@ -679,7 +682,7 @@
         const varCount = Object.keys(node.vars || {}).length;
         return `<div class="flow-node flow-node-start ${status}${enabled ? "" : " disabled"}${busy ? " running" : ""}" data-node="${esc(node.id)}" style="left:${node.x}px;top:${node.y}px">
           <div class="flow-node-head" data-drag="${esc(node.id)}">
-            <div class="flow-node-icon start">▶</div>
+            <div class="flow-node-icon start" title="${order ? (enabled ? "全量运行顺序" : "全量运行时跳过此步骤") : "存在环路，无法确定执行顺序"}">${stepOrder.get(node.id) ?? "?"}</div>
             <div class="flow-node-text">
               <strong>${esc(node.name || "起始步骤")}</strong>
               <span>运行 ${runs} 次${runs > 1 ? ` · 间隔 ${intervalSec}s` : ""}</span>
