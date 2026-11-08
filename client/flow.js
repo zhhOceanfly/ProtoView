@@ -1,5 +1,6 @@
 (() => {
   const FLOW_KEY = "protoview.client.flow";
+  const GLOBAL_VARS_KEY = "protoview.client.globalVars";
   const api = () => window.ProtoViewClient;
   const $ = (id) => document.getElementById(id);
 
@@ -37,10 +38,16 @@
     stepRunning: Object.create(null),
     /** 跨步骤共享变量（提取结果累积，便于步骤二单独跑时用步骤一的 token） */
     sharedVars: {},
-    /** 变量查看弹窗对应的起始步骤 id */
+    /** 全局变量（顶栏「变量」；优先级最低） */
+    globalVars: {},
+    /** 变量弹窗作用域：global | node */
+    varsScope: "node",
+    /** 变量查看弹窗对应的节点 id（步骤或接口节点） */
     varsStepId: null,
     /** 当前正在执行的起始步骤 id（用于把提取到的变量归到该步骤） */
     varOwnerStepId: null,
+    /** 右侧浮动 Client 面板对应的节点 id */
+    inspectNodeId: null,
     /** 撤销/恢复栈（快照 JSON） */
     undo: [],
     redo: [],
@@ -58,6 +65,21 @@
   /** 上一次提交后的画布快照（用于撤销对比） */
   let lastSnapshot = "";
 
+  function loadGlobalVars() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(GLOBAL_VARS_KEY) || "{}");
+      flow.globalVars = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    } catch {
+      flow.globalVars = {};
+    }
+  }
+
+  function persistGlobalVars() {
+    try {
+      localStorage.setItem(GLOBAL_VARS_KEY, JSON.stringify(flow.globalVars || {}));
+    } catch { /* ignore */ }
+  }
+
   function load() {
     try {
       const raw = JSON.parse(localStorage.getItem(FLOW_KEY) || "{}");
@@ -67,6 +89,7 @@
       flow.panX = typeof raw.panX === "number" ? raw.panX : 40;
       flow.panY = typeof raw.panY === "number" ? raw.panY : 40;
     } catch { /* ignore */ }
+    loadGlobalVars();
   }
 
   function save() {
@@ -600,15 +623,34 @@
     return { host: env.host };
   }
 
+  function flowTlsEnabled() {
+    const flowBox = $("flowTlsCheck");
+    if (flowBox) return Boolean(flowBox.checked);
+    return Boolean($("tlsCheck")?.checked);
+  }
+
+  function syncFlowTlsFromMain() {
+    const main = $("tlsCheck");
+    const flowBox = $("flowTlsCheck");
+    if (main && flowBox) flowBox.checked = main.checked;
+  }
+
   function isFlowOpen() {
     const main = $("mainFlow");
     return Boolean(main && !main.classList.contains("hidden"));
   }
 
   function openFlow() {
+    closeFlowNodeInspect({ sync: false, instant: true });
     const client = $("mainClient");
     const flowMain = $("mainFlow");
+    restoreMainClientHome(client);
     client?.classList.add("hidden");
+    client?.classList.remove("flow-inspect-float", "is-open");
+    if (client) {
+      client.style.display = "";
+      client.style.flexDirection = "";
+    }
     flowMain?.classList.remove("hidden");
     if (flowMain) {
       flowMain.style.display = "flex";
@@ -623,6 +665,7 @@
       stage.style.position = "relative";
     }
     document.getElementById("app")?.classList.add("flow-mode");
+    document.getElementById("app")?.classList.remove("flow-inspect");
     const flowBtn = $("flowBtn");
     if (flowBtn) { flowBtn.textContent = "返回 Client"; flowBtn.title = "返回 Client"; }
     hideMenu();
@@ -632,15 +675,177 @@
     requestAnimationFrame(() => render());
   }
 
+  function syncInspectToNode() {
+    const node = flow.nodes.find((n) => n.id === flow.inspectNodeId);
+    if (!node || isStartNode(node) || node.kind === "variable") return;
+    const draft = api()?.readFlowInspectDraft?.();
+    if (!draft || (draft.rpcId && draft.rpcId !== node.rpcId)) return;
+    node.message = draft.message && typeof draft.message === "object" ? draft.message : {};
+    node.metadata = Array.isArray(draft.metadata) ? draft.metadata : node.metadata;
+    node.protocol = draft.protocol || node.protocol || "grpc";
+    node.httpMethod = draft.httpMethod || node.httpMethod || "POST";
+    node.httpPath = draft.httpPath || node.httpPath || "/";
+    save();
+  }
+
+  let inspectAnimTimer = 0;
+  let inspectIgnoreOutsideUntil = 0;
+
+  function restoreMainClientHome(client) {
+    if (!client) return;
+    const app = document.getElementById("app");
+    const flowMain = $("mainFlow");
+    if (!app || !flowMain || client.parentElement === app) return;
+    app.insertBefore(client, flowMain);
+  }
+
+  function finishHideInspectPanel(client) {
+    if (flow.inspectNodeId) return;
+    client.classList.remove("is-open", "flow-inspect-float");
+    client.classList.add("hidden");
+    client.style.display = "";
+    client.style.flexDirection = "";
+    restoreMainClientHome(client);
+  }
+
+  function closeFlowNodeInspect(opts = {}) {
+    const sync = opts.sync !== false;
+    const instant = Boolean(opts.instant);
+    if (sync && flow.inspectNodeId) syncInspectToNode();
+    flow.inspectNodeId = null;
+    const app = document.getElementById("app");
+    const client = $("mainClient");
+    window.clearTimeout(inspectAnimTimer);
+    app?.classList.remove("flow-inspect");
+    if (!client) return;
+    if (instant || !client.classList.contains("flow-inspect-float")) {
+      finishHideInspectPanel(client);
+      return;
+    }
+    client.classList.remove("is-open");
+    const onEnd = (event) => {
+      if (event.propertyName && event.propertyName !== "transform") return;
+      client.removeEventListener("transitionend", onEnd);
+      finishHideInspectPanel(client);
+    };
+    client.addEventListener("transitionend", onEnd);
+    inspectAnimTimer = window.setTimeout(() => {
+      client.removeEventListener("transitionend", onEnd);
+      finishHideInspectPanel(client);
+    }, 280);
+  }
+
+  function openFlowNodeInspect(nodeId) {
+    const node = flow.nodes.find((n) => n.id === nodeId);
+    if (!node) {
+      void notify("找不到节点");
+      return false;
+    }
+    if (isStartNode(node) || node.kind === "variable") {
+      openEdit(nodeId);
+      return false;
+    }
+    if (!node.rpcId || !api()?.findRpc?.(node.rpcId)) {
+      void notify("找不到接口，请检查 Proto 来源");
+      return false;
+    }
+    if (flow.inspectNodeId && flow.inspectNodeId !== nodeId) syncInspectToNode();
+    flow.inspectNodeId = nodeId;
+    window.clearTimeout(inspectAnimTimer);
+    const app = document.getElementById("app");
+    const stage = $("flowStage");
+    const client = $("mainClient");
+    app?.classList.add("flow-mode", "flow-inspect");
+    if (!client || !stage) return false;
+    const alreadyOpen = client.classList.contains("flow-inspect-float")
+      && client.classList.contains("is-open")
+      && !client.classList.contains("hidden");
+    if (client.parentElement !== stage) stage.appendChild(client);
+    client.classList.add("flow-inspect-float");
+    client.classList.remove("hidden");
+    client.style.display = "flex";
+    client.style.flexDirection = "column";
+    if (alreadyOpen) {
+      client.classList.add("is-open");
+    } else {
+      client.classList.remove("is-open");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (flow.inspectNodeId !== nodeId) return;
+          client.classList.add("is-open");
+        });
+      });
+    }
+    inspectIgnoreOutsideUntil = Date.now() + 320;
+    const title = $("flowInspectTitle");
+    if (title) title.textContent = node.name || "节点定义";
+    api()?.loadFlowInspectDraft?.({
+      rpcId: node.rpcId,
+      message: node.message,
+      metadata: node.metadata,
+      protocol: node.protocol,
+      httpMethod: node.httpMethod,
+      httpPath: node.httpPath,
+      tab: "docs",
+    });
+    return true;
+  }
+
+  function isInspectOutsideTarget(target) {
+    if (!(target instanceof Element)) return false;
+    if (target.closest("#mainClient, .modal-mask, .flow-menu, .flow-edge-menu, .flow-float-tools")) return false;
+    if (target.closest("[data-node], [data-flow-act]")) return false;
+    return true;
+  }
+
+  function expandInspectToClient() {
+    const nodeId = flow.inspectNodeId;
+    syncInspectToNode();
+    const node = flow.nodes.find((n) => n.id === nodeId);
+    closeFlowNodeInspect({ sync: false, instant: true });
+    closeFlow();
+    if (node?.rpcId) api()?.showRpcDefinition?.(node.rpcId);
+  }
+
+  function setNodesEnabled(ids, enabled) {
+    const list = ids instanceof Set ? [...ids] : Array.from(ids || []);
+    let changed = false;
+    for (const id of list) {
+      const node = flow.nodes.find((n) => n.id === id);
+      if (!node) continue;
+      node.enabled = Boolean(enabled);
+      changed = true;
+    }
+    if (!changed) return;
+    commit();
+    render();
+  }
+
+  async function runMenuTargets(nodeId) {
+    const multi = flow.selectedNodeIds.has(nodeId) && flow.selectedNodeIds.size > 1;
+    const ids = multi ? [...flow.selectedNodeIds] : [nodeId];
+    for (const id of ids) {
+      const node = flow.nodes.find((n) => n.id === id);
+      if (!node) continue;
+      if (isStartNode(node)) await runStartStep(id);
+      else await runSingleNode(id);
+    }
+  }
+
   function closeFlow() {
     flow.stressAbort = true;
+    closeFlowNodeInspect({ sync: false, instant: true });
     const flowMain = $("mainFlow");
     flowMain?.classList.add("hidden");
     if (flowMain) flowMain.style.display = "none";
     const client = $("mainClient");
-    client?.classList.remove("hidden");
-    if (client) client.style.display = "";
-    document.getElementById("app")?.classList.remove("flow-mode");
+    restoreMainClientHome(client);
+    client?.classList.remove("hidden", "flow-inspect-float", "is-open");
+    if (client) {
+      client.style.display = "";
+      client.style.flexDirection = "";
+    }
+    document.getElementById("app")?.classList.remove("flow-mode", "flow-inspect");
     const flowBtn = $("flowBtn");
     if (flowBtn) { flowBtn.textContent = "链路调试"; flowBtn.title = "链路调试"; }
     $("flowStage")?.classList.remove("flow-connecting");
@@ -1236,7 +1441,8 @@
       if (act === "view-resp") show = !isStart && node?.kind !== "variable";
       if (act === "send-msg") show = canSendMsg;
       if (act === "close-stream") show = canSendMsg && hasLive;
-      if (multi && act !== "duplicate" && act !== "delete") show = false;
+      if (act === "enable" || act === "disable" || act === "run") show = true;
+      if (multi && !["duplicate", "delete", "enable", "disable", "run"].includes(act)) show = false;
       btn.classList.toggle("hidden", !show);
     }
     menu.style.left = `${x}px`;
@@ -2974,7 +3180,7 @@
     const owners = flow.nodes.filter((item) => isStartNode(item) && rpcNodesOfStep(item.id).some((rpc) => rpc.id === node.id));
     const owner = owners.find((item) => item.id === node.ownerStepId) || (owners.length === 1 ? owners[0] : null);
     if (!owner && owners.length > 1) { void notify("该接口属于多个步骤，请先运行对应步骤"); return null; }
-    const metadata = mergedMetadata(owner, node, flow.sharedVars);
+    const metadata = mergedMetadata(owner, node, buildRunVars(owner, node));
     const streamMetadata = JSON.stringify(metadata);
     if (node.streamId && node.streamHost === env.host && node.streamMetadata === streamMetadata) return node.streamId;
     if (node.streamId) await closeNodeStream(node);
@@ -3021,9 +3227,10 @@
   async function harvestExtractsFromMessage(node, message) {
     if (!node || message == null) return;
     const { cfg, decoded } = await decodeRecvMessage(node, message);
-    const vars = { ...(flow.sharedVars || {}) };
+    const step = flow.nodes.find((n) => n.id === ownerStepIdFor(node) && isStartNode(n));
+    const vars = buildRunVars(step, node);
     const applied = applyExtracts(cfg || node, decoded, vars);
-    flow.sharedVars = vars;
+    flow.sharedVars = { ...(flow.sharedVars || {}), ...vars };
     recordStepVars(ownerStepIdFor(node), applied, node);
     updateVarsBadge();
   }
@@ -3077,9 +3284,10 @@
       lastCfg = cfg;
       // 用最新一条回包（倒序后的第一条）刷新共享变量（含 Payload 内字段）
       if (i === 0) {
-        const vars = { ...(flow.sharedVars || {}) };
+        const step = flow.nodes.find((n) => n.id === ownerStepIdFor(node) && isStartNode(n));
+        const vars = buildRunVars(step, node);
         const applied = applyExtracts(cfg || node, decoded, vars);
-        flow.sharedVars = vars;
+        flow.sharedVars = { ...(flow.sharedVars || {}), ...vars };
         recordStepVars(ownerStepIdFor(node), applied, node);
         updateVarsBadge();
       }
@@ -3230,65 +3438,222 @@
   function updateVarsBadge() { /* no-op */ }
 
   function varsStep() {
-    if (!flow.varsStepId) return null;
+    if (flow.varsScope === "global" || !flow.varsStepId) return null;
     return flow.nodes.find((n) => n.id === flow.varsStepId) || null;
+  }
+
+  function varsBag() {
+    if (flow.varsScope === "global") {
+      if (!flow.globalVars || typeof flow.globalVars !== "object") flow.globalVars = {};
+      return flow.globalVars;
+    }
+    const step = varsStep();
+    if (!step) return null;
+    if (!step.vars || typeof step.vars !== "object") step.vars = {};
+    return step.vars;
+  }
+
+  function formatVarText(value) {
+    try {
+      return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    } catch {
+      return String(value ?? "");
+    }
+  }
+
+  function parseVarInput(text) {
+    const raw = String(text ?? "");
+    const trimmed = raw.trim();
+    if (!trimmed) return "";
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try { return JSON.parse(trimmed); } catch { /* keep string */ }
+    }
+    return raw;
   }
 
   function renderVarsModal() {
     const el = $("flowVarsBody");
     if (!el) return;
-    const step = varsStep();
-    const vars = step ? (step.vars || {}) : {};
+    const bag = varsBag();
+    const vars = bag || {};
     const keys = Object.keys(vars).sort((a, b) => a.localeCompare(b));
     const title = $("flowVarsTitle");
+    const hint = $("flowVarsHint");
     if (title) {
-      const name = step ? (step.name || "起始步骤") : "变量";
-      title.textContent = `${name} · 变量（${keys.length}）`;
+      if (flow.varsScope === "global") {
+        title.textContent = `全局变量（${keys.length}）`;
+      } else {
+        const step = varsStep();
+        const name = step
+          ? (isStartNode(step) ? (step.name || "起始步骤") : (step.name || "节点"))
+          : "变量";
+        const scope = step && isStartNode(step) ? "步骤" : "节点";
+        title.textContent = `${name} · ${scope}变量（${keys.length}）`;
+      }
+    }
+    if (hint) {
+      hint.innerHTML = flow.varsScope === "global"
+        ? `全局变量可在任意步骤/节点用 <code>{{变量名}}</code> 引用；同名时节点 › 步骤 › 全局。`
+        : `发送时可用 <code>{{变量名}}</code> 引用。同名优先级：节点 › 步骤 › 全局。`;
     }
     if (!keys.length) {
-      el.innerHTML = `<div class="flow-msg-empty">暂无变量</div>`;
+      el.innerHTML = `<div class="flow-msg-empty">暂无变量，点击下方「添加变量」</div>`;
       return;
     }
     el.innerHTML = keys.map((key) => {
-      let text;
-      try {
-        text = typeof vars[key] === "string" ? vars[key] : JSON.stringify(vars[key], null, 2);
-      } catch {
-        text = String(vars[key]);
-      }
-      return `<div class="flow-var-row">
-        <div class="flow-var-key">${esc(key)}</div>
-        <pre class="flow-var-value">${esc(text ?? "")}</pre>
+      const text = formatVarText(vars[key]);
+      return `<div class="flow-var-row" data-var-key="${esc(key)}">
+        <div class="flow-var-head">
+          <input class="flow-var-key" data-var-name type="text" spellcheck="false" value="${esc(key)}" />
+          <button class="btn flow-var-del" type="button" data-var-del="${esc(key)}" title="删除">✕</button>
+        </div>
+        <textarea class="flow-var-value" data-var-value rows="2" spellcheck="false">${esc(text)}</textarea>
       </div>`;
     }).join("");
   }
 
+  function commitVarsBag() {
+    if (flow.varsScope === "global") {
+      persistGlobalVars();
+      return;
+    }
+    const step = varsStep();
+    if (step) {
+      step.varsAt = Date.now();
+      save();
+      render();
+    }
+  }
+
   function openVarsModal(stepId) {
+    if (stepId === "__global__") {
+      flow.varsScope = "global";
+      flow.varsStepId = null;
+      renderVarsModal();
+      $("flowVarsModal")?.classList.add("show");
+      return;
+    }
     const step = flow.nodes.find((n) => n.id === stepId);
     if (!step) {
       void notify("找不到节点");
       return;
     }
+    flow.varsScope = "node";
     flow.varsStepId = step.id;
     renderVarsModal();
     $("flowVarsModal")?.classList.add("show");
   }
 
+  function openGlobalVarsModal() {
+    openVarsModal("__global__");
+  }
+
+  function closeVarsModal() {
+    $("flowVarsModal")?.classList.remove("show");
+  }
+
+  function addVar() {
+    const bag = varsBag();
+    if (!bag) return;
+    let i = 1;
+    let name = `var_${i}`;
+    while (Object.prototype.hasOwnProperty.call(bag, name)) {
+      i += 1;
+      name = `var_${i}`;
+    }
+    bag[name] = "";
+    commitVarsBag();
+    renderVarsModal();
+    const input = $("flowVarsBody")?.querySelector(`[data-var-key="${CSS.escape(name)}"] [data-var-name]`);
+    input?.focus();
+    input?.select();
+  }
+
+  function deleteVar(key) {
+    const bag = varsBag();
+    if (!bag || !key) return;
+    delete bag[key];
+    if (flow.varsScope === "node") {
+      const step = varsStep();
+      if (step && isStartNode(step) && flow.sharedVars) {
+        const usedElsewhere = flow.nodes.some((n) => (
+          n.id !== step.id && isStartNode(n) && n.vars && Object.prototype.hasOwnProperty.call(n.vars, key)
+        ));
+        if (!usedElsewhere) delete flow.sharedVars[key];
+      }
+    }
+    commitVarsBag();
+    renderVarsModal();
+  }
+
+  function renameVar(oldKey, nextRaw) {
+    const bag = varsBag();
+    if (!bag || !oldKey) return false;
+    const next = String(nextRaw || "").trim();
+    if (!next || next === oldKey) {
+      if (!next) renderVarsModal();
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(bag, next)) {
+      void notify(`变量名「${next}」已存在`);
+      renderVarsModal();
+      return false;
+    }
+    bag[next] = bag[oldKey];
+    delete bag[oldKey];
+    if (flow.varsScope === "node") {
+      const step = varsStep();
+      if (step && isStartNode(step) && flow.sharedVars && Object.prototype.hasOwnProperty.call(flow.sharedVars, oldKey)) {
+        flow.sharedVars[next] = flow.sharedVars[oldKey];
+        delete flow.sharedVars[oldKey];
+      }
+    }
+    commitVarsBag();
+    renderVarsModal();
+    return true;
+  }
+
+  function setVarValue(key, text) {
+    const bag = varsBag();
+    if (!bag || !key || !Object.prototype.hasOwnProperty.call(bag, key)) return;
+    bag[key] = parseVarInput(text);
+    commitVarsBag();
+  }
+
   function clearVars() {
+    if (flow.varsScope === "global") {
+      flow.globalVars = {};
+      persistGlobalVars();
+      renderVarsModal();
+      return;
+    }
     const step = varsStep();
     if (!step) return;
+    const keys = Object.keys(step.vars || {});
     step.vars = {};
     step.varsAt = 0;
-    if (isStartNode(step)) for (const key of Object.keys(flow.sharedVars || {})) {
-      // 只清掉该步骤产出且没有别的步骤在用的变量
+    if (isStartNode(step)) for (const key of keys) {
       const usedElsewhere = flow.nodes.some((n) => (
         n.id !== step.id && isStartNode(n) && n.vars && Object.prototype.hasOwnProperty.call(n.vars, key)
       ));
-      if (!usedElsewhere) delete flow.sharedVars[key];
+      if (!usedElsewhere && flow.sharedVars) delete flow.sharedVars[key];
     }
     save();
     render();
     renderVarsModal();
+  }
+
+  /**
+   * 解析可用变量。同名优先级：节点 › 步骤 › 全局。
+   * sharedVars 提供跨步骤残留；本轮提取直接写进返回对象，覆盖同名键。
+   */
+  function buildRunVars(step, node) {
+    return {
+      ...(flow.globalVars || {}),
+      ...(flow.sharedVars || {}),
+      ...(step?.vars || {}),
+      ...(node?.vars || {}),
+    };
   }
 
   // ===== 步骤压测 =====
@@ -3313,7 +3678,7 @@
 
   function nodeInvokePayload(node, hit) {
     const step = flow.nodes.find((item) => item.id === flow.stressStepId && isStartNode(item));
-    const metadata = mergedMetadata(step, node, flow.sharedVars);
+    const metadata = mergedMetadata(step, node, buildRunVars(step, node));
     const protocol = normalizeNodeProtocol(node.protocol);
     return {
       protocol,
@@ -3324,9 +3689,9 @@
       service: hit.service.name,
       method: hit.rpc.name,
       file: hit.rpc.file,
-      body: buildBody(node.message || {}, {}, hit.rpc.requestFields || []),
+      body: buildBody(node.message || {}, buildRunVars(step, node), hit.rpc.requestFields || []),
       metadata,
-      tls: false,
+      tls: flowTlsEnabled(),
     };
   }
 
@@ -3648,21 +4013,55 @@
     importData(data);
   }
 
+  function templateIdFromName(name) {
+    const slug = String(name || "").trim()
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .replace(/\s+/g, "_")
+      .replace(/\.+$/g, "")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 80);
+    return `tpl_${slug || "unnamed"}`;
+  }
+
   async function saveCurrentAsTemplate() {
     if (templateBusy) return;
-    const name = ($("flowTplName")?.value || "").trim() || `模板 ${new Date().toLocaleString()}`;
-    const template = {
-      id: uid("tpl"),
-      name,
-      at: Date.now(),
-      data: flowSnapshot(),
-    };
+    const name = ($("flowTplName")?.value || "").trim();
+    if (!name) {
+      void notify("请填写模板名称");
+      return;
+    }
+    const id = templateIdFromName(name);
+    if (id === "tpl_unnamed") {
+      void notify("模板名称无效，请换一个");
+      return;
+    }
     templateBusy = true;
     try {
+      if (!userTemplates.length) {
+        try { userTemplates = await requestTemplates("loadTemplates"); }
+        catch { /* 首次保存目录可能还不存在 */ }
+      }
+      const builtins = Array.isArray(window.ProtoViewFlowTemplates) ? window.ProtoViewFlowTemplates : [];
+      const conflict = [...builtins, ...userTemplates].find((tpl) => {
+        const sameName = String(tpl?.name || "").trim() === name;
+        const sameId = String(tpl?.id || "") === id;
+        return sameName || sameId;
+      });
+      if (conflict) {
+        void notify(`模板名称「${name}」已存在，请换一个`);
+        return;
+      }
+      const template = {
+        id,
+        name,
+        at: Date.now(),
+        data: flowSnapshot(),
+      };
       userTemplates = await requestTemplates("saveTemplate", template);
       if ($("flowTplName")) $("flowTplName").value = "";
       renderFlowTplList();
-      void notify(`已保存模板「${name}」`);
+      void notify(`已保存模板「${name}」→ ${id}.json`);
     } catch (error) { void notify(`保存模板失败：${error.message || error}`); }
     finally { templateBusy = false; }
   }
@@ -4144,7 +4543,7 @@
       file: hit.rpc.file,
       body,
       metadata,
-      tls: false,
+      tls: flowTlsEnabled(),
     };
 
     // 客户端流 / 双向流：保持连接，节点显示 CONNECTED，可供右键续发
@@ -4360,7 +4759,7 @@
     }
 
     const started = performance.now();
-    const vars = { ...(flow.sharedVars || {}) };
+    let vars = buildRunVars(null, null);
 
     for (const seg of segments) {
       if (onlyStartId && seg.start?.id !== onlyStartId) continue;
@@ -4376,6 +4775,8 @@
         flow.stepRunning[startId] = true;
         if (!quiet) render();
       }
+      // 进入步骤时叠上步骤变量（节点变量在每个节点前再叠）
+      vars = buildRunVars(seg.start, null);
       try {
         const runs = Math.max(1, Math.floor(Number(seg.start.runs) || 1));
         const intervalRaw = Number(seg.start?.intervalSec);
@@ -4402,6 +4803,8 @@
             const hit = node.kind === "variable" ? null : client.findRpc(node.rpcId);
             if (!hit && node.kind !== "variable") continue;
             if (startId) node.ownerStepId = startId;
+            // 节点作用域覆盖同名步骤/全局/共享变量
+            Object.assign(vars, node.vars || {});
             const incoming = flow.edges.filter((e) => e.to === nodeId);
             const result = node.kind === "variable"
               ? runVariableNode(node, vars, startId)
@@ -4466,10 +4869,7 @@
     $("flowRunBtn").disabled = true;
     render();
     try {
-      const summary = await executeFlowOnce({ quiet: false });
-      if (!summary.ok && summary.error) {
-        void notify(summary.failNode ? `${summary.failNode}: ${summary.error}` : summary.error);
-      }
+      await executeFlowOnce({ quiet: false });
     } finally {
       flow.flowRunning = false;
       for (const s of enabledStarts) delete flow.stepRunning[s.id];
@@ -4493,10 +4893,7 @@
     flow.stressAbort = false;
     render();
     try {
-      const summary = await executeFlowOnce({ quiet: false, onlyStartId: startId });
-      if (!summary.ok && summary.error) {
-        void notify(summary.failNode ? `${summary.failNode}: ${summary.error}` : summary.error);
-      }
+      await executeFlowOnce({ quiet: false, onlyStartId: startId });
     } finally {
       delete flow.stepRunning[startId];
       save();
@@ -4529,19 +4926,16 @@
     }
     const step = owners[0];
     node.ownerStepId = step?.id || "";
-    const vars = { ...flow.sharedVars };
+    const vars = buildRunVars(step, node);
     flow.nodeRunning = node.id;
     node.result = { ok: true, status: "运行中", ms: 0 };
     render();
     try {
-      const result = node.kind === "variable"
-        ? runVariableNode(node, vars, step?.id)
-        : await invokeRpcNode(client, node, hit, vars, "run", step);
+      if (node.kind === "variable") runVariableNode(node, vars, step?.id);
+      else await invokeRpcNode(client, node, hit, vars, "run", step);
       flow.sharedVars = { ...flow.sharedVars, ...vars };
-      if (!result.ok) void notify(`${node.name || hit?.rpc?.name || "节点"}: ${result.error || result.status || "运行失败"}`);
     } catch (error) {
       node.result = { ok: false, status: "ERROR", error: error?.message || String(error), ms: 0 };
-      void notify(node.result.error);
     } finally {
       flow.nodeRunning = false;
       save();
@@ -4605,13 +4999,19 @@
       rows.splice(Number(button.getAttribute("data-variable-remove")), 1);
       renderVariableRows(rows);
     });
-    $("flowAddSelectedBtn")?.addEventListener("click", addSelected);
     $("flowClearBtn")?.addEventListener("click", clearCanvas);
     $("flowRunBtn")?.addEventListener("click", () => void runFlow());
     $("flowDefaultEnv")?.addEventListener("change", (event) => {
       api()?.setActiveEnvId?.(event.target.value);
       render();
     });
+    $("flowEnvConfigBtn")?.addEventListener("click", () => $("envConfigBtn")?.click());
+    syncFlowTlsFromMain();
+    $("flowTlsCheck")?.addEventListener("change", () => {
+      const main = $("tlsCheck");
+      if (main) main.checked = Boolean($("flowTlsCheck")?.checked);
+    });
+    $("tlsCheck")?.addEventListener("change", syncFlowTlsFromMain);
     $("flowUndoBtn")?.addEventListener("click", undoStep);
     $("flowRedoBtn")?.addEventListener("click", redoStep);
     // 浮动工具栏展开/收起（状态记在 localStorage）
@@ -4630,7 +5030,36 @@
     });
     $("closeFlowVars")?.addEventListener("click", () => $("flowVarsModal")?.classList.remove("show"));
     $("closeFlowVarsFoot")?.addEventListener("click", () => $("flowVarsModal")?.classList.remove("show"));
+    $("addFlowVarBtn")?.addEventListener("click", addVar);
     $("clearFlowVarsBtn")?.addEventListener("click", clearVars);
+    $("globalVarsBtn")?.addEventListener("click", openGlobalVarsModal);
+    $("flowGlobalVarsBtn")?.addEventListener("click", openGlobalVarsModal);
+    $("flowVarsBody")?.addEventListener("click", (event) => {
+      const del = event.target.closest?.("[data-var-del]");
+      if (!del) return;
+      deleteVar(del.getAttribute("data-var-del"));
+    });
+    $("flowVarsBody")?.addEventListener("change", (event) => {
+      const row = event.target.closest?.("[data-var-key]");
+      if (!row) return;
+      const key = row.getAttribute("data-var-key");
+      if (event.target.matches?.("[data-var-name]")) renameVar(key, event.target.value);
+      if (event.target.matches?.("[data-var-value]")) setVarValue(key, event.target.value);
+    });
+    $("flowVarsBody")?.addEventListener("focusout", (event) => {
+      const row = event.target.closest?.("[data-var-key]");
+      if (!row || !event.target.matches?.("[data-var-name]")) return;
+      const key = row.getAttribute("data-var-key");
+      if (event.target.value.trim() !== key) renameVar(key, event.target.value);
+    });
+    $("flowInspectClose")?.addEventListener("click", () => closeFlowNodeInspect({ sync: true }));
+    $("flowInspectExpand")?.addEventListener("click", expandInspectToClient);
+    document.addEventListener("pointerdown", (event) => {
+      if (!flow.inspectNodeId || !isFlowOpen()) return;
+      if (Date.now() < inspectIgnoreOutsideUntil) return;
+      if (!isInspectOutsideTarget(event.target)) return;
+      closeFlowNodeInspect({ sync: true });
+    }, true);
     $("flowExportBtn")?.addEventListener("click", exportFlow);
     $("flowImportBtn")?.addEventListener("click", requestImportFlow);
     window.addEventListener("protoview-flow-add", (event) => {
@@ -4804,11 +5233,7 @@
       const nodeId = flow.menuNodeId;
       hideMenu();
       if (!nodeId || !act) return;
-      if (act === "view-definition") {
-        const node = flow.nodes.find((item) => item.id === nodeId);
-        if (node?.rpcId && api()?.showRpcDefinition?.(node.rpcId)) closeFlow();
-        else void notify("找不到接口，请检查 Proto 来源");
-      }
+      if (act === "view-definition") openFlowNodeInspect(nodeId);
       if (act === "edit") openEdit(nodeId);
       if (act === "duplicate") duplicateNode(nodeId);
       if (act === "view-resp") {
@@ -4822,6 +5247,19 @@
           void closeNodeStream(n).then(() => render());
         }
       }
+      if (act === "enable") {
+        const ids = flow.selectedNodeIds.has(nodeId) && flow.selectedNodeIds.size > 1
+          ? flow.selectedNodeIds
+          : [nodeId];
+        setNodesEnabled(ids, true);
+      }
+      if (act === "disable") {
+        const ids = flow.selectedNodeIds.has(nodeId) && flow.selectedNodeIds.size > 1
+          ? flow.selectedNodeIds
+          : [nodeId];
+        setNodesEnabled(ids, false);
+      }
+      if (act === "run") void runMenuTargets(nodeId);
       if (act === "delete") {
         deleteNodes(flow.selectedNodeIds.has(nodeId) ? flow.selectedNodeIds : [nodeId]);
       }
@@ -4954,11 +5392,15 @@
 
     let dragNodes = null;
     let dragOrigin = null;
+    let dragMoved = false;
+    let pressNodeId = null;
+    let nodeClickWatch = { id: null, at: 0 };
 
     stage.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || event.altKey) return;
       const out = event.target.closest?.("[data-port-out]");
       if (out) {
+        pressNodeId = null;
         const fromId = out.getAttribute("data-port-out");
         const pos = screenToWorld(event.clientX, event.clientY);
         flow.link = { from: fromId, x: pos.x, y: pos.y };
@@ -4972,17 +5414,23 @@
         event.stopPropagation();
         return;
       }
+      const nodeEl = event.target.closest?.("[data-node]");
+      pressNodeId = nodeEl?.getAttribute("data-node") || null;
       const head = event.target.closest?.("[data-drag]");
       if (head) {
         const id = head.getAttribute("data-drag");
         const node = flow.nodes.find((n) => n.id === id);
         if (!node) return;
+        // 只改选中态，避免 render() 重建节点打断双击
         if (!flow.selectedNodeIds.has(id)) {
           flow.selectedNodeIds = new Set([id]);
-          render();
+          for (const el of stage.querySelectorAll(".flow-node[data-node]")) {
+            el.classList.toggle("selected", flow.selectedNodeIds.has(el.getAttribute("data-node")));
+          }
         }
         dragNodes = flow.nodes.filter((item) => flow.selectedNodeIds.has(item.id)).map((item) => ({ node: item, x: item.x, y: item.y }));
         dragOrigin = screenToWorld(event.clientX, event.clientY);
+        dragMoved = false;
         stage.setPointerCapture(event.pointerId);
         event.stopPropagation();
       }
@@ -4997,6 +5445,8 @@
       }
       if (dragNodes && dragOrigin) {
         const pos = screenToWorld(event.clientX, event.clientY);
+        if (Math.hypot(pos.x - dragOrigin.x, pos.y - dragOrigin.y) > 3) dragMoved = true;
+        if (!dragMoved) return;
         for (const item of dragNodes) { item.node.x = item.x + pos.x - dragOrigin.x; item.node.y = item.y + pos.y - dragOrigin.y; }
         render();
       }
@@ -5009,12 +5459,33 @@
         paintLinkPreview();
         const toId = linkTargetAt(event.clientX, event.clientY, fromId);
         if (toId) connectNodes(fromId, toId);
+        pressNodeId = null;
+        return;
       }
+      const moved = dragMoved;
       if (dragNodes) {
         dragNodes = null;
         dragOrigin = null;
-        commit();
+        if (moved) commit();
+        dragMoved = false;
       }
+      // 自建双击：pointer capture 后 event.target 可能是 stage，需用 pressNodeId
+      const id = pressNodeId;
+      pressNodeId = null;
+      if (event.button !== 0 || moved || !id) {
+        if (!id) nodeClickWatch = { id: null, at: 0 };
+        return;
+      }
+      if (event.target.closest?.("button, input, select, textarea, a, .flow-float-tools, #mainClient")) return;
+      const now = Date.now();
+      if (nodeClickWatch.id === id && now - nodeClickWatch.at < 380) {
+        nodeClickWatch = { id: null, at: 0 };
+        hideMenu();
+        hideEdgeMenu();
+        openFlowNodeInspect(id);
+        return;
+      }
+      nodeClickWatch = { id, at: now };
     });
     stage.addEventListener("pointercancel", () => {
       if (dragNodes) {
@@ -5081,6 +5552,17 @@
       selectEdge(edgeEl.getAttribute("data-edge"));
     });
 
+    stage.addEventListener("dblclick", (event) => {
+      if (event.target.closest?.("button, input, select, textarea, a, .flow-float-tools, #mainClient")) return;
+      const nodeEl = event.target.closest?.("[data-node]");
+      if (!nodeEl) return;
+      event.preventDefault();
+      event.stopPropagation();
+      hideMenu();
+      hideEdgeMenu();
+      nodeClickWatch = { id: null, at: 0 };
+      openFlowNodeInspect(nodeEl.getAttribute("data-node"));
+    });
     stage.addEventListener("contextmenu", (event) => {
       if (suppressContextMenu || (panning && panMoved)) {
         suppressContextMenu = false;

@@ -718,7 +718,7 @@
   function selectRpc(id, opts = {}) {
     const hit = findRpc(id);
     if (!hit) return;
-    if (state.selected && state.messageDirty) persistCurrentDraft();
+    if (state.selected && state.messageDirty && !opts.skipPersist) persistCurrentDraft();
     const { pkg, service, rpc } = hit;
     state.expanded.add(`pkg:${pkg.name}`);
     state.expanded.add(`svc:${service.id}`);
@@ -726,8 +726,8 @@
     els.methodLabel.textContent = `${pkg.name}.${service.name}/${rpc.name}`;
     els.sendBtn.disabled = false;
 
-    const draft = state.drafts[rpc.id];
-    if (draft && !opts.forceGenerate) {
+    const draft = opts.draft || (!opts.forceGenerate ? state.drafts[rpc.id] : null);
+    if (draft) {
       els.messageEditor.value = draft.message || generateMessage(rpc);
       state.metadata = Array.isArray(draft.metadata) && draft.metadata.length
         ? draft.metadata
@@ -759,7 +759,7 @@
     paintDocs();
     refreshGhzCommand();
     renderTree();
-    setTab(state.tab);
+    setTab(opts.tab || state.tab);
   }
 
   function renderRpcInfo() {
@@ -2425,9 +2425,56 @@
     findRpc,
     showRpcDefinition(id) {
       if (!findRpc(id)) return false;
-      selectRpc(id);
-      setTab("docs");
+      selectRpc(id, { tab: "docs" });
       return true;
+    },
+    /** 链路双击节点：用节点自身 payload 打开 Client 面板 */
+    loadFlowInspectDraft(payload = {}) {
+      const rpcId = payload.rpcId;
+      if (!rpcId || !findRpc(rpcId)) return false;
+      let messageText = "{}";
+      try {
+        if (typeof payload.message === "string") messageText = payload.message || "{}";
+        else if (payload.message && typeof payload.message === "object") {
+          messageText = JSON.stringify(payload.message, null, 2);
+        }
+      } catch {
+        messageText = "{}";
+      }
+      selectRpc(rpcId, {
+        skipPersist: true,
+        tab: payload.tab || "docs",
+        draft: {
+          message: messageText,
+          metadata: Array.isArray(payload.metadata) && payload.metadata.length
+            ? payload.metadata
+            : [{ name: "", value: "", description: "" }],
+          protocol: payload.protocol || "grpc",
+          httpMethod: payload.httpMethod || "POST",
+          httpPath: payload.httpPath || "",
+        },
+      });
+      return true;
+    },
+    /** 读回 Client 面板内容，写回链路节点 */
+    readFlowInspectDraft() {
+      if (!state.selected) return null;
+      persistCurrentDraft();
+      let message = {};
+      try {
+        message = parseJsonPreserveLongs(els.messageEditor.value || "{}");
+        message = normalizeBodyLongs(message, state.selected.requestFields || []);
+      } catch {
+        message = {};
+      }
+      return {
+        rpcId: state.selected.id,
+        message,
+        metadata: Array.isArray(state.metadata) ? state.metadata.map((row) => ({ ...row })) : [],
+        protocol: $("protocolSelect")?.value || "grpc",
+        httpMethod: $("httpMethodSelect")?.value || "POST",
+        httpPath: $("httpPath")?.value || "",
+      };
     },
     displayResponseEnums,
     getType(typeId) {
@@ -2726,6 +2773,179 @@
 
     apply();
   }
+
+  const globalSearch = {
+    items: [],
+    active: 0,
+    open: false,
+  };
+
+  function collectGlobalSearchItems() {
+    const items = [];
+    for (const pkg of state.catalog.packages || []) {
+      for (const service of pkg.services || []) {
+        for (const rpc of service.rpcs || []) {
+          items.push({
+            kind: "rpc",
+            id: rpc.id,
+            title: rpc.name,
+            sub: `${pkg.name}.${service.name}`,
+            hay: `${rpc.name} ${pkg.name} ${service.name} ${rpc.comment || ""} ${rpc.request || ""} ${rpc.response || ""}`.toLowerCase(),
+          });
+        }
+      }
+      for (const en of pkg.enums || []) {
+        const values = (en.values || []).map((v) => v.name).join(" ");
+        items.push({
+          kind: "enum",
+          id: en.id,
+          title: en.name,
+          sub: `${pkg.name} · enum`,
+          hay: `${en.name} ${pkg.name} ${en.comment || ""} ${values}`.toLowerCase(),
+        });
+      }
+    }
+    return items;
+  }
+
+  function filterGlobalSearch(query) {
+    const q = String(query || "").trim().toLowerCase();
+    const all = collectGlobalSearchItems();
+    if (!q) return all.slice(0, 80);
+    const parts = q.split(/\s+/).filter(Boolean);
+    const scored = [];
+    for (const item of all) {
+      let score = 0;
+      let ok = true;
+      for (const part of parts) {
+        const idx = item.hay.indexOf(part);
+        if (idx < 0) { ok = false; break; }
+        score += idx === 0 || item.title.toLowerCase().startsWith(part) ? 40 : 10;
+        score += item.title.toLowerCase().includes(part) ? 20 : 0;
+      }
+      if (ok) scored.push({ item, score });
+    }
+    scored.sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title));
+    return scored.slice(0, 80).map((row) => row.item);
+  }
+
+  function renderGlobalSearchList() {
+    const list = $("globalSearchList");
+    if (!list) return;
+    if (!globalSearch.items.length) {
+      list.innerHTML = `<div class="global-search-empty">没有匹配的接口或枚举</div>`;
+      return;
+    }
+    list.innerHTML = globalSearch.items.map((item, index) => `
+      <button class="global-search-item${index === globalSearch.active ? " active" : ""}" type="button" data-gs-index="${index}">
+        <span class="global-search-kind">${item.kind === "enum" ? "枚举" : "接口"}</span>
+        <span class="global-search-title">${esc(item.title)}</span>
+        <span class="global-search-sub">${esc(item.sub)}</span>
+      </button>
+    `).join("");
+    list.querySelector(".global-search-item.active")?.scrollIntoView({ block: "nearest" });
+  }
+
+  function openGlobalSearch() {
+    const mask = $("globalSearchMask");
+    const input = $("globalSearchInput");
+    if (!mask || !input) return;
+    globalSearch.open = true;
+    globalSearch.items = filterGlobalSearch("");
+    globalSearch.active = 0;
+    mask.classList.add("show");
+    mask.setAttribute("aria-hidden", "false");
+    input.value = "";
+    renderGlobalSearchList();
+    requestAnimationFrame(() => input.focus());
+  }
+
+  function closeGlobalSearch() {
+    const mask = $("globalSearchMask");
+    if (!mask) return;
+    globalSearch.open = false;
+    mask.classList.remove("show");
+    mask.setAttribute("aria-hidden", "true");
+  }
+
+  function revealTreeTarget(attr, value) {
+    const el = [...(els.tree?.querySelectorAll(`[${attr}]`) || [])]
+      .find((node) => node.getAttribute(attr) === value);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.add("flash-hit");
+    window.setTimeout(() => el.classList.remove("flash-hit"), 1200);
+  }
+
+  function applyGlobalSearchItem(item) {
+    if (!item) return;
+    closeGlobalSearch();
+    if (item.kind === "enum") {
+      selectType(item.id);
+      requestAnimationFrame(() => revealTreeTarget("data-type-id", item.id));
+      return;
+    }
+    selectRpc(item.id, { tab: "docs" });
+    requestAnimationFrame(() => revealTreeTarget("data-rpc", item.id));
+  }
+
+  function moveGlobalSearchActive(delta) {
+    if (!globalSearch.items.length) return;
+    const next = (globalSearch.active + delta + globalSearch.items.length) % globalSearch.items.length;
+    globalSearch.active = next;
+    renderGlobalSearchList();
+  }
+
+  $("globalSearchInput")?.addEventListener("input", () => {
+    globalSearch.items = filterGlobalSearch($("globalSearchInput").value);
+    globalSearch.active = 0;
+    renderGlobalSearchList();
+  });
+  $("globalSearchList")?.addEventListener("click", (event) => {
+    const btn = event.target.closest?.("[data-gs-index]");
+    if (!btn) return;
+    const index = Number(btn.getAttribute("data-gs-index"));
+    applyGlobalSearchItem(globalSearch.items[index]);
+  });
+  $("globalSearchMask")?.addEventListener("mousedown", (event) => {
+    if (event.target === $("globalSearchMask")) closeGlobalSearch();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (globalSearch.open) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeGlobalSearch();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveGlobalSearchActive(1);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveGlobalSearchActive(-1);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        applyGlobalSearchItem(globalSearch.items[globalSearch.active]);
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        return;
+      }
+    }
+    if (event.key !== "Tab" || event.ctrlKey || event.metaKey || event.altKey) return;
+    const active = document.activeElement;
+    const tag = active?.tagName;
+    const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || active?.isContentEditable;
+    if (typing) return;
+    if (document.querySelector(".modal-mask.show")) return;
+    event.preventDefault();
+    openGlobalSearch();
+  });
 
   setTab("message");
   renderMetadata();

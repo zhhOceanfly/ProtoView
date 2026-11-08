@@ -375,6 +375,13 @@ export class ClientPanel {
       <div class="sidebar-resize" id="sidebarResize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" tabindex="0"></div>
     </div>
     <main class="main" id="mainClient">
+      <div class="flow-inspect-bar hidden" id="flowInspectBar">
+        <strong id="flowInspectTitle">节点定义</strong>
+        <span class="flow-inspect-hint">双击打开 · 点外侧收回</span>
+        <span class="spacer"></span>
+        <button class="btn" id="flowInspectExpand" type="button" title="关闭链路，进入完整 Client">在 Client 打开</button>
+        <button class="icon-btn" id="flowInspectClose" type="button" title="关闭">✕</button>
+      </div>
       <div class="topbar">
         <button class="icon-btn sidebar-toggle" data-sidebar-toggle type="button" title="收起侧栏" aria-label="收起侧栏">◧</button>
         <select class="pill" id="protocolSelect" title="协议">
@@ -393,6 +400,7 @@ export class ClientPanel {
         <input class="pill hidden http-path" id="httpPath" placeholder="/path" title="HTTP 路径" />
         <select class="pill" id="envSelect" title="环境"></select>
         <button class="btn" id="envConfigBtn" type="button">环境配置</button>
+        <button class="btn" id="globalVarsBtn" type="button" title="全局变量（优先级低于步骤/节点）">变量</button>
         <input class="pill addr" id="address" placeholder="gRPC host:port" />
         <div class="pill method" id="methodLabel">未选择接口</div>
         <button class="btn" id="grpcurlBtn" type="button" title="Generate grpcurl command">&lt;/&gt;</button>
@@ -547,7 +555,9 @@ export class ClientPanel {
         <span class="flow-hint">左键框选 · 拖动节点移动 · 右键拖动平移 · 右键节点操作</span>
         <div class="spacer"></div>
         <label class="flow-default-env">当前环境 <select id="flowDefaultEnv"></select></label>
-        <button class="btn" id="flowAddSelectedBtn" type="button">添加选中接口</button>
+        <button class="btn" id="flowEnvConfigBtn" type="button">环境配置</button>
+        <label class="tls-toggle" title="不勾选时使用明文 gRPC"><input id="flowTlsCheck" type="checkbox" /> TLS</label>
+        <button class="btn" id="flowGlobalVarsBtn" type="button" title="全局变量（优先级低于步骤/节点）">变量</button>
         <button class="btn primary" id="flowRunBtn" type="button">运行链路</button>
         <button class="btn" id="flowExportBtn" type="button" title="导出当前链路节点与连线配置">导出</button>
         <button class="btn" id="flowImportBtn" type="button" title="从文件导入链路配置">导入</button>
@@ -575,6 +585,9 @@ export class ClientPanel {
         <button type="button" data-flow-act="view-resp">查看响应</button>
         <button type="button" data-flow-act="send-msg" class="hidden">收发消息</button>
         <button type="button" data-flow-act="close-stream" class="hidden">关闭连接</button>
+        <button type="button" data-flow-act="enable">启用</button>
+        <button type="button" data-flow-act="disable">禁用</button>
+        <button type="button" data-flow-act="run">运行</button>
         <button type="button" data-flow-act="delete">删除</button>
       </div>
     </main>
@@ -697,10 +710,11 @@ export class ClientPanel {
         <button class="icon-btn" id="closeFlowVars" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note">发送时可用 <code>{{变量名}}</code> 引用。</p>
+        <p class="stress-note" id="flowVarsHint">发送时可用 <code>{{变量名}}</code> 引用。同名优先级：节点 › 步骤 › 全局。</p>
         <div id="flowVarsBody" class="flow-vars-list"></div>
       </div>
       <div class="modal-foot">
+        <button class="btn" id="addFlowVarBtn" type="button">添加变量</button>
         <button class="btn" id="clearFlowVarsBtn" type="button">清空变量</button>
         <button class="btn primary" id="closeFlowVarsFoot" type="button">关闭</button>
       </div>
@@ -748,9 +762,9 @@ export class ClientPanel {
         <button class="icon-btn" id="closeFlowTpl" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note">模板保存在当前工作区的 .protoview/templates 目录。</p>
+        <p class="stress-note">模板保存在 .protoview/templates，文件名按名称生成（如 tpl_玩家登录.json），名称不可重复。</p>
         <div class="flow-tpl-save">
-          <input id="flowTplName" placeholder="模板名称，如：玩家登录 + 事件流" />
+          <input id="flowTplName" placeholder="唯一模板名称，如：玩家登录" />
           <button class="btn" id="saveFlowTplBtn" type="button">保存当前画布</button>
         </div>
         <div id="flowTplList" class="flow-tpl-list"></div>
@@ -895,6 +909,13 @@ export class ClientPanel {
       <div class="modal-foot">
         <button class="btn primary" id="applyBulkBtn" type="button">应用</button>
       </div>
+    </div>
+  </div>
+  <div class="global-search-mask" id="globalSearchMask" aria-hidden="true">
+    <div class="global-search" role="dialog" aria-label="全局搜索">
+      <input class="global-search-input" id="globalSearchInput" type="text" placeholder="搜索接口 / 枚举…" autocomplete="off" spellcheck="false" />
+      <div class="global-search-list" id="globalSearchList"></div>
+      <div class="global-search-hint">Tab 打开 · ↑↓ 选择 · Enter 定位 · Esc 关闭</div>
     </div>
   </div>
   <div class="ai-overlay" id="aiOverlay">

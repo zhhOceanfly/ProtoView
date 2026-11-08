@@ -334,16 +334,41 @@ export async function saveEnvFileAt(root: string, data: ClientEnvFile): Promise<
   await fs.writeFile(file, `${JSON.stringify({ envs: data.envs }, null, 2)}\n`, "utf8");
 }
 
+function isValidTemplateId(raw: unknown): raw is string {
+  if (typeof raw !== "string") return false;
+  const id = raw.trim();
+  if (!id.startsWith("tpl_") || id.length < 5 || id.length > 120) return false;
+  if (/[<>:"/\\|?*\x00-\x1f]/.test(id) || id.includes("..")) return false;
+  return true;
+}
+
 export async function handleTemplates(root: string, type: string, id: string, payload: unknown, send: HostSend): Promise<void> {
   try {
     if (!root) throw new Error("请先打开工作区");
     const dir = path.join(root, ".protoview", "templates");
     if (type !== "loadTemplates") {
-      const template = payload as { id?: unknown } | undefined;
-      if (typeof template?.id !== "string" || !/^tpl_[a-z0-9_]+$/i.test(template.id)) throw new Error("模板 ID 无效");
+      const template = payload as { id?: unknown; name?: unknown } | undefined;
+      if (!isValidTemplateId(template?.id)) throw new Error("模板 ID 无效");
       const file = path.join(dir, `${template.id}.json`);
       if (type === "saveTemplate") {
+        const name = String(template?.name || "").trim();
+        if (!name) throw new Error("模板名称不能为空");
         await fs.mkdir(dir, { recursive: true });
+        let files: string[] = [];
+        try { files = await fs.readdir(dir); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        for (const entry of files) {
+          if (!/^tpl_.+\.json$/i.test(entry)) continue;
+          if (entry.toLowerCase() === `${template.id}.json`.toLowerCase()) continue;
+          try {
+            const existing = JSON.parse(await fs.readFile(path.join(dir, entry), "utf8")) as { name?: unknown };
+            if (String(existing?.name || "").trim() === name) {
+              throw new Error(`模板名称「${name}」已存在`);
+            }
+          } catch (error) {
+            if (error instanceof Error && error.message.startsWith("模板名称")) throw error;
+          }
+        }
         await fs.writeFile(file, `${JSON.stringify(template, null, 2)}\n`, "utf8");
       } else {
         await fs.unlink(file);
@@ -352,7 +377,7 @@ export async function handleTemplates(root: string, type: string, id: string, pa
     let files: string[] = [];
     try { files = await fs.readdir(dir); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-    const templates = await Promise.all(files.filter((file) => /^tpl_[a-z0-9_]+\.json$/i.test(file)).map(async (file) => JSON.parse(await fs.readFile(path.join(dir, file), "utf8"))));
+    const templates = await Promise.all(files.filter((file) => /^tpl_.+\.json$/i.test(file)).map(async (file) => JSON.parse(await fs.readFile(path.join(dir, file), "utf8"))));
     templates.sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
     send({ type: "templatesResult", id, templates });
   } catch (error) {
