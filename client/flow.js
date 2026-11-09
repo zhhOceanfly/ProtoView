@@ -432,6 +432,7 @@
       httpMethod: node.httpMethod || "POST",
       httpPath: node.httpPath || "/",
       envId: node.envId || "",
+      tls: typeof node.tls === "boolean" ? node.tls : null,
       streamPlan: normalizeStreamPlan(node.streamPlan),
       heartbeatMessage: node.heartbeatMessage && typeof node.heartbeatMessage === "object" ? node.heartbeatMessage : {},
       bytesDecode: node.bytesDecode && typeof node.bytesDecode === "object" ? { ...node.bytesDecode } : {},
@@ -579,6 +580,7 @@
       httpMethod: String(item.httpMethod || (item.protocol === "sse" ? "GET" : "POST")),
       httpPath: String(item.httpPath || "/"),
       envId: String(item.envId || ""),
+      tls: typeof item.tls === "boolean" ? item.tls : null,
       streamPlan: normalizeStreamPlan(item.streamPlan),
       heartbeatMessage: item.heartbeatMessage && typeof item.heartbeatMessage === "object" ? item.heartbeatMessage : {},
       bytesDecode: item.bytesDecode && typeof item.bytesDecode === "object" ? { ...item.bytesDecode } : {},
@@ -615,8 +617,15 @@
       .replace(/"/g, "&quot;");
   }
 
+  function resolveNodeEnvId(node) {
+    const envs = api()?.listEnvs?.() || [];
+    const raw = String(node?.envId || "");
+    if (raw && envs.some((item) => item.id === raw)) return raw;
+    return "";
+  }
+
   function nodeEnvironment(node) {
-    const id = node.envId || api()?.getActiveEnvId?.() || "";
+    const id = resolveNodeEnvId(node) || api()?.getActiveEnvId?.() || "";
     const env = (api()?.listEnvs?.() || []).find((item) => item.id === id);
     if (!env) return { error: id ? `环境不存在：${id}，请选择有效环境` : "未配置环境，请先选择环境" };
     if (!String(env.host || "").trim()) return { error: `环境「${env.name}」未配置地址` };
@@ -627,6 +636,11 @@
     const flowBox = $("flowTlsCheck");
     if (flowBox) return Boolean(flowBox.checked);
     return Boolean($("tlsCheck")?.checked);
+  }
+
+  function nodeTlsEnabled(node) {
+    if (typeof node?.tls === "boolean") return node.tls;
+    return flowTlsEnabled();
   }
 
   function syncFlowTlsFromMain() {
@@ -1288,6 +1302,7 @@
           httpMethod: hit?.rpc.httpVerb || "POST",
           httpPath: hit?.rpc.httpPath || "/",
           envId: "",
+          tls: null,
           streamPlan: normalizeStreamPlan({}),
           bytesDecode: {},
           decodeExtra: [],
@@ -1999,13 +2014,15 @@
     if (pathEl) pathEl.value = node.httpPath || hit?.rpc.httpPath || "/";
     if (envEl) {
       const envs = api()?.listEnvs?.() || [];
-      const selected = node.envId || "";
-      const missing = selected && !envs.some((env) => env.id === selected);
+      // 无效/缺失环境一律回落到「跟随当前环境」
+      const selected = resolveNodeEnvId(node);
+      if (node.envId && node.envId !== selected) node.envId = "";
       envEl.innerHTML = `<option value="">跟随当前环境</option>`
-        + (missing ? `<option value="${esc(selected)}">环境不存在：${esc(selected)}</option>` : "")
         + envs.map((env) => `<option value="${esc(env.id)}">${esc(env.name)}</option>`).join("");
       envEl.value = selected;
     }
+    const tlsEl = $("flowNodeTls");
+    if (tlsEl) tlsEl.checked = nodeTlsEnabled(node);
     syncNodeTransportUi();
   }
 
@@ -2376,7 +2393,10 @@
     node.protocol = normalizeNodeProtocol($("flowNodeProtocol")?.value);
     node.httpMethod = $("flowNodeHttpMethod")?.value || (node.protocol === "sse" ? "GET" : "POST");
     node.httpPath = $("flowNodeHttpPath")?.value || "/";
-    node.envId = $("flowNodeEnv")?.value ?? node.envId ?? "";
+    node.envId = $("flowNodeEnv")?.value || "";
+    const tlsChecked = Boolean($("flowNodeTls")?.checked);
+    // 与顶栏一致时保持跟随，避免每个节点写死
+    node.tls = tlsChecked === flowTlsEnabled() ? null : tlsChecked;
     const hit = api()?.findRpc?.(node.rpcId);
     if (hit?.rpc?.requestStream && node.protocol === "grpc") {
       const intervalRaw = $("flowStreamHbInterval")?.value;
@@ -3195,6 +3215,7 @@
       file: hit.rpc.file,
       body: openBody || {},
       metadata,
+      tls: nodeTlsEnabled(node),
     });
     if (!opened.ok || !opened.streamId) {
       node.result = { ok: false, status: opened.status || "ERROR", ms: opened.ms, error: opened.error };
@@ -3691,7 +3712,7 @@
       file: hit.rpc.file,
       body: buildBody(node.message || {}, buildRunVars(step, node), hit.rpc.requestFields || []),
       metadata,
-      tls: flowTlsEnabled(),
+      tls: nodeTlsEnabled(node),
     };
   }
 
@@ -4543,7 +4564,7 @@
       file: hit.rpc.file,
       body,
       metadata,
-      tls: flowTlsEnabled(),
+      tls: nodeTlsEnabled(node),
     };
 
     // 客户端流 / 双向流：保持连接，节点显示 CONNECTED，可供右键续发
@@ -5308,39 +5329,91 @@
     const selectionBox = document.createElement("div");
     selectionBox.className = "flow-selection-box hidden";
     stage.appendChild(selectionBox);
+
+    function beginBoxSelect(event) {
+      const rect = stage.getBoundingClientRect();
+      selection = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+        moved: false,
+        button: event.button,
+      };
+      flow.selectedNodeIds.clear();
+      for (const el of stage.querySelectorAll(".flow-node[data-node]")) el.classList.remove("selected");
+      try { stage.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+      event.preventDefault();
+    }
+
+    function beginLinkDrag(fromId, event) {
+      if (!fromId) return false;
+      const pos = screenToWorld(event.clientX, event.clientY);
+      flow.link = {
+        from: fromId,
+        x: pos.x,
+        y: pos.y,
+        button: event.button,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false,
+      };
+      try { stage.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+      stage.classList.add("flow-connecting");
+      hideMenu();
+      hideEdgeMenu();
+      paintLinkPreview();
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
+
     stage.addEventListener("pointerdown", (event) => {
-      const onBlank = !event.target.closest?.("[data-node], [data-edge], button, input, select, .flow-float-tools")
+      const onNode = event.target.closest?.("[data-node]");
+      const onBlank = !event.target.closest?.("[data-node], [data-edge], button, input, select, .flow-float-tools, #mainClient")
         && (event.target === stage || event.target.closest?.("#flowEdges, #flowWorld"));
       if (onBlank) {
-        // 点空白处取消连线选中
         if (flow.selectedEdgeId) selectEdge(null);
         hideEdgeMenu();
       }
-      if (event.button === 1 || event.button === 2 || (event.button === 0 && event.altKey)) {
+      // 右键按住节点：拖出连线（实时预览）
+      if (event.button === 2 && onNode) {
+        beginLinkDrag(onNode.getAttribute("data-node"), event);
+        return;
+      }
+      // 右键空白 / 中键 / Alt+左键：平移画布
+      if (event.button === 2 && onBlank || event.button === 1 || (event.button === 0 && event.altKey)) {
         panning = true;
         stage.classList.add("flow-panning");
         panMoved = false;
         panOrigin = { x: event.clientX - flow.panX, y: event.clientY - flow.panY, startX: event.clientX, startY: event.clientY, button: event.button };
-        if (event.button !== 2) stage.setPointerCapture(event.pointerId);
+        try { stage.setPointerCapture(event.pointerId); } catch { /* ignore */ }
         event.preventDefault();
-      } else if (event.button === 0 && onBlank) {
-        const rect = stage.getBoundingClientRect();
-        selection = { x: event.clientX - rect.left, y: event.clientY - rect.top, moved: false };
-        flow.selectedNodeIds.clear();
-        render();
-        stage.setPointerCapture(event.pointerId);
-        event.preventDefault();
+        return;
+      }
+      // 左键空白：框选
+      if (event.button === 0 && onBlank) {
+        beginBoxSelect(event);
       }
     });
     stage.addEventListener("pointermove", (event) => {
+      if (flow.link) {
+        const pos = screenToWorld(event.clientX, event.clientY);
+        if (Math.hypot(event.clientX - flow.link.startX, event.clientY - flow.link.startY) > 4) flow.link.moved = true;
+        flow.link.x = pos.x;
+        flow.link.y = pos.y;
+        paintLinkPreview();
+        return;
+      }
       if (panning && panOrigin) {
         if (Math.hypot(event.clientX - panOrigin.startX, event.clientY - panOrigin.startY) > 3) panMoved = true;
         if (panMoved) {
-          if (!stage.hasPointerCapture(event.pointerId)) stage.setPointerCapture(event.pointerId);
+          if (!stage.hasPointerCapture(event.pointerId)) {
+            try { stage.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+          }
           flow.panX = event.clientX - panOrigin.x;
           flow.panY = event.clientY - panOrigin.y;
           applyTransform();
         }
+        return;
       }
       if (selection) {
         const rect = stage.getBoundingClientRect();
@@ -5361,8 +5434,33 @@
         }
       }
     });
-    stage.addEventListener("pointerup", () => {
-      if (panning && panMoved) { save(); if (panOrigin?.button === 2) { suppressContextMenu = true; setTimeout(() => { suppressContextMenu = false; }, 500); } }
+    stage.addEventListener("pointerup", (event) => {
+      if (flow.link) {
+        const link = flow.link;
+        const fromId = link.from;
+        const moved = Boolean(link.moved);
+        flow.link = null;
+        stage.classList.remove("flow-connecting");
+        paintLinkPreview();
+        if (moved) {
+          const toId = linkTargetAt(event.clientX, event.clientY, fromId);
+          if (toId) connectNodes(fromId, toId);
+          if (link.button === 2) {
+            suppressContextMenu = true;
+            setTimeout(() => { suppressContextMenu = false; }, 500);
+          }
+        }
+        // 右键未拖动：交给 contextmenu 弹出节点菜单
+        pressNodeId = null;
+        return;
+      }
+      if (panning && panMoved) {
+        save();
+        if (panOrigin?.button === 2) {
+          suppressContextMenu = true;
+          setTimeout(() => { suppressContextMenu = false; }, 500);
+        }
+      }
       panning = false;
       stage.classList.remove("flow-panning");
       panOrigin = null;
@@ -5401,17 +5499,7 @@
       const out = event.target.closest?.("[data-port-out]");
       if (out) {
         pressNodeId = null;
-        const fromId = out.getAttribute("data-port-out");
-        const pos = screenToWorld(event.clientX, event.clientY);
-        flow.link = { from: fromId, x: pos.x, y: pos.y };
-        // 指针捕获：拖出画布也能继续画线，松开时能正确收尾
-        try { out.setPointerCapture(event.pointerId); } catch { /* ignore */ }
-        stage.classList.add("flow-connecting");
-        hideMenu();
-        hideEdgeMenu();
-        paintLinkPreview();
-        event.preventDefault();
-        event.stopPropagation();
+        beginLinkDrag(out.getAttribute("data-port-out"), event);
         return;
       }
       const nodeEl = event.target.closest?.("[data-node]");
@@ -5436,13 +5524,7 @@
       }
     });
     stage.addEventListener("pointermove", (event) => {
-      if (flow.link) {
-        const pos = screenToWorld(event.clientX, event.clientY);
-        flow.link.x = pos.x;
-        flow.link.y = pos.y;
-        paintLinkPreview();
-        return;
-      }
+      if (flow.link) return;
       if (dragNodes && dragOrigin) {
         const pos = screenToWorld(event.clientX, event.clientY);
         if (Math.hypot(pos.x - dragOrigin.x, pos.y - dragOrigin.y) > 3) dragMoved = true;
@@ -5452,16 +5534,7 @@
       }
     });
     stage.addEventListener("pointerup", (event) => {
-      if (flow.link) {
-        const fromId = flow.link.from;
-        flow.link = null;
-        stage.classList.remove("flow-connecting");
-        paintLinkPreview();
-        const toId = linkTargetAt(event.clientX, event.clientY, fromId);
-        if (toId) connectNodes(fromId, toId);
-        pressNodeId = null;
-        return;
-      }
+      if (flow.link) return;
       const moved = dragMoved;
       if (dragNodes) {
         dragNodes = null;
@@ -5492,13 +5565,13 @@
         for (const item of dragNodes) { item.node.x = item.x; item.node.y = item.y; }
         render();
       }
-      panning = false; panOrigin = null; selection = null; dragNodes = null; dragOrigin = null;
-      stage.classList.remove("flow-panning");
+      panning = false; panOrigin = null; selection = null; dragNodes = null; dragOrigin = null; dragMoved = false;
+      stage.classList.remove("flow-panning", "flow-connecting");
       selectionBox.classList.add("hidden");
-      if (!flow.link) return;
-      flow.link = null;
-      stage.classList.remove("flow-connecting");
-      paintLinkPreview();
+      if (flow.link) {
+        flow.link = null;
+        paintLinkPreview();
+      }
     });
 
     stage.addEventListener("change", (event) => {

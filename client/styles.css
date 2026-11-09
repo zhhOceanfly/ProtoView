@@ -459,12 +459,20 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   min-width: 110px;
 }
 .flow-node-transport select,
-.flow-node-transport input {
+.flow-node-transport input:not([type="checkbox"]) {
   border: 1px solid var(--border);
   background: var(--input);
   border-radius: 8px;
   padding: 7px 10px;
   color: var(--text);
+}
+.flow-node-transport .flow-node-tls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-bottom: 8px;
+  grid-template-columns: none;
 }
 .flow-drawer-mask {
   position: absolute;

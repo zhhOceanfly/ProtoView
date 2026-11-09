@@ -552,7 +552,6 @@ export class ClientPanel {
       <div class="flow-topbar">
         <button class="icon-btn sidebar-toggle" data-sidebar-toggle type="button" title="收起侧栏" aria-label="收起侧栏">◧</button>
         <strong>链路调试</strong>
-        <span class="flow-hint">左键框选 · 拖动节点移动 · 右键拖动平移 · 右键节点操作</span>
         <div class="spacer"></div>
         <label class="flow-default-env">当前环境 <select id="flowDefaultEnv"></select></label>
         <button class="btn" id="flowEnvConfigBtn" type="button">环境配置</button>
@@ -654,6 +653,9 @@ export class ClientPanel {
             </label>
             <label>环境
               <select id="flowNodeEnv"></select>
+            </label>
+            <label class="tls-toggle flow-node-tls" title="默认跟随顶栏 TLS；可单独覆盖">
+              <input id="flowNodeTls" type="checkbox" /> TLS
             </label>
           </div>
           <p class="stress-note" id="flowStreamTypeHint"></p>
