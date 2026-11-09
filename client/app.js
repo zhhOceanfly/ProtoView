@@ -225,6 +225,17 @@
     },
   };
 
+  const GS_KIND_LABEL = { rpc: "接口", enum: "枚举", func: "函数", const: "常量" };
+  const globalSearch = {
+    items: [],
+    active: 0,
+    open: false,
+    tab: "all",
+    codeItems: [],
+    codeLoaded: false,
+    codeLoading: false,
+  };
+
   const $ = (id) => document.getElementById(id);
   const els = {
     tree: $("tree"),
@@ -2551,7 +2562,12 @@
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data) return;
-    if (data.type === "bootstrap") applyBootstrap(data);
+    if (data.type === "bootstrap") {
+      applyBootstrap(data);
+      globalSearch.codeLoaded = false;
+      globalSearch.codeItems = [];
+    }
+    if (data.type === "codeSymbols") applyCodeSymbols(data);
     if (data.type === "invokeResult") {
       if (state.pendingInvoke && data.id && data.id !== state.pendingInvoke) return;
       showInvokeResult(data);
@@ -2774,13 +2790,7 @@
     apply();
   }
 
-  const globalSearch = {
-    items: [],
-    active: 0,
-    open: false,
-  };
-
-  function collectGlobalSearchItems() {
+  function collectProtoSearchItems() {
     const items = [];
     for (const pkg of state.catalog.packages || []) {
       for (const service of pkg.services || []) {
@@ -2795,17 +2805,65 @@
         }
       }
       for (const en of pkg.enums || []) {
-        const values = (en.values || []).map((v) => v.name).join(" ");
+        const values = en.values || [];
+        const valueNames = values.map((v) => v.name).join(" ");
         items.push({
           kind: "enum",
           id: en.id,
           title: en.name,
           sub: `${pkg.name} · enum`,
-          hay: `${en.name} ${pkg.name} ${en.comment || ""} ${values}`.toLowerCase(),
+          hay: `${en.name} ${pkg.name} ${en.comment || ""} ${valueNames}`.toLowerCase(),
         });
+        for (const value of values) {
+          items.push({
+            kind: "const",
+            id: en.id,
+            title: value.name,
+            sub: `${pkg.name}.${en.name}`,
+            hay: `${value.name} ${en.name} ${pkg.name} ${value.comment || ""}`.toLowerCase(),
+            fromEnum: true,
+          });
+        }
       }
     }
     return items;
+  }
+
+  function ensureCodeSymbols() {
+    if (globalSearch.codeLoaded || globalSearch.codeLoading || !vscode) return;
+    globalSearch.codeLoading = true;
+    vscode.postMessage({ type: "loadCodeSymbols" });
+  }
+
+  function applyCodeSymbols(data) {
+    globalSearch.codeLoading = false;
+    globalSearch.codeLoaded = true;
+    const list = Array.isArray(data?.items) ? data.items : [];
+    globalSearch.codeItems = list.map((item) => ({
+      kind: item.kind === "const" ? "const" : "func",
+      title: String(item.title || ""),
+      sub: String(item.sub || ""),
+      file: String(item.file || ""),
+      line: Number(item.line || 1) || 1,
+      hay: String(item.hay || `${item.title || ""} ${item.sub || ""}`).toLowerCase(),
+    })).filter((item) => item.title);
+    if (globalSearch.open) refreshGlobalSearchList();
+  }
+
+  function collectGlobalSearchItems() {
+    const tab = globalSearch.tab || "all";
+    const proto = collectProtoSearchItems();
+    const code = globalSearch.codeItems || [];
+    if (tab === "rpc") return proto.filter((item) => item.kind === "rpc");
+    if (tab === "enum") return proto.filter((item) => item.kind === "enum");
+    if (tab === "func") return code.filter((item) => item.kind === "func");
+    if (tab === "const") {
+      return [
+        ...proto.filter((item) => item.kind === "const"),
+        ...code.filter((item) => item.kind === "const"),
+      ];
+    }
+    return [...proto.filter((item) => item.kind === "rpc" || item.kind === "enum"), ...code];
   }
 
   function filterGlobalSearch(query) {
@@ -2829,20 +2887,53 @@
     return scored.slice(0, 80).map((row) => row.item);
   }
 
+  function refreshGlobalSearchList() {
+    globalSearch.items = filterGlobalSearch($("globalSearchInput")?.value || "");
+    if (globalSearch.active >= globalSearch.items.length) globalSearch.active = 0;
+    renderGlobalSearchList();
+  }
+
+  function renderGlobalSearchTabs() {
+    const tabs = $("globalSearchTabs");
+    if (!tabs) return;
+    for (const btn of tabs.querySelectorAll("[data-gs-tab]")) {
+      const on = btn.getAttribute("data-gs-tab") === globalSearch.tab;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    }
+  }
+
+  function setGlobalSearchTab(tab) {
+    const next = ["all", "rpc", "enum", "func", "const"].includes(tab) ? tab : "all";
+    globalSearch.tab = next;
+    if (next === "func" || next === "const" || next === "all") ensureCodeSymbols();
+    renderGlobalSearchTabs();
+    globalSearch.active = 0;
+    refreshGlobalSearchList();
+  }
+
   function renderGlobalSearchList() {
     const list = $("globalSearchList");
     if (!list) return;
     if (!globalSearch.items.length) {
-      list.innerHTML = `<div class="global-search-empty">没有匹配的接口或枚举</div>`;
+      const loading = (globalSearch.tab === "func" || globalSearch.tab === "const" || globalSearch.tab === "all")
+        && globalSearch.codeLoading;
+      list.innerHTML = `<div class="global-search-empty">${loading ? "正在扫描项目代码…" : "没有匹配结果"}</div>`;
       return;
     }
-    list.innerHTML = globalSearch.items.map((item, index) => `
-      <button class="global-search-item${index === globalSearch.active ? " active" : ""}" type="button" data-gs-index="${index}">
-        <span class="global-search-kind">${item.kind === "enum" ? "枚举" : "接口"}</span>
+    list.innerHTML = globalSearch.items.map((item, index) => {
+      const kind = GS_KIND_LABEL[item.kind] || item.kind;
+      const addBtn = item.kind === "rpc"
+        ? `<button class="global-search-add" type="button" data-gs-add="${index}" title="添加到画布">添加</button>`
+        : "";
+      return `
+      <div class="global-search-item${index === globalSearch.active ? " active" : ""}" role="option" data-gs-index="${index}">
+        <span class="global-search-kind is-${esc(item.kind)}">${kind}</span>
         <span class="global-search-title">${esc(item.title)}</span>
         <span class="global-search-sub">${esc(item.sub)}</span>
-      </button>
-    `).join("");
+        ${addBtn}
+      </div>`;
+    }).join("");
     list.querySelector(".global-search-item.active")?.scrollIntoView({ block: "nearest" });
   }
 
@@ -2851,12 +2942,13 @@
     const input = $("globalSearchInput");
     if (!mask || !input) return;
     globalSearch.open = true;
-    globalSearch.items = filterGlobalSearch("");
     globalSearch.active = 0;
     mask.classList.add("show");
     mask.setAttribute("aria-hidden", "false");
     input.value = "";
-    renderGlobalSearchList();
+    renderGlobalSearchTabs();
+    ensureCodeSymbols();
+    refreshGlobalSearchList();
     requestAnimationFrame(() => input.focus());
   }
 
@@ -2877,16 +2969,61 @@
     window.setTimeout(() => el.classList.remove("flash-hit"), 1200);
   }
 
+  function openCodeSymbol(item) {
+    if (!item?.file) {
+      setRespBadge("err", "未找到源码位置");
+      return;
+    }
+    if (!vscode) {
+      const loc = `${item.file}:${item.line || 1}`;
+      if (navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(loc).then(
+          () => setRespBadge("ok", `已复制路径 ${loc}`),
+          () => setRespBadge("err", loc),
+        );
+      }
+      return;
+    }
+    if (isVsCodeWebview) {
+      vscode.postMessage({ type: "openSource", file: item.file, line: item.line || 1 });
+      return;
+    }
+    const target = getOpenWithTarget();
+    if (target === "preview") {
+      setRespBadge("wait", "加载源码…");
+      vscode.postMessage({ type: "readSource", file: item.file, line: item.line || 1 });
+      return;
+    }
+    vscode.postMessage({
+      type: "openSource",
+      file: item.file,
+      line: item.line || 1,
+      editor: target === "auto" ? "" : target,
+    });
+    setRespBadge("ok", "正在打开源码…");
+  }
+
   function applyGlobalSearchItem(item) {
     if (!item) return;
     closeGlobalSearch();
-    if (item.kind === "enum") {
+    if (item.kind === "func" || (item.kind === "const" && item.file)) {
+      openCodeSymbol(item);
+      return;
+    }
+    if (item.kind === "enum" || (item.kind === "const" && item.fromEnum)) {
       selectType(item.id);
       requestAnimationFrame(() => revealTreeTarget("data-type-id", item.id));
       return;
     }
     selectRpc(item.id, { tab: "docs" });
     requestAnimationFrame(() => revealTreeTarget("data-rpc", item.id));
+  }
+
+  function addGlobalSearchRpcToCanvas(item) {
+    if (!item || item.kind !== "rpc") return;
+    placeFlowRpc(item.id, item.title);
+    closeGlobalSearch();
+    setRespBadge("ok", `已添加 ${item.title} 到画布`);
   }
 
   function moveGlobalSearchActive(delta) {
@@ -2897,14 +3034,27 @@
   }
 
   $("globalSearchInput")?.addEventListener("input", () => {
-    globalSearch.items = filterGlobalSearch($("globalSearchInput").value);
     globalSearch.active = 0;
-    renderGlobalSearchList();
+    refreshGlobalSearchList();
+  });
+  $("globalSearchTabs")?.addEventListener("click", (event) => {
+    const tab = event.target.closest?.("[data-gs-tab]");
+    if (!tab) return;
+    setGlobalSearchTab(tab.getAttribute("data-gs-tab"));
+    $("globalSearchInput")?.focus();
   });
   $("globalSearchList")?.addEventListener("click", (event) => {
-    const btn = event.target.closest?.("[data-gs-index]");
-    if (!btn) return;
-    const index = Number(btn.getAttribute("data-gs-index"));
+    const add = event.target.closest?.("[data-gs-add]");
+    if (add) {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(add.getAttribute("data-gs-add"));
+      addGlobalSearchRpcToCanvas(globalSearch.items[index]);
+      return;
+    }
+    const row = event.target.closest?.("[data-gs-index]");
+    if (!row) return;
+    const index = Number(row.getAttribute("data-gs-index"));
     applyGlobalSearchItem(globalSearch.items[index]);
   });
   $("globalSearchMask")?.addEventListener("mousedown", (event) => {
@@ -2927,13 +3077,38 @@
         moveGlobalSearchActive(-1);
         return;
       }
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        const order = ["all", "rpc", "enum", "func", "const"];
+        const idx = order.indexOf(globalSearch.tab);
+        if (idx >= 0 && event.target === $("globalSearchInput")) {
+          // keep arrows for text caret when input has selection intent; only cycle tabs with Alt
+        }
+        if (event.altKey) {
+          event.preventDefault();
+          const next = event.key === "ArrowRight"
+            ? order[(idx + 1) % order.length]
+            : order[(idx - 1 + order.length) % order.length];
+          setGlobalSearchTab(next);
+          return;
+        }
+      }
       if (event.key === "Enter") {
         event.preventDefault();
+        if (event.shiftKey) {
+          addGlobalSearchRpcToCanvas(globalSearch.items[globalSearch.active]);
+          return;
+        }
         applyGlobalSearchItem(globalSearch.items[globalSearch.active]);
         return;
       }
       if (event.key === "Tab") {
         event.preventDefault();
+        const order = ["all", "rpc", "enum", "func", "const"];
+        const idx = Math.max(0, order.indexOf(globalSearch.tab));
+        const next = event.shiftKey
+          ? order[(idx - 1 + order.length) % order.length]
+          : order[(idx + 1) % order.length];
+        setGlobalSearchTab(next);
         return;
       }
     }

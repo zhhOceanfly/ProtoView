@@ -21,6 +21,7 @@ const CORE_FILES = [
   "parser.js",
   "clientModel.js",
   "sourceCore.js",
+  "codeSymbols.js",
   "openEditor.js",
   "grpcInvoke.js",
   "decodeBytes.js",

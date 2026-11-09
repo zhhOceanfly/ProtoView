@@ -12,6 +12,7 @@ import { decodeBytesMessage } from "./decodeBytes";
 import { closeGrpcStream, GrpcInvokeRequest, openGrpcStream, writeGrpcStream } from "./grpcInvoke";
 import { cancelStress, runStress } from "./grpcStress";
 import { dispatchInvoke } from "./invokeDispatch";
+import { collectCodeSymbols } from "./codeSymbols";
 import { openSource } from "./panel";
 import { ProtoSourceConfig } from "./source";
 import { handleTemplates } from "./hostCore";
@@ -117,6 +118,12 @@ export class ClientPanel {
       if (message.type === "ready") {
         this.ready = true;
         await this.postBootstrap();
+        return;
+      }
+      if (message.type === "loadCodeSymbols") {
+        const root = this.codeRoot();
+        const items = root ? await collectCodeSymbols(root) : [];
+        this.post({ type: "codeSymbols", items, root });
         return;
       }
       if (message.type === "refresh") {
@@ -324,6 +331,15 @@ export class ClientPanel {
       source: this.sourceState,
       qr: qr.toString(),
     });
+  }
+
+  private codeRoot(): string {
+    if (this.sourceState.mode === "git") {
+      return this.sourceState.localPath || "";
+    }
+    return this.sourceState.dirPath
+      || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+      || "";
   }
 
   private htmlFor(webview: vscode.Webview): string {
@@ -915,9 +931,16 @@ export class ClientPanel {
   </div>
   <div class="global-search-mask" id="globalSearchMask" aria-hidden="true">
     <div class="global-search" role="dialog" aria-label="全局搜索">
-      <input class="global-search-input" id="globalSearchInput" type="text" placeholder="搜索接口 / 枚举…" autocomplete="off" spellcheck="false" />
+      <input class="global-search-input" id="globalSearchInput" type="text" placeholder="搜索接口 / 枚举 / 函数 / 常量…" autocomplete="off" spellcheck="false" />
+      <div class="global-search-tabs" id="globalSearchTabs" role="tablist">
+        <button class="global-search-tab active" type="button" role="tab" data-gs-tab="all" aria-selected="true">全部</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="rpc" aria-selected="false">接口</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="enum" aria-selected="false">枚举</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="func" aria-selected="false">函数</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="const" aria-selected="false">常量</button>
+      </div>
       <div class="global-search-list" id="globalSearchList"></div>
-      <div class="global-search-hint">Tab 打开 · ↑↓ 选择 · Enter 定位 · Esc 关闭</div>
+      <div class="global-search-hint">Tab 切换分类 · ↑↓ 选择 · Enter 定位 · Shift+Enter 添加接口 · Esc 关闭</div>
     </div>
   </div>
   <div class="ai-overlay" id="aiOverlay">

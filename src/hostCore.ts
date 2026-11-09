@@ -13,6 +13,7 @@ import { closeGrpcStream, openGrpcStream, writeGrpcStream } from "./grpcInvoke";
 import { InvokePayload, dispatchInvoke } from "./invokeDispatch";
 import { openInEditor } from "./openEditor";
 import { ProtoParseError, parseProto } from "./parser";
+import { collectCodeSymbols } from "./codeSymbols";
 import {
   ProtoSourceConfig,
   collectProtoFiles,
@@ -72,6 +73,14 @@ export class ClientHost {
     return `目录 · ${path.basename(root)}`;
   }
 
+  /** 扫描函数/常量的代码根：Git 本地仓或自定义/工作区目录 */
+  private codeRoot(): string {
+    if (this.source.mode === "git") {
+      return this.source.localPath || "";
+    }
+    return this.source.dirPath?.trim() || this.workspaceRoot;
+  }
+
   async reload(syncGit = true): Promise<void> {
     if (this.source.mode === "git") {
       if (syncGit || !this.source.localPath) {
@@ -110,6 +119,12 @@ export class ClientHost {
     const type = message.type;
     if (type === "ready") {
       await this.postBootstrap(send);
+      return;
+    }
+    if (type === "loadCodeSymbols") {
+      const root = this.codeRoot();
+      const items = root ? await collectCodeSymbols(root) : [];
+      send({ type: "codeSymbols", items, root });
       return;
     }
     if (type === "refresh") {

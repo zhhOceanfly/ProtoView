@@ -590,9 +590,16 @@
 
   <div class="global-search-mask" id="globalSearchMask" aria-hidden="true">
     <div class="global-search" role="dialog" aria-label="全局搜索">
-      <input class="global-search-input" id="globalSearchInput" type="text" placeholder="搜索接口 / 枚举…" autocomplete="off" spellcheck="false" />
+      <input class="global-search-input" id="globalSearchInput" type="text" placeholder="搜索接口 / 枚举 / 函数 / 常量…" autocomplete="off" spellcheck="false" />
+      <div class="global-search-tabs" id="globalSearchTabs" role="tablist">
+        <button class="global-search-tab active" type="button" role="tab" data-gs-tab="all" aria-selected="true">全部</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="rpc" aria-selected="false">接口</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="enum" aria-selected="false">枚举</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="func" aria-selected="false">函数</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="const" aria-selected="false">常量</button>
+      </div>
       <div class="global-search-list" id="globalSearchList"></div>
-      <div class="global-search-hint">Tab 打开 · ↑↓ 选择 · Enter 定位 · Esc 关闭</div>
+      <div class="global-search-hint">Tab 切换分类 · ↑↓ 选择 · Enter 定位 · Shift+Enter 添加接口 · Esc 关闭</div>
     </div>
   </div>
 
