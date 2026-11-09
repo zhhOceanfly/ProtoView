@@ -16,6 +16,7 @@ import { ProtoParseError, parseProto } from "./parser";
 import { collectCodeSymbols } from "./codeSymbols";
 import { buildCallGraph } from "./callGraph";
 import { excelCatalog, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
+import { handleOceanMessage } from "./oceanMessages";
 import {
   ProtoSourceConfig,
   collectProtoFiles,
@@ -119,6 +120,11 @@ export class ClientHost {
     id?: string;
   }, send: HostSend): Promise<void> {
     const type = message.type;
+    const ocean = await handleOceanMessage(type, message.payload, this.codeRoot(), this.workspaceRoot);
+    if (ocean) {
+      send(ocean);
+      return;
+    }
     if (type === "ready") {
       await this.postBootstrap(send);
       return;

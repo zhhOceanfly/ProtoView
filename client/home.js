@@ -21,6 +21,11 @@
     sheetFilter: "",
     activeFile: "",
     activeSheetId: "",
+    excelPage: 0,
+    excelPageSize: 60,
+    excelEditing: false,
+    docsPage: 0,
+    docsPageSize: 60,
     searchTimer: 0,
     searchSeq: 0,
     /** 首页搜索命中的 proto / 函数结果 */
@@ -28,7 +33,13 @@
   };
 
   // ===== 视图切换 =====
-  const VIEW_IDS = { home: "homeView", excel: "excelView", client: "app" };
+  const VIEW_IDS = { home: "homeView", excel: "excelView", docs: "docsClient", db: "dbView", client: "app" };
+  const VIEW_LABEL = {
+    client: "ProtoView Client",
+    excel: "ExcelView Client",
+    docs: "DocsView Client",
+    db: "DbView Client",
+  };
 
   /** 首页复用 Client 标签：只切内容，不新增标签 */
   function setView(view) {
@@ -41,6 +52,8 @@
     document.body.dataset.view = view;
     renderTabs();
     if (view === "excel") ensureExcelCatalog();
+    if (view === "docs") window.ProtoViewDocs?.ensure?.();
+    if (view === "db") window.ProtoViewDb?.ensure?.();
     if (view === "home") requestAnimationFrame(() => $("homeSearch")?.focus());
   }
 
@@ -54,7 +67,7 @@
     if (!state.tabs.some((tab) => tab.id === id)) {
       state.tabs.push({ id, label, closable: true });
     }
-    if (id === "excel") setView("excel");
+    if (id === "excel" || id === "docs" || id === "db") setView(id);
     else setView("client");
     renderTabs();
   }
@@ -143,9 +156,13 @@
     });
     if (!files.length) {
       list.innerHTML = `<div class="excel-empty">${state.sheets.length ? "没有匹配的表" : "未找到 Excel 文件"}</div>`;
+      window.ProtoViewPager?.renderPager?.($("excelPager"), { page: 0, pages: 1, total: 0 }, () => {});
       return;
     }
-    list.innerHTML = files.map(([file, sheets]) => {
+    const pager = window.ProtoViewPager || { paginate: (items) => ({ slice: items, page: 0, pages: 1, total: items.length }), renderPager: () => {} };
+    const result = pager.paginate(files, state.excelPage || 0, state.excelPageSize || 60);
+    state.excelPage = result.page;
+    list.innerHTML = result.slice.map(([file, sheets]) => {
       const name = sheets[0]?.fileName || file.split("/").pop() || file;
       const rows = sheets.reduce((sum, sheet) => sum + Number(sheet.dataCount || 0), 0);
       return `
@@ -154,6 +171,10 @@
         <span class="excel-item-meta">${sheets.length} 个 Sheet · ${rows} 行</span>
       </button>`;
     }).join("");
+    pager.renderPager($("excelPager"), result, (page) => {
+      state.excelPage = page;
+      renderExcelList();
+    });
   }
 
   function renderSheetTabs() {
@@ -204,7 +225,8 @@
       return `<tr class="excel-row${target}"><td class="excel-rowno">${row.row}</td>${page.columns
         .map((_, index) => {
           const value = row.cells[index] ?? "";
-          return `<td class="excel-cell" contenteditable="true" spellcheck="false"
+          const editable = state.excelEditing && !/\.xls$/i.test(page.relative || "");
+          return `<td class="excel-cell" ${editable ? 'contenteditable="true"' : ""} spellcheck="false"
             data-row="${row.row}" data-col="${index}">${esc(value)}</td>`;
         })
         .join("")}</tr>`;
@@ -224,7 +246,7 @@
   /** 单元格编辑：失焦或回车时写回文件 */
   function commitExcelCell(cell) {
     const page = state.page;
-    if (!cell || !page) return;
+    if (!state.excelEditing || !cell || !page) return;
     const row = Number(cell.getAttribute("data-row"));
     const col = Number(cell.getAttribute("data-col"));
     if (!Number.isFinite(row) || !Number.isFinite(col)) return;
@@ -279,7 +301,7 @@
   }
 
   // ===== 首页搜索（复用 Tab 全局搜索的全类型数据源） =====
-  const HOME_KIND_LABEL = { rpc: "接口", enum: "枚举", func: "函数", const: "常量", excel: "Excel" };
+  const HOME_KIND_LABEL = { rpc: "接口", enum: "枚举", func: "函数", const: "常量", excel: "Excel", docs: "文档", db: "数据表" };
 
   /** 从 app.js 的全局搜索数据源取 proto / 代码符号，命中后转成首页条目 */
   function collectProtoAndCodeHits(query) {
@@ -312,14 +334,24 @@
     // 先渲染本地命中的 proto / 函数，Excel 结果回来了再追加
     if (protoHits.length) renderHomeHits(protoHits);
 
+    state.homeDocsHits = [];
+    state.homeDbHits = [];
     const seq = ++state.searchSeq;
     clearTimeout(state.searchTimer);
     state.searchTimer = window.setTimeout(() => {
       if (seq !== state.searchSeq) return;
       pendingHomeExcel = true;
-      if (!post("excelSearch", { query }) && state.homeProtoHits.length) {
-        pendingHomeExcel = false;
-      }
+      if (!post("excelSearch", { query }) && state.homeProtoHits.length) pendingHomeExcel = false;
+      window.ProtoViewDocs?.search?.(query, (hits) => {
+        if (seq !== state.searchSeq) return;
+        state.homeDocsHits = Array.isArray(hits) ? hits : [];
+        renderHomeHits(state.homeProtoHits, state.homeExcelHits);
+      });
+      window.ProtoViewDb?.search?.(query, (hits) => {
+        if (seq !== state.searchSeq) return;
+        state.homeDbHits = Array.isArray(hits) ? hits : [];
+        renderHomeHits(state.homeProtoHits, state.homeExcelHits);
+      });
     }, 180);
   }
 
@@ -344,7 +376,9 @@
     if (!box) return;
     const proto = Array.isArray(protoHits) ? protoHits : state.homeProtoHits;
     const excel = Array.isArray(excelHits) ? excelHits : [];
-    if (!proto.length && !excel.length) {
+    const docs = state.homeDocsHits || [];
+    const db = state.homeDbHits || [];
+    if (!proto.length && !excel.length && !docs.length && !db.length) {
       box.innerHTML = `<div class="home-result-empty">没有匹配的结果</div>`;
       box.classList.remove("hidden");
       return;
@@ -365,7 +399,21 @@
         _idx: index,
       }, "excel");
     }).join("");
-    box.innerHTML = `${protoHtml}${excelHtml}`;
+    const docsHtml = docs.map((hit, index) => homeHitHtml({
+      kind: "docs",
+      title: hit.title || hit.fileName,
+      sub: `${hit.relative || ""}${hit.count ? ` · ${hit.count} 处` : ""}`,
+      preview: hit.preview,
+      _idx: index,
+    }, "docs")).join("");
+    const dbHtml = db.map((hit, index) => homeHitHtml({
+      kind: "db",
+      title: hit.table || hit.fileName,
+      sub: `${hit.fileName || ""}${hit.count ? ` · ${hit.count} 处` : ""}`,
+      preview: hit.preview,
+      _idx: index,
+    }, "db")).join("");
+    box.innerHTML = `${protoHtml}${excelHtml}${docsHtml}${dbHtml}`;
     box.classList.remove("hidden");
     state.homeExcelHits = excel;
   }
@@ -384,7 +432,7 @@
   /** 打开 Excel 表：已开则复用标签 */
   function openExcelSheet(sheetId, row = 0) {
     if (!sheetId) return;
-    openTab("excel", "ExcelView");
+    openTab("excel", VIEW_LABEL.excel);
     setView("excel");
     ensureExcelCatalog();
     const trySelect = (attempt = 0) => {
@@ -416,7 +464,7 @@
       if (!tab) return;
       const id = tab.getAttribute("data-view-tab");
       if (id === "home") setView("home");
-      else if (id === "excel") setView("excel");
+      else if (id === "excel" || id === "docs" || id === "db") setView(id);
       else setView("client");
     });
 
@@ -425,14 +473,7 @@
       if (!card) return;
       const entry = card.getAttribute("data-home-entry");
       if (entry === "client") setView("client");
-      else if (entry === "excel") openTab("excel", "ExcelView");
-      else if (entry === "db") {        // DbView 复用调用链路图的 DB 视角：提示去函数 Tab 预览
-        const box = $("homeResults");
-        if (box) {
-          box.innerHTML = `<div class="home-result-empty">DbView：在 Tab 搜索里选「函数」→ 预览，即可查看该函数读写的表</div>`;
-          box.classList.remove("hidden");
-        }
-      }
+      else if (VIEW_LABEL[entry]) openTab(entry, VIEW_LABEL[entry]);
     });
 
     $("homeSearch")?.addEventListener("input", runHomeSearch);
@@ -458,11 +499,21 @@
       const btn = event.target.closest("[data-home-hit]");
       if (!btn) return;
       const index = Number(btn.getAttribute("data-home-idx") || 0);
-      const isExcel = btn.getAttribute("data-home-hit") === "excel";
-      if (isExcel) {
+      const kind = btn.getAttribute("data-home-hit");
+      if (kind === "excel") {
         const hit = state.homeExcelHits[index] || null;
         if (!hit) return;
         openExcelSheet(hit.sheetId, Number(hit.row) || 0);
+        return;
+      }
+      if (kind === "docs") {
+        const hit = state.homeDocsHits[index];
+        if (hit) window.ProtoViewDocs?.open?.(hit.id, hit.line || 1);
+        return;
+      }
+      if (kind === "db") {
+        const hit = state.homeDbHits[index];
+        if (hit) window.ProtoViewDb?.openTable?.(hit.id);
         return;
       }
       const item = state.homeProtoHits[index];
@@ -470,10 +521,30 @@
       openProtoHit(item);
     });
 
-    $("excelFilter")?.addEventListener("input", () => {
-      state.sheetFilter = $("excelFilter").value || "";
-      renderExcelList();
+    function paintExcelMode() {
+      for (const btn of document.querySelectorAll("[data-excel-mode]")) {
+        btn.classList.toggle("active", (btn.getAttribute("data-excel-mode") === "edit") === state.excelEditing);
+      }
+    }
+    $("excelMode")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-excel-mode]");
+      if (!btn) return;
+      state.excelEditing = btn.getAttribute("data-excel-mode") === "edit";
+      paintExcelMode();
+      if (state.page) applyExcelPage(state.page);
     });
+    $("excelJump")?.addEventListener("click", () => {
+      const sheet = state.sheets.find((item) => item.id === state.activeSheetId);
+      if (!sheet?.file) return;
+      window.ProtoViewClient?.openSourceFile?.(sheet.file, 1);
+    });
+    paintExcelMode();
+
+    $("excelFilter")?.addEventListener("input", () => {
+    state.sheetFilter = $("excelFilter").value || "";
+    state.excelPage = 0;
+    renderExcelList();
+  });
 
     $("excelList")?.addEventListener("click", (event) => {
       const item = event.target.closest("[data-excel-file]");
@@ -560,11 +631,127 @@
     },
     ensureCatalog: () => ensureExcelCatalog(),
     setView,
+    openTab,
+    tabs: () => state.tabs.map((tab) => ({ ...tab })),
   };
+
+  // ===== Excel/Docs/Db 侧栏：折叠 + 拖拽 + 分页 =====
+  const SIDE_KEYS = { excel: "excelView", docs: "docsClient", db: "dbView" };
+  const SIDE_WIDTH_KEY = "protoview.view.sideWidth";
+  const SIDE_COLLAPSE_KEY = "protoview.view.sideCollapsed";
+
+  function readSideWidth() {
+    const value = Number(localStorage.getItem(SIDE_WIDTH_KEY));
+    return Number.isFinite(value) && value >= 180 && value <= 520 ? value : 260;
+  }
+
+  function applySideWidth(view, width) {
+    const el = $(SIDE_KEYS[view]);
+    if (!el) return;
+    el.style.setProperty("--side-w", `${Math.round(width)}px`);
+  }
+
+  function readCollapsed() {
+    try {
+      return JSON.parse(localStorage.getItem(SIDE_COLLAPSE_KEY) || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function setCollapsed(view, collapsed) {
+    const el = $(SIDE_KEYS[view]);
+    if (!el) return;
+    el.classList.toggle("side-collapsed", Boolean(collapsed));
+    for (const button of el.querySelectorAll(`[data-side-collapse="${view}"]`)) {
+      button.title = collapsed ? "展开侧栏" : "收起侧栏";
+      button.setAttribute("aria-expanded", String(!collapsed));
+    }
+    const store = readCollapsed();
+    store[view] = Boolean(collapsed);
+    localStorage.setItem(SIDE_COLLAPSE_KEY, JSON.stringify(store));
+  }
+
+  function initSides() {
+    const width = readSideWidth();
+    const collapsed = readCollapsed();
+    for (const view of Object.keys(SIDE_KEYS)) {
+      applySideWidth(view, width);
+      setCollapsed(view, Boolean(collapsed[view]));
+    }
+    document.querySelectorAll("[data-side-collapse]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const view = button.getAttribute("data-side-collapse");
+        const el = $(SIDE_KEYS[view]);
+        setCollapsed(view, !el?.classList.contains("side-collapsed"));
+      });
+    });
+    document.querySelectorAll("[data-side-rail]").forEach((rail) => {
+      rail.addEventListener("pointerdown", (event) => {
+        const view = rail.getAttribute("data-side-rail");
+        const el = $(SIDE_KEYS[view]);
+        if (!el || event.button !== 0) return;
+        if (el.classList.contains("side-collapsed")) setCollapsed(view, false);
+        event.preventDefault();
+        document.body.classList.add("sidebar-resizing");
+        const move = (ev) => {
+          const box = el.querySelector(".excel-side").getBoundingClientRect();
+          const max = Math.max(180, el.getBoundingClientRect().width - 320);
+          const width2 = Math.min(max, Math.max(180, ev.clientX - box.left));
+          applySideWidth(view, width2);
+        };
+        const up = () => {
+          document.body.classList.remove("sidebar-resizing");
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+          const node = el.querySelector(".excel-side");
+          if (node) localStorage.setItem(SIDE_WIDTH_KEY, String(Math.round(node.getBoundingClientRect().width)));
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      });
+    });
+  }
+
+  /** 侧栏分页：total 条按 size 分页，返回当前页切片 */
+  function paginate(items, page, size) {
+    const total = items.length;
+    const pages = Math.max(1, Math.ceil(total / size));
+    const current = Math.min(Math.max(0, page), pages - 1);
+    return {
+      slice: items.slice(current * size, current * size + size),
+      page: current,
+      pages,
+      total,
+    };
+  }
+
+  function renderPager(node, result, onPage) {
+    if (!node) return;
+    if (result.pages <= 1) {
+      node.innerHTML = "";
+      return;
+    }
+    node.innerHTML = `
+      <button class="btn" type="button" data-side-page="-1" ${result.page <= 0 ? "disabled" : ""}>上一页</button>
+      <span class="pager-info">${result.page + 1} / ${result.pages}</span>
+      <button class="btn" type="button" data-side-page="1" ${result.page >= result.pages - 1 ? "disabled" : ""}>下一页</button>`;
+    node.onclick = (event) => {
+      const btn = event.target.closest("[data-side-page]");
+      if (!btn || btn.disabled) return;
+      onPage(result.page + Number(btn.getAttribute("data-side-page")));
+    };
+  }
+
+  window.ProtoViewPager = { paginate, renderPager };
+
+  initSides();
 
   let pendingSearch = null;
   let pendingHomeExcel = false;
   state.homeExcelHits = [];
+  state.homeDocsHits = [];
+  state.homeDbHits = [];
   state.page = null;
 
   bind();

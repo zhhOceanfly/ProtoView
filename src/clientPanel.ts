@@ -15,6 +15,7 @@ import { dispatchInvoke } from "./invokeDispatch";
 import { collectCodeSymbols } from "./codeSymbols";
 import { buildCallGraph } from "./callGraph";
 import { excelCatalog, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
+import { handleOceanMessage } from "./oceanMessages";
 import { openSource } from "./panel";
 import { ProtoSourceConfig } from "./source";
 import { handleTemplates } from "./hostCore";
@@ -85,7 +86,7 @@ export class ClientPanel {
     const mediaRoot = vscode.Uri.joinPath(this.extensionUri, "media");
     this.panel = vscode.window.createWebviewPanel(
       "protoview.client",
-      "ProtoView Client",
+      "OceanView",
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
       {
         enableScripts: true,
@@ -117,6 +118,16 @@ export class ClientPanel {
       line?: number;
       id?: string;
     }) => {
+      const ocean = await handleOceanMessage(
+        message.type,
+        message.payload,
+        this.codeRoot(),
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "",
+      );
+      if (ocean && this.panel) {
+        this.post(ocean);
+        return;
+      }
       if (message.type === "ready") {
         this.ready = true;
         await this.postBootstrap();
@@ -411,6 +422,8 @@ export class ClientPanel {
     const flowScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "flow.js"));
     const tplScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "flowTemplates.js"));
     const homeScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "home.js"));
+    const docsScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "docs.js"));
+    const dbScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "db.js"));
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource} 'unsafe-inline'`,
@@ -423,7 +436,7 @@ export class ClientPanel {
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ProtoView Client</title>
+  <title>OceanView</title>
   <link rel="stylesheet" href="${styles}" />
 </head>
 <body>
@@ -1031,6 +1044,8 @@ export class ClientPanel {
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="func" aria-selected="false">函数</button>
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="const" aria-selected="false">常量</button>
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="excel" aria-selected="false">Excel</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="docs" aria-selected="false">文档</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="db" aria-selected="false">数据表</button>
       </div>
       <div class="global-search-list" id="globalSearchList"></div>
       <div class="global-search-hint">Tab 切换分类 · ↑↓ 选择 · Enter 定位 · Shift+Enter 添加节点/看源码 · Esc 关闭</div>
@@ -1068,9 +1083,9 @@ export class ClientPanel {
   <div class="home-view hidden" id="homeView">
     <div class="home-inner">
       <div class="home-head">
-        <h1 class="home-title">Proto<span>View</span> 工作台</h1>
-        <p class="home-sub">选择入口快速开始，或直接搜索项目里的接口、函数、Excel 表</p>
-        <input class="home-search" id="homeSearch" type="text" placeholder="搜索接口 / 函数 / 常量 / Excel 表…" autocomplete="off" spellcheck="false" />
+        <h1 class="home-title">Ocean<span>View</span> 工作台</h1>
+        <p class="home-sub">选择入口快速开始，或直接搜索接口、文档、Excel 和数据表</p>
+        <input class="home-search" id="homeSearch" type="text" placeholder="搜索接口 / 函数 / 文档 / Excel / 数据表…" autocomplete="off" spellcheck="false" />
         <div class="home-results hidden" id="homeResults"></div>
       </div>
       <div class="home-grid" id="homeGrid">
@@ -1084,28 +1099,48 @@ export class ClientPanel {
           <strong>ExcelView</strong>
           <span class="home-card-desc">浏览项目里的 Excel / CSV 配置表</span>
         </button>
+        <button class="home-card" type="button" data-home-entry="docs">
+          <span class="home-card-icon">☰</span>
+          <strong>DocsView</strong>
+          <span class="home-card-desc">阅读项目里的 Markdown 文档</span>
+        </button>
         <button class="home-card" type="button" data-home-entry="db">
           <span class="home-card-icon">⛁</span>
           <strong>DbView</strong>
-          <span class="home-card-desc">查看函数读写的数据库表</span>
+          <span class="home-card-desc">按 SQL 文件浏览表，查询并编辑数据</span>
         </button>
       </div>
     </div>
   </div>
 
   <div class="excel-view hidden" id="excelView">
-    <aside class="excel-side">
+    <aside class="excel-side" id="excelSide">
       <div class="excel-side-head">
-        <strong>Excel 表</strong>
+        <div class="brand-row">
+          <div class="brand">Excel<span>View</span> Client</div>
+          <div class="side-tools">
+            <button class="icon-btn" type="button" data-theme-toggle title="切换亮/暗色">◐</button>
+            <button class="icon-btn" id="excelReload" type="button" title="刷新">↻</button>
+            <button class="btn ai-btn" type="button" data-open-ai title="AI"><span class="ai-spark">✦</span>AI</button>
+          </div>
+        </div>
         <input class="excel-filter" id="excelFilter" type="text" placeholder="筛选表名 / 文件…" autocomplete="off" />
       </div>
       <div class="excel-list" id="excelList"></div>
+      <div class="side-pager" id="excelPager"></div>
     </aside>
+    <div class="side-rail" data-side-rail="excel" role="separator" aria-orientation="vertical" title="拖动调整侧栏宽度"></div>
     <main class="excel-main">
       <div class="excel-bar">
+        <button class="icon-btn sidebar-toggle" type="button" data-side-collapse="excel" title="收起侧栏">◧</button>
         <strong id="excelTitle">选择左侧的表</strong>
         <span class="excel-meta" id="excelMeta"></span>
-        <button class="btn" id="excelReload" type="button">重新扫描</button>
+        <span class="spacer"></span>
+        <div class="docs-mode" id="excelMode">
+          <button class="btn active" type="button" data-excel-mode="read">阅读</button>
+          <button class="btn" type="button" data-excel-mode="edit">编辑</button>
+        </div>
+        <button class="btn" id="excelJump" type="button">跳转源码</button>
       </div>
       <div class="excel-sheets" id="excelSheets"></div>
       <div class="excel-table-wrap" id="excelTableWrap">
@@ -1113,12 +1148,192 @@ export class ClientPanel {
       </div>
     </main>
   </div>
+  <div class="docs-view hidden" id="docsClient">
+    <aside class="excel-side" id="docsSide">
+      <div class="excel-side-head">
+        <div class="brand-row">
+          <div class="brand">Docs<span>View</span> Client</div>
+          <div class="side-tools">
+            <button class="icon-btn" type="button" data-theme-toggle title="切换亮/暗色">◐</button>
+            <button class="icon-btn" id="docsReload" type="button" title="刷新">↻</button>
+            <button class="btn ai-btn" type="button" data-open-ai title="AI"><span class="ai-spark">✦</span>AI</button>
+          </div>
+        </div>
+        <input class="excel-filter" id="docsFilter" type="text" placeholder="筛选文档…" autocomplete="off" />
+      </div>
+      <div class="excel-list" id="docsList"></div>
+      <div class="side-pager" id="docsPager"></div>
+    </aside>
+    <div class="side-rail" data-side-rail="docs" role="separator" aria-orientation="vertical" title="拖动调整侧栏宽度"></div>
+    <main class="docs-main">
+      <div class="excel-bar">
+        <button class="icon-btn sidebar-toggle" type="button" data-side-collapse="docs" title="收起侧栏">◧</button>
+        <strong id="docsTitle">选择左侧的文档</strong>
+        <span class="excel-meta" id="docsMeta"></span>
+        <span class="spacer"></span>
+        <div class="docs-mode" id="docsMode">
+          <button class="btn active" type="button" data-docs-mode="preview">阅读</button>
+          <button class="btn" type="button" data-docs-mode="edit">编辑</button>
+          <button class="btn" type="button" data-docs-mode="split">分栏</button>
+        </div>
+        <button class="btn primary hidden" id="docsSave" type="button">保存</button>
+        <button class="btn" id="docsJump" type="button">跳转源码</button>
+      </div>
+      <div class="docs-body" id="docsBody"><div class="excel-empty">选择左侧的文档查看内容</div></div>
+      <div class="docs-editor hidden" id="docsEditor">
+        <div class="md-toolbar" id="docsToolbar">
+          <button class="btn" type="button" data-md="h1" title="标题 1">H1</button>
+          <button class="btn" type="button" data-md="h2" title="标题 2">H2</button>
+          <button class="btn" type="button" data-md="h3" title="标题 3">H3</button>
+          <button class="btn" type="button" data-md="bold" title="粗体"><b>B</b></button>
+          <button class="btn" type="button" data-md="italic" title="斜体"><i>I</i></button>
+          <button class="btn" type="button" data-md="strike" title="删除线"><s>S</s></button>
+          <button class="btn" type="button" data-md="code" title="行内代码">&lt;/&gt;</button>
+          <button class="btn" type="button" data-md="link" title="链接">链接</button>
+          <button class="btn" type="button" data-md="ul" title="无序列表">列表</button>
+          <button class="btn" type="button" data-md="ol" title="有序列表">1.</button>
+          <button class="btn" type="button" data-md="quote" title="引用">引用</button>
+          <button class="btn" type="button" data-md="fence" title="代码块">代码</button>
+          <button class="btn" type="button" data-md="table" title="表格">表格</button>
+          <button class="btn" type="button" data-md="hr" title="分隔线">—</button>
+          <span class="md-find">
+            <input id="docsFind" type="text" placeholder="搜索本文" autocomplete="off" />
+            <button class="btn" id="docsFindPrev" type="button" title="上一处">↑</button>
+            <button class="btn" id="docsFindNext" type="button" title="下一处">↓</button>
+            <span class="excel-meta" id="docsFindCount"></span>
+          </span>
+        </div>
+        <div class="md-stage">
+          <pre class="md-gutter" id="docsGutter" aria-hidden="true">1</pre>
+          <textarea class="docs-input" id="docsInput" spellcheck="false"></textarea>
+        </div>
+        <div class="docs-preview" id="docsPreview"></div>
+      </div>
+    </main>
+  </div>
+
+  <div class="db-view hidden" id="dbView">
+    <aside class="excel-side" id="dbSide">
+      <div class="excel-side-head">
+        <div class="brand-row">
+          <div class="brand">Db<span>View</span> Client</div>
+          <div class="side-tools">
+            <button class="icon-btn" id="dbTreeToggle" type="button" title="全部展开">▾</button>
+            <button class="icon-btn" type="button" data-theme-toggle title="切换亮/暗色">◐</button>
+            <button class="icon-btn" id="dbReload" type="button" title="刷新">↻</button>
+            <button class="btn ai-btn" type="button" data-open-ai title="AI"><span class="ai-spark">✦</span>AI</button>
+          </div>
+        </div>
+        <input class="excel-filter" id="dbFilter" type="text" placeholder="筛选 SQL 文件 / 表…" autocomplete="off" />
+      </div>
+      <div class="tree" id="dbTree"></div>
+      <div class="side-pager" id="dbPager"></div>
+    </aside>
+    <div class="side-rail" data-side-rail="db" role="separator" aria-orientation="vertical" title="拖动调整侧栏宽度"></div>
+    <main class="db-main">
+      <div class="db-top">
+        <button class="icon-btn sidebar-toggle" type="button" data-side-collapse="db" title="收起侧栏">◧</button>
+        <select class="pill" id="dbEnvSelect" title="数据库环境"></select>
+        <button class="btn" id="dbEnvBtn" type="button">环境配置</button>
+        <select class="pill" id="dbDatabaseSelect" title="要连接的库"></select>
+        <span class="excel-meta" id="dbEnvMeta"></span>
+        <span class="spacer"></span>
+        <strong id="dbTitle">选择左侧的表</strong>
+        <span class="excel-meta" id="dbPath"></span>
+        <div class="docs-mode" id="dbMode">
+          <button class="btn active" type="button" data-db-mode="read">阅读</button>
+          <button class="btn" type="button" data-db-mode="edit">编辑</button>
+        </div>
+        <button class="btn" id="dbJump" type="button">跳转源码</button>
+      </div>
+      <div class="tabs db-tabs" id="dbTabs">
+        <button class="tab active" type="button" data-db-tab="query">SQL / 数据</button>
+        <button class="tab" type="button" data-db-tab="ddl">表定义</button>
+      </div>
+      <div class="db-body" id="dbBody">
+        <section class="db-pane view active" id="dbQueryView">
+          <div class="db-stack" id="dbStack">
+            <div class="db-query-workspace workspace" id="dbQueryWorkspace">
+              <div class="db-sql-pane">
+                <div class="db-pane-bar">
+                  <span>SQL</span>
+                  <button class="btn primary" id="dbRunSql" type="button">执行</button>
+                  <span class="excel-meta" id="dbResultMeta"></span>
+                </div>
+                <textarea class="db-sql" id="dbSql" spellcheck="false" placeholder="SELECT * FROM player LIMIT 20"></textarea>
+              </div>
+              <div class="split-bar" id="dbSplitBar" title="拖动调整 SQL 与结果高度">
+                <button class="split-btn" id="dbCollapseSql" type="button" title="收起 SQL">▲</button>
+                <div class="split-grip" id="dbSplitHandle"></div>
+                <button class="split-btn" id="dbCollapseResult" type="button" title="收起结果">▼</button>
+              </div>
+              <div class="db-result-pane">
+                <div class="db-pane-bar">
+                  <span>结果</span>
+                  <span class="excel-meta" id="dbQueryMeta"></span>
+                </div>
+                <div class="excel-table-wrap" id="dbResultWrap"><div class="excel-empty">执行 SQL 后在这里看结果</div></div>
+              </div>
+            </div>
+            <div class="split-bar" id="dbStackBar" title="拖动调整查询区和表数据高度">
+              <div class="split-grip" id="dbStackHandle"></div>
+            </div>
+            <div class="db-table-block">
+              <div class="db-pane-bar">
+                <span>表数据</span>
+                <button class="btn" id="dbAddRow" type="button">新增行</button>
+                <button class="btn" id="dbRefreshRows" type="button">刷新</button>
+                <span class="excel-meta" id="dbTableMeta"></span>
+                <span class="spacer"></span>
+                <div class="pager db-row-pager" id="dbRowPager"></div>
+              </div>
+              <div class="excel-table-wrap" id="dbTableWrap"><div class="excel-empty">选择左侧 SQL 文件里的表</div></div>
+            </div>
+          </div>
+        </section>
+        <section class="db-pane view" id="dbDdlView">
+          <div class="db-pane-bar">
+            <span>表定义对比</span>
+            <span class="excel-meta" id="dbDdlMeta"></span>
+            <span class="spacer"></span>
+            <label class="db-diff-toggle"><input type="checkbox" id="dbDiffOnly" /> 只看差异</label>
+          </div>
+          <div class="db-diff" id="dbDdlWrap"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-mask" id="dbEnvModal">
+    <div class="modal">
+      <div class="modal-head">
+        <span>数据库环境</span>
+        <button class="icon-btn" id="dbEnvClose" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="env-list" id="dbEnvList"></div>
+        <label>名称<input id="dbEnvName" placeholder="local" /></label>
+        <label>主机<input id="dbEnvHost" placeholder="127.0.0.1" /></label>
+        <label>端口<input id="dbEnvPort" type="number" min="1" max="65535" placeholder="3306" /></label>
+        <label>用户<input id="dbEnvUser" placeholder="root" /></label>
+        <label>密码<input id="dbEnvPassword" type="password" /></label>
+        <p class="stress-note" id="dbTestResult"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="dbEnvTest" type="button">测试连接</button>
+        <button class="btn" id="dbEnvAdd" type="button">新增环境</button>
+        <button class="btn primary" id="dbEnvSave" type="button">保存</button>
+      </div>
+    </div>
+  </div>
   </div><!-- /#shell -->
 
   <script nonce="${nonce}" src="${script}"></script>
   <script nonce="${nonce}" src="${tplScript}"></script>
   <script nonce="${nonce}" src="${flowScript}"></script>
   <script nonce="${nonce}" src="${homeScript}"></script>
+  <script nonce="${nonce}" src="${docsScript}"></script>
+  <script nonce="${nonce}" src="${dbScript}"></script>
 </body>
 </html>`;
   }

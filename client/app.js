@@ -225,7 +225,8 @@
     },
   };
 
-  const GS_KIND_LABEL = { rpc: "接口", enum: "枚举", func: "函数", const: "常量", excel: "Excel" };
+  const GS_KIND_LABEL = { rpc: "接口", enum: "枚举", func: "函数", const: "常量", excel: "Excel", docs: "文档", db: "数据表" };
+  const GS_TABS = ["all", "rpc", "enum", "func", "const", "excel", "docs", "db"];
   const globalSearch = {
     items: [],
     active: 0,
@@ -237,6 +238,10 @@
     excelHits: [],
     excelLoaded: false,
     excelQuery: "",
+    docsHits: [],
+    docsQuery: "",
+    dbHits: [],
+    dbQuery: "",
   };
 
   const $ = (id) => document.getElementById(id);
@@ -325,14 +330,20 @@
   function initTheme() {
     const saved = localStorage.getItem(THEME_KEY) || "dark";
     document.documentElement.setAttribute("data-theme", saved);
-    els.themeBtn.textContent = saved === "light" ? "☾" : "◐";
+    paintThemeButtons(saved);
+  }
+
+  function paintThemeButtons(theme) {
+    const icon = theme === "light" ? "☾" : "◐";
+    if (els.themeBtn) els.themeBtn.textContent = icon;
+    document.querySelectorAll("[data-theme-toggle]").forEach((btn) => { btn.textContent = icon; });
   }
 
   function toggleTheme() {
     const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem(THEME_KEY, next);
-    els.themeBtn.textContent = next === "light" ? "☾" : "◐";
+    paintThemeButtons(next);
   }
 
   function isSidebarCollapsed() {
@@ -538,15 +549,40 @@
   }
 
   function renderEnvList() {
-    els.envList.innerHTML = state.envs.map((env) => `
-      <div class="env-item">
+    els.envList.innerHTML = state.envs.map((env, index) => `
+      <div class="env-item${env.id === state.activeEnvId ? " active" : ""}">
         <div>
           <strong>${esc(env.name)}</strong>
           <span>${esc(env.host || "(未配置地址)")}</span>
         </div>
-        <button class="btn" type="button" data-pick-env="${esc(env.id)}">编辑</button>
+        <div class="env-actions">
+          <button class="icon-btn" type="button" data-env-up="${esc(env.id)}" title="上移" ${index ? "" : "disabled"}>↑</button>
+          <button class="icon-btn" type="button" data-env-down="${esc(env.id)}" title="下移" ${index < state.envs.length - 1 ? "" : "disabled"}>↓</button>
+          <button class="icon-btn" type="button" data-env-del="${esc(env.id)}" title="删除">✕</button>
+          <button class="btn" type="button" data-pick-env="${esc(env.id)}">编辑</button>
+        </div>
       </div>
     `).join("");
+  }
+
+  function moveEnv(id, dir) {
+    const index = state.envs.findIndex((env) => env.id === id);
+    const next = index + dir;
+    if (index < 0 || next < 0 || next >= state.envs.length) return;
+    const [item] = state.envs.splice(index, 1);
+    state.envs.splice(next, 0, item);
+    persistEnvs();
+    renderEnvSelect();
+  }
+
+  function deleteEnv(id) {
+    const index = state.envs.findIndex((env) => env.id === id);
+    if (index < 0) return;
+    if (!window.confirm(`删除环境「${state.envs[index].name}」？`)) return;
+    state.envs.splice(index, 1);
+    if (state.activeEnvId === id) state.activeEnvId = state.envs[0]?.id || "";
+    persistEnvs();
+    renderEnvSelect();
   }
 
   function renderTree() {
@@ -1883,6 +1919,10 @@
   initSidebarCollapsed();
   initSidebarResize();
   els.themeBtn.addEventListener("click", toggleTheme);
+  document.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-theme-toggle]")) toggleTheme();
+    if (event.target.closest?.("[data-open-ai]")) openAi();
+  });
   document.querySelectorAll("[data-sidebar-toggle]").forEach((button) => button.addEventListener("click", toggleSidebar));
   $("aiBtn").addEventListener("click", openAi);
   $("closeAiBtn").addEventListener("click", closeAi);
@@ -2245,6 +2285,21 @@
   });
   $("closeEnvModal").addEventListener("click", () => closeModal(els.envModal));
   els.envList.addEventListener("click", (event) => {
+    const up = event.target.closest("[data-env-up]");
+    const down = event.target.closest("[data-env-down]");
+    const del = event.target.closest("[data-env-del]");
+    if (up) {
+      moveEnv(up.getAttribute("data-env-up"), -1);
+      return;
+    }
+    if (down) {
+      moveEnv(down.getAttribute("data-env-down"), 1);
+      return;
+    }
+    if (del) {
+      deleteEnv(del.getAttribute("data-env-del"));
+      return;
+    }
     const btn = event.target.closest("[data-pick-env]");
     if (!btn) return;
     state.activeEnvId = btn.getAttribute("data-pick-env");
@@ -2988,6 +3043,7 @@
 
   function openAi() {
     const overlay = $("aiOverlay");
+    if (overlay && overlay.parentElement !== document.body) document.body.appendChild(overlay);
     overlay.classList.add("show");
     const qr = $("aiQr");
     if (state.qr) {
@@ -3221,6 +3277,8 @@
     if (tab === "enum") return proto.filter((item) => item.kind === "enum");
     if (tab === "func") return code.filter((item) => item.kind === "func");
     if (tab === "excel") return globalSearch.excelHits || [];
+    if (tab === "docs") return globalSearch.docsHits || [];
+    if (tab === "db") return globalSearch.dbHits || [];
     if (tab === "const") {
       return [
         ...proto.filter((item) => item.kind === "const"),
@@ -3231,6 +3289,8 @@
       ...proto.filter((item) => item.kind === "rpc" || item.kind === "enum"),
       ...code,
       ...(globalSearch.excelHits || []),
+      ...(globalSearch.docsHits || []),
+      ...(globalSearch.dbHits || []),
     ];
   }
 
@@ -3272,10 +3332,12 @@
   }
 
   function setGlobalSearchTab(tab) {
-    const next = ["all", "rpc", "enum", "func", "const", "excel"].includes(tab) ? tab : "all";
+    const next = GS_TABS.includes(tab) ? tab : "all";
     globalSearch.tab = next;
     if (next === "func" || next === "const" || next === "all") ensureCodeSymbols();
     if (next === "excel" || next === "all") refreshExcelHits();
+    if (next === "docs" || next === "all") refreshDocsHits();
+    if (next === "db" || next === "all") refreshDbHits();
     renderGlobalSearchTabs();
     globalSearch.active = 0;
     refreshGlobalSearchList();
@@ -3308,6 +3370,47 @@
       if (globalSearch.tab === "excel" || globalSearch.tab === "all") refreshGlobalSearchList();
     });
   }
+
+  function refreshDocsHits() {
+    const query = String($("globalSearchInput")?.value || "").trim();
+    if (!query) {
+      globalSearch.docsHits = [];
+      return;
+    }
+    if (globalSearch.docsQuery === query && globalSearch.docsHits.length) return;
+    globalSearch.docsQuery = query;
+    window.ProtoViewDocs?.search?.(query, (hits) => {
+      globalSearch.docsHits = (Array.isArray(hits) ? hits : []).map((hit) => ({
+        kind: "docs",
+        title: hit.title || hit.fileName || "",
+        sub: `${hit.relative || ""}${hit.count ? ` · ${hit.count} 处` : ""}`,
+        docId: hit.id,
+        line: Number(hit.line || 1),
+        hay: `${hit.title || ""} ${hit.relative || ""} ${hit.preview || ""}`.toLowerCase(),
+      }));
+      if (globalSearch.tab === "docs" || globalSearch.tab === "all") refreshGlobalSearchList();
+    });
+  }
+
+  function refreshDbHits() {
+    const query = String($("globalSearchInput")?.value || "").trim();
+    if (!query) {
+      globalSearch.dbHits = [];
+      return;
+    }
+    if (globalSearch.dbQuery === query && globalSearch.dbHits.length) return;
+    globalSearch.dbQuery = query;
+    window.ProtoViewDb?.search?.(query, (hits) => {
+      globalSearch.dbHits = (Array.isArray(hits) ? hits : []).map((hit) => ({
+        kind: "db",
+        title: hit.table || "",
+        sub: `${hit.fileName || hit.relative || ""}${hit.count ? ` · ${hit.count} 处` : ""}`,
+        tableId: hit.id,
+        hay: `${hit.table || ""} ${hit.fileName || ""} ${hit.relative || ""} ${hit.preview || ""}`.toLowerCase(),
+      }));
+      if (globalSearch.tab === "db" || globalSearch.tab === "all") refreshGlobalSearchList();
+    });
+  }
   function renderGlobalSearchList() {
     const list = $("globalSearchList");
     if (!list) return;
@@ -3328,6 +3431,9 @@
       }
       if (item.kind === "excel") {
         actions.push(`<button class="gs-action primary" type="button" data-gs-sheet="${index}" title="在 ExcelView 打开该表">跳转表</button>`);
+      }
+      if (item.kind === "docs" || item.kind === "db") {
+        actions.push(`<button class="gs-action primary" type="button" data-gs-jump="${index}" title="打开">打开</button>`);
       }
       if (item.file) {
         actions.push(`<button class="gs-action" type="button" data-gs-src="${index}" title="在右侧编辑器打开源码">跳转源码</button>`);
@@ -3437,6 +3543,16 @@
       openExcelSheet(item);
       return;
     }
+    if (item.kind === "docs") {
+      closeGlobalSearch();
+      window.ProtoViewDocs?.open?.(item.docId, item.line || 1);
+      return;
+    }
+    if (item.kind === "db") {
+      closeGlobalSearch();
+      window.ProtoViewDb?.openTable?.(item.tableId);
+      return;
+    }
     // 接口 / 枚举：回车跳到左侧定义
     if (item.kind === "rpc") {
       closeGlobalSearch();
@@ -3472,8 +3588,14 @@
     globalSearch.active = 0;
     globalSearch.excelLoaded = false;
     globalSearch.excelHits = [];
+    globalSearch.docsHits = [];
+    globalSearch.docsQuery = "";
+    globalSearch.dbHits = [];
+    globalSearch.dbQuery = "";
     refreshGlobalSearchList();
     if (globalSearch.tab === "excel" || globalSearch.tab === "all") refreshExcelHits();
+    if (globalSearch.tab === "docs" || globalSearch.tab === "all") refreshDocsHits();
+    if (globalSearch.tab === "db" || globalSearch.tab === "all") refreshDbHits();
   });
   $("globalSearchTabs")?.addEventListener("click", (event) => {
     const tab = event.target.closest?.("[data-gs-tab]");
@@ -3498,6 +3620,13 @@
       const item = globalSearch.items[index];
       closeGlobalSearch();
       showCallGraphPreview(item);
+      return;
+    }
+    const jump = event.target.closest?.("[data-gs-jump]");
+    if (jump) {
+      event.preventDefault();
+      event.stopPropagation();
+      applyGlobalSearchItem(globalSearch.items[Number(jump.getAttribute("data-gs-jump"))]);
       return;
     }
     const sheet = event.target.closest?.("[data-gs-sheet]");
@@ -3542,7 +3671,7 @@
         return;
       }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        const order = ["all", "rpc", "enum", "func", "const", "excel"];
+        const order = GS_TABS;
         const idx = order.indexOf(globalSearch.tab);
         if (idx >= 0 && event.target === $("globalSearchInput")) {
           // keep arrows for text caret when input has selection intent; only cycle tabs with Alt
@@ -3570,7 +3699,7 @@
       }
       if (event.key === "Tab") {
         event.preventDefault();
-        const order = ["all", "rpc", "enum", "func", "const", "excel"];
+        const order = GS_TABS;
         const idx = Math.max(0, order.indexOf(globalSearch.tab));
         const next = event.shiftKey
           ? order[(idx - 1 + order.length) % order.length]
