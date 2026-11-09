@@ -44,9 +44,376 @@
 html, body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font: 13px/1.45 var(--sans);
+}
+
+/* ===== 应用内标签栏 / Home ===== */
+#shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+#shell > #app,
+#shell > .home-view,
+#shell > .excel-view {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+.view-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 6px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.view-tabs::-webkit-scrollbar { display: none; }
+.home-btn {
+  flex: 0 0 auto;
+  width: 28px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.home-btn:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.view-tab-list { display: flex; align-items: stretch; gap: 2px; min-width: 0; }
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  max-width: 220px;
+  padding: 0 4px 0 10px;
+}
+.view-tab.active {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+}
+.view-tab-name {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  padding: 6px 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.view-tab-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.view-tab-close:hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+
+.home-view { overflow: auto; }
+.home-view.hidden, .excel-view.hidden { display: none !important; }
+.home-inner {
+  max-width: 880px;
+  margin: 0;
+  padding: 16px 28px 28px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.home-head { position: relative; display: grid; gap: 8px; }
+.home-title { margin: 0; font-size: 24px; font-weight: 700; }
+.home-title span { color: var(--accent-2); }
+.home-sub { margin: 0; color: var(--muted); font-size: 13px; }
+.home-search {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.home-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.home-results {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, .22);
+  overflow: hidden;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.home-results.hidden { display: none !important; }
+.home-result {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.home-result:last-child { border-bottom: 0; }
+.home-result:hover { background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
+.home-result-kind {
+  grid-row: span 2;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  white-space: nowrap;
+}
+.home-result-kind.is-rpc {
+  color: #2563eb;
+  background: color-mix(in srgb, #2563eb 14%, transparent);
+}
+.home-result-kind.is-enum {
+  color: #7c3aed;
+  background: color-mix(in srgb, #7c3aed 14%, transparent);
+}
+.home-result-kind.is-func {
+  color: #0d9488;
+  background: color-mix(in srgb, #0d9488 14%, transparent);
+}
+.home-result-kind.is-const {
+  color: #ca8a04;
+  background: color-mix(in srgb, #ca8a04 14%, transparent);
+}
+.home-result-kind.is-excel {
+  color: #16a34a;
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+}
+.home-result-main { display: grid; gap: 1px; min-width: 0; }
+.home-result-main strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-result-main span { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-result-sub {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-result-empty { padding: 16px; color: var(--muted); font-size: 12px; text-align: center; }
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.home-card {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.home-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .18);
+}
+.home-card-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+  color: var(--accent);
+  font-size: 15px;
+}
+.home-card strong { font-size: 14px; }
+.home-card-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+/* ===== ExcelView ===== */
+.excel-view {
+  display: grid;
+  grid-template-columns: min(var(--sidebar-size, 260px), 320px) minmax(0, 1fr);
+  overflow: hidden;
+}
+.excel-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  overflow: hidden;
+}
+.excel-side-head {
+  display: grid;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.excel-side-head strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+.excel-filter {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.excel-filter:focus { border-color: var(--accent); }
+.excel-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px; }
+.excel-group { margin-bottom: 8px; }
+.excel-group-head {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.excel-item {
+  width: 100%;
+  display: grid;
+  gap: 1px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.excel-item:hover { background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
+.excel-item.active { background: color-mix(in srgb, var(--accent) 18%, var(--panel-2)); color: var(--accent); }
+.excel-item-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.excel-item-meta { font-size: 10px; color: var(--muted); }
+.excel-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.excel-sheets {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.excel-sheets:empty { display: none; }
+.excel-sheet-tab {
+  flex: 0 0 auto;
+  max-width: 200px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 10px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.excel-sheet-tab:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); }
+.excel-sheet-tab.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+}
+.excel-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  min-width: 0;
+  height: 38px;
+}
+.excel-bar strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.excel-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.excel-meta.is-error { color: var(--danger); }
+.excel-bar .btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+.excel-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.excel-empty { padding: 28px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+.excel-table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+.excel-table th, .excel-table td {
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding: 5px 9px;
+  text-align: left;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.excel-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--table-head);
+  font-weight: 600;
+}
+.excel-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+.excel-cell { cursor: text; }
+.excel-cell:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  white-space: pre-wrap;
+  max-width: 320px;
+}
+.excel-row.is-target td { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.excel-rowno {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: right;
+  position: sticky;
+  left: 0;
+  background: var(--panel-2);
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -66,6 +433,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 #app.source-open {
   --source-w: min(42vw, 520px);
+}
+/* 调用链路图需要更宽的右侧区域 */
+#app.source-open.graph-mode {
+  --source-w: min(58vw, 860px);
 }
 /* 链路内双击节点：挂到画布 stage 内的右侧浮动面板 */
 #flowStage > #mainClient.flow-inspect-float {
@@ -107,6 +478,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 #app.flow-mode.flow-inspect > #sourceDrawer {
   display: none !important;
+}
+/* 面板内的滚动不应穿到画布 */
+#flowStage > #mainClient.flow-inspect-float,
+#sourceDrawer,
+.call-graph-board {
+  overscroll-behavior: contain;
 }
 .flow-inspect-bar {
   display: none;
@@ -214,7 +591,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .global-search-item {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
   gap: 2px 10px;
   align-items: center;
@@ -223,7 +600,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   border-radius: 8px;
   background: transparent;
   color: var(--text);
-  padding: 8px 10px;
+  padding: 7px 10px;
   cursor: pointer;
 }
 .global-search-item:hover,
@@ -269,26 +646,38 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.global-search-add {
-  grid-row: span 2;
+.global-search-actions {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.gs-action {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-2);
-  color: var(--text);
-  padding: 4px 8px;
+  color: var(--muted);
+  padding: 2px 8px;
   font-size: 11px;
+  line-height: 1.6;
   cursor: pointer;
   white-space: nowrap;
-  opacity: 0.72;
 }
-.global-search-item:hover .global-search-add,
-.global-search-item.active .global-search-add {
-  opacity: 1;
+.global-search-item:hover .gs-action,
+.global-search-item.active .gs-action {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
 }
-.global-search-add:hover {
+.gs-action:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
+}
+.gs-action.primary {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel-2));
 }
 .global-search-empty {
   padding: 18px 12px;
@@ -667,20 +1056,67 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   opacity: 0.45;
   cursor: default;
 }
-/* 起始步骤里的「变量」按钮 */
-.flow-start-var-btn {
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--muted);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  line-height: 1.4;
+/* 接口节点操作区：启用开关一行，按钮一行等宽 */
+.flow-node-actions {
+  display: grid;
+  gap: 6px;
+  margin: 0 10px 8px;
 }
-.flow-start-var-btn:hover {
+.flow-node-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+}
+.flow-node-toggle input {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.flow-node-btns {
+  display: flex;
+  gap: 5px;
+}
+.flow-node-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 5px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.flow-node-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
   color: var(--accent);
-  border-color: var(--accent);
+}
+.flow-node-btn.run {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--accent);
+  font-weight: 600;
+}
+.flow-node-btn.run:hover {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
+}
+.flow-node-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
 }
 .flow-world, .flow-edges {
   position: absolute;
@@ -728,13 +1164,22 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 }
 .flow-node {
   position: absolute;
-  width: 200px;
+  width: 208px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel);
-  box-shadow: var(--shadow);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, .18), 0 10px 24px rgba(15, 23, 42, .12);
   pointer-events: auto;
   user-select: none;
+  overflow: hidden;
+  transition: box-shadow .16s ease, border-color .16s ease;
+}
+.flow-node:hover {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .22), 0 16px 34px rgba(15, 23, 42, .16);
+}
+.flow-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 34%, transparent), 0 14px 30px rgba(15, 23, 42, .2);
 }
 .flow-node.ok { border-color: var(--ok); }
 .flow-node.fail { border-color: var(--danger); }
@@ -752,7 +1197,7 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 }
 /* 禁用只弱化标识区，不影响「运行」按钮观感 */
 .flow-node-start.disabled .flow-node-head,
-.flow-node-start.disabled .flow-start-switch,
+.flow-node-start.disabled .flow-node-toggle,
 .flow-node-start.disabled .flow-node-result {
   opacity: 0.62;
 }
@@ -760,49 +1205,8 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 .flow-node-start.running {
   border-color: var(--accent);
 }
-.flow-start-run-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
 .flow-node-icon.start {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
-}
-.flow-start-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  margin: 0 10px 6px;
-}
-.flow-start-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 11px;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-.flow-start-switch input {
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-.flow-start-run-btn {
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
-  color: var(--accent);
-  border-radius: 6px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  line-height: 1.4;
-}
-.flow-start-run-btn:hover {
-  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
 }
 .modal.flow-edit-modal.flow-io-modal {
   width: min(1240px, 96vw);
@@ -1178,45 +1582,65 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 .flow-node-head {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 10px 4px;
+  gap: 9px;
+  padding: 11px 11px 8px;
   cursor: move;
 }
 .flow-node-icon {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
   color: var(--accent);
-  font-size: 14px;
+  font-size: 13px;
   flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
 }
-.flow-node-text { min-width: 0; }
+.flow-node-text { min-width: 0; flex: 1 1 auto; }
 .flow-node-text strong {
   display: block;
   font-size: 13px;
-  line-height: 1.3;
+  line-height: 1.32;
+  font-weight: 600;
   word-break: break-all;
 }
 .flow-node-text span {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   color: var(--muted);
   font-size: 10px;
   font-family: var(--mono);
-  margin-top: 2px;
+  margin-top: 3px;
+  line-height: 1.35;
   word-break: break-all;
 }
 .flow-node-result {
   margin: 0 10px 10px;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 5px 8px;
+  border-radius: 7px;
   font-size: 10px;
   font-family: var(--mono);
   background: var(--panel-2);
   color: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.3;
+}
+.flow-node-result::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+  opacity: .8;
 }
 .flow-node-result.ok { color: var(--ok); }
 .flow-node-result.fail { color: var(--danger); }
@@ -1755,6 +2179,182 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   line-height: 1.55;
   background: var(--bg);
 }
+
+/* ===== 函数调用链路图 ===== */
+.call-graph-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 11px;
+  color: var(--muted);
+}
+.call-graph-bar.hidden { display: none !important; }
+.call-graph-depth { display: inline-flex; align-items: center; gap: 4px; }
+.call-graph-depth select {
+  background: var(--input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.call-graph-zoom { display: inline-flex; align-items: center; gap: 4px; }
+.call-graph-zoom .icon-btn {
+  width: 24px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+.call-graph-zoom #callGraphZoomReset {
+  width: auto;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.call-graph-stat {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-graph-board {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px)
+    0 0 / 18px 18px,
+    var(--bg);
+  position: relative;
+}
+.call-graph-board.panning { cursor: grabbing; }
+.call-graph-board.hidden { display: none !important; }
+.call-graph-world {
+  position: relative;
+  width: var(--cg-w, 600px);
+  height: var(--cg-h, 360px);
+  transform-origin: 0 0;
+}
+.call-graph-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.call-graph-edge {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 55%, var(--border));
+  stroke-width: 1.4;
+}
+.call-graph-node {
+  position: absolute;
+  width: 190px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .22);
+  padding: 6px 8px;
+  display: grid;
+  gap: 4px;
+}
+.call-graph-node.lv-root {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+.call-graph-node-head {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.call-graph-node-head strong {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-graph-node-head span {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-graph-db {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.call-graph-db-tag {
+  font-size: 10px;
+  border-radius: 999px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.call-graph-db-tag.is-read {
+  color: #0d9488;
+  border-color: color-mix(in srgb, #0d9488 45%, var(--border));
+  background: color-mix(in srgb, #0d9488 12%, transparent);
+}
+.call-graph-db-tag.is-write {
+  color: #ea580c;
+  border-color: color-mix(in srgb, #ea580c 45%, var(--border));
+  background: color-mix(in srgb, #ea580c 12%, transparent);
+}
+.call-graph-node-actions {
+  display: flex;
+  gap: 4px;
+}
+.call-graph-node-actions .gs-action { flex: 1 1 auto; text-align: center; }
+.call-graph-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.call-graph-empty-tip {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: .8;
+}
+.call-graph-db-pop {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  z-index: 5;
+  max-width: min(320px, 90%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .35);
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+.call-graph-db-pop-head {
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.call-graph-db-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.call-graph-db-line { margin-left: auto; color: var(--muted); }
 .source-line {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);

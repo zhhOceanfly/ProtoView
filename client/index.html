@@ -7,6 +7,13 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <div id="shell">
+  <div class="view-tabs" id="viewTabs">
+    <button class="home-btn" id="homeBtn" type="button" title="首页（Tab Tab 打开）">⌂</button>
+    <div class="view-tab-list" id="viewTabList">
+      <button class="view-tab active" type="button" data-view-tab="client">ProtoView Client</button>
+    </div>
+  </div>
   <div id="app">
     <aside class="sidebar">
       <div class="side-head">
@@ -243,6 +250,7 @@
       </div>
       <div class="flow-menu hidden" id="flowMenu" style="display:none">
         <button type="button" data-flow-act="view-definition">查看定义</button>
+        <button type="button" data-flow-act="open-source">跳转源码</button>
         <button type="button" data-flow-act="edit">编辑</button>
         <button type="button" data-flow-act="duplicate">复制节点</button>
         <button type="button" data-flow-act="view-resp">查看响应</button>
@@ -262,9 +270,30 @@
           <span id="sourceDrawerMeta"></span>
         </div>
         <div class="source-drawer-actions">
-          <button class="btn" id="sourceDrawerExtBtn" type="button" title="用外部编辑器打开">外部打开</button>
+          <button class="btn" id="sourceDrawerExtBtn" type="button" title="在右侧编辑器分组打开源码">外部打开</button>
           <button class="icon-btn" id="sourceDrawerClose" type="button" title="关闭">✕</button>
         </div>
+      </div>
+      <div class="call-graph-bar hidden" id="callGraphBar">
+        <label class="call-graph-depth">
+          深度
+          <select id="callGraphDepth">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <div class="call-graph-zoom">
+          <button class="icon-btn" id="callGraphZoomOut" type="button" title="缩小">−</button>
+          <button class="icon-btn" id="callGraphZoomReset" type="button" title="重置缩放">100%</button>
+          <button class="icon-btn" id="callGraphZoomIn" type="button" title="放大">＋</button>
+        </div>
+        <span class="call-graph-stat" id="callGraphStat"></span>
+      </div>
+      <div class="call-graph-board hidden" id="callGraphBoard">
+        <div class="call-graph-world" id="callGraphWorld"></div>
       </div>
       <pre class="source-drawer-code" id="sourceDrawerCode"></pre>
     </aside>
@@ -597,9 +626,10 @@
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="enum" aria-selected="false">枚举</button>
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="func" aria-selected="false">函数</button>
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="const" aria-selected="false">常量</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="excel" aria-selected="false">Excel</button>
       </div>
       <div class="global-search-list" id="globalSearchList"></div>
-      <div class="global-search-hint">Tab 切换分类 · ↑↓ 选择 · Enter 定位 · Shift+Enter 添加接口 · Esc 关闭</div>
+      <div class="global-search-hint">Tab 切换分类 · ↑↓ 选择 · Enter 定位 · Shift+Enter 添加节点/看源码 · Esc 关闭</div>
     </div>
   </div>
 
@@ -633,8 +663,59 @@
     </div>
   </div>
 
+  <div class="home-view hidden" id="homeView">
+    <div class="home-inner">
+      <div class="home-head">
+        <h1 class="home-title">Proto<span>View</span> 工作台</h1>
+        <p class="home-sub">选择入口快速开始，或直接搜索项目里的接口、函数、Excel 表</p>
+        <input class="home-search" id="homeSearch" type="text" placeholder="搜索接口 / 函数 / 常量 / Excel 表…" autocomplete="off" spellcheck="false" />
+        <div class="home-results hidden" id="homeResults"></div>
+      </div>
+      <div class="home-grid" id="homeGrid">
+        <button class="home-card" type="button" data-home-entry="client">
+          <span class="home-card-icon">⇄</span>
+          <strong>ProtoView</strong>
+          <span class="home-card-desc">浏览 proto、调试 gRPC / HTTP / SSE / WebSocket 接口</span>
+        </button>
+        <button class="home-card" type="button" data-home-entry="excel">
+          <span class="home-card-icon">▦</span>
+          <strong>ExcelView</strong>
+          <span class="home-card-desc">浏览项目里的 Excel / CSV 配置表</span>
+        </button>
+        <button class="home-card" type="button" data-home-entry="db">
+          <span class="home-card-icon">⛁</span>
+          <strong>DbView</strong>
+          <span class="home-card-desc">查看函数读写的数据库表</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="excel-view hidden" id="excelView">
+    <aside class="excel-side">
+      <div class="excel-side-head">
+        <strong>Excel 表</strong>
+        <input class="excel-filter" id="excelFilter" type="text" placeholder="筛选表名 / 文件…" autocomplete="off" />
+      </div>
+      <div class="excel-list" id="excelList"></div>
+    </aside>
+    <main class="excel-main">
+      <div class="excel-bar">
+        <strong id="excelTitle">选择左侧的表</strong>
+        <span class="excel-meta" id="excelMeta"></span>
+        <button class="btn" id="excelReload" type="button">重新扫描</button>
+      </div>
+      <div class="excel-sheets" id="excelSheets"></div>
+      <div class="excel-table-wrap" id="excelTableWrap">
+        <div class="excel-empty">选择左侧的表查看内容</div>
+      </div>
+    </main>
+  </div>
+  </div><!-- /#shell -->
+
   <script src="./app.js"></script>
   <script src="./flowTemplates.js"></script>
   <script src="./flow.js"></script>
+  <script src="./home.js"></script>
 </body>
 </html>

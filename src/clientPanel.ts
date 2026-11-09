@@ -13,6 +13,8 @@ import { closeGrpcStream, GrpcInvokeRequest, openGrpcStream, writeGrpcStream } f
 import { cancelStress, runStress } from "./grpcStress";
 import { dispatchInvoke } from "./invokeDispatch";
 import { collectCodeSymbols } from "./codeSymbols";
+import { buildCallGraph } from "./callGraph";
+import { excelCatalog, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
 import { openSource } from "./panel";
 import { ProtoSourceConfig } from "./source";
 import { handleTemplates } from "./hostCore";
@@ -208,6 +210,66 @@ export class ClientPanel {
         await openSource(message.file, Number(message.line || 1));
         return;
       }
+      if (message.type === "readSource" && message.file) {
+        const abs = path.resolve(String(message.file));
+        const line = Math.max(1, Math.floor(Number(message.line || 1) || 1));
+        try {
+          const content = await fs.readFile(abs, "utf8");
+          this.post({ type: "sourceContent", file: abs, line, content });
+        } catch (error) {
+          this.post({
+            type: "toast",
+            level: "err",
+            text: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return;
+      }
+      if (message.type === "loadCallGraph" && this.panel) {
+        const payload = message.payload as { name?: string; file?: string; depth?: number } | undefined;
+        const root = this.codeRoot();
+        const graph = root && payload
+          ? await buildCallGraph({ root, name: String(payload.name || ""), file: payload.file, depth: payload.depth })
+          : null;
+        this.post({ type: "callGraph", payload: graph, depth: payload?.depth ?? 2 });
+        return;
+      }
+      if (message.type === "excelCatalog" && this.panel) {
+        const catalog = await excelCatalog(this.codeRoot());
+        this.post({ type: "excelCatalog", payload: catalog });
+        return;
+      }
+      if (message.type === "excelPage" && this.panel) {
+        const payload = message.payload as { id?: string; offset?: number; limit?: number; focusRow?: number } | undefined;
+        const page = payload?.id
+          ? await excelPage(this.codeRoot(), String(payload.id), {
+            offset: payload.offset,
+            limit: payload.limit,
+            focusRow: payload.focusRow,
+          })
+          : null;
+        this.post({ type: "excelPage", payload: page });
+        return;
+      }
+      if (message.type === "excelUpdate" && this.panel) {
+        const payload = message.payload as { id?: string; row?: number; col?: number; value?: string } | undefined;
+        const result = payload?.id
+          ? await excelUpdateCell(this.codeRoot(), {
+            id: String(payload.id),
+            row: Number(payload.row),
+            col: Number(payload.col),
+            value: String(payload.value ?? ""),
+          })
+          : { ok: false, error: "缺少表标识" };
+        this.post({ type: "excelUpdate", payload: result });
+        return;
+      }
+      if (message.type === "excelSearch" && this.panel) {
+        const payload = message.payload as { query?: string } | undefined;
+        const hits = await excelSearch(this.codeRoot(), String(payload?.query || ""));
+        this.post({ type: "excelSearch", payload: hits });
+        return;
+      }
       if (message.type === "invoke" && message.payload && this.catalog && this.panel) {
         const result = await dispatchInvoke(this.catalog, message.payload);
         this.post({ type: "invokeResult", ...result });
@@ -348,6 +410,7 @@ export class ClientPanel {
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "app.js"));
     const flowScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "flow.js"));
     const tplScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "flowTemplates.js"));
+    const homeScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "client", "home.js"));
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource} 'unsafe-inline'`,
@@ -364,6 +427,13 @@ export class ClientPanel {
   <link rel="stylesheet" href="${styles}" />
 </head>
 <body>
+  <div id="shell">
+  <div class="view-tabs" id="viewTabs">
+    <button class="home-btn" id="homeBtn" type="button" title="首页（Tab Tab 打开）">⌂</button>
+    <div class="view-tab-list" id="viewTabList">
+      <button class="view-tab active" type="button" data-view-tab="client">ProtoView Client</button>
+    </div>
+  </div>
   <div id="app">
     <aside class="sidebar">
       <div class="side-head">
@@ -595,6 +665,7 @@ export class ClientPanel {
       </div>
       <div class="flow-menu hidden" id="flowMenu" style="display:none">
         <button type="button" data-flow-act="view-definition">查看定义</button>
+        <button type="button" data-flow-act="open-source">跳转源码</button>
         <button type="button" data-flow-act="edit">编辑</button>
         <button type="button" data-flow-act="duplicate">复制节点</button>
         <button type="button" data-flow-act="view-resp">查看响应</button>
@@ -613,9 +684,30 @@ export class ClientPanel {
           <span id="sourceDrawerMeta"></span>
         </div>
         <div class="source-drawer-actions">
-          <button class="btn" id="sourceDrawerExtBtn" type="button" title="用外部编辑器打开">外部打开</button>
+          <button class="btn" id="sourceDrawerExtBtn" type="button" title="在右侧编辑器分组打开源码">外部打开</button>
           <button class="icon-btn" id="sourceDrawerClose" type="button" title="关闭">✕</button>
         </div>
+      </div>
+      <div class="call-graph-bar hidden" id="callGraphBar">
+        <label class="call-graph-depth">
+          深度
+          <select id="callGraphDepth">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <div class="call-graph-zoom">
+          <button class="icon-btn" id="callGraphZoomOut" type="button" title="缩小">−</button>
+          <button class="icon-btn" id="callGraphZoomReset" type="button" title="重置缩放">100%</button>
+          <button class="icon-btn" id="callGraphZoomIn" type="button" title="放大">＋</button>
+        </div>
+        <span class="call-graph-stat" id="callGraphStat"></span>
+      </div>
+      <div class="call-graph-board hidden" id="callGraphBoard">
+        <div class="call-graph-world" id="callGraphWorld"></div>
       </div>
       <pre class="source-drawer-code" id="sourceDrawerCode"></pre>
     </aside>
@@ -938,9 +1030,10 @@ export class ClientPanel {
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="enum" aria-selected="false">枚举</button>
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="func" aria-selected="false">函数</button>
         <button class="global-search-tab" type="button" role="tab" data-gs-tab="const" aria-selected="false">常量</button>
+        <button class="global-search-tab" type="button" role="tab" data-gs-tab="excel" aria-selected="false">Excel</button>
       </div>
       <div class="global-search-list" id="globalSearchList"></div>
-      <div class="global-search-hint">Tab 切换分类 · ↑↓ 选择 · Enter 定位 · Shift+Enter 添加接口 · Esc 关闭</div>
+      <div class="global-search-hint">Tab 切换分类 · ↑↓ 选择 · Enter 定位 · Shift+Enter 添加节点/看源码 · Esc 关闭</div>
     </div>
   </div>
   <div class="ai-overlay" id="aiOverlay">
@@ -972,9 +1065,60 @@ export class ClientPanel {
       </div>
     </div>
   </div>
+  <div class="home-view hidden" id="homeView">
+    <div class="home-inner">
+      <div class="home-head">
+        <h1 class="home-title">Proto<span>View</span> 工作台</h1>
+        <p class="home-sub">选择入口快速开始，或直接搜索项目里的接口、函数、Excel 表</p>
+        <input class="home-search" id="homeSearch" type="text" placeholder="搜索接口 / 函数 / 常量 / Excel 表…" autocomplete="off" spellcheck="false" />
+        <div class="home-results hidden" id="homeResults"></div>
+      </div>
+      <div class="home-grid" id="homeGrid">
+        <button class="home-card" type="button" data-home-entry="client">
+          <span class="home-card-icon">⇄</span>
+          <strong>ProtoView</strong>
+          <span class="home-card-desc">浏览 proto、调试 gRPC / HTTP / SSE / WebSocket 接口</span>
+        </button>
+        <button class="home-card" type="button" data-home-entry="excel">
+          <span class="home-card-icon">▦</span>
+          <strong>ExcelView</strong>
+          <span class="home-card-desc">浏览项目里的 Excel / CSV 配置表</span>
+        </button>
+        <button class="home-card" type="button" data-home-entry="db">
+          <span class="home-card-icon">⛁</span>
+          <strong>DbView</strong>
+          <span class="home-card-desc">查看函数读写的数据库表</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="excel-view hidden" id="excelView">
+    <aside class="excel-side">
+      <div class="excel-side-head">
+        <strong>Excel 表</strong>
+        <input class="excel-filter" id="excelFilter" type="text" placeholder="筛选表名 / 文件…" autocomplete="off" />
+      </div>
+      <div class="excel-list" id="excelList"></div>
+    </aside>
+    <main class="excel-main">
+      <div class="excel-bar">
+        <strong id="excelTitle">选择左侧的表</strong>
+        <span class="excel-meta" id="excelMeta"></span>
+        <button class="btn" id="excelReload" type="button">重新扫描</button>
+      </div>
+      <div class="excel-sheets" id="excelSheets"></div>
+      <div class="excel-table-wrap" id="excelTableWrap">
+        <div class="excel-empty">选择左侧的表查看内容</div>
+      </div>
+    </main>
+  </div>
+  </div><!-- /#shell -->
+
   <script nonce="${nonce}" src="${script}"></script>
   <script nonce="${nonce}" src="${tplScript}"></script>
   <script nonce="${nonce}" src="${flowScript}"></script>
+  <script nonce="${nonce}" src="${homeScript}"></script>
 </body>
 </html>`;
   }

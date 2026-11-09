@@ -22,6 +22,8 @@ const CORE_FILES = [
   "clientModel.js",
   "sourceCore.js",
   "codeSymbols.js",
+  "callGraph.js",
+  "excelIndex.js",
   "openEditor.js",
   "grpcInvoke.js",
   "decodeBytes.js",

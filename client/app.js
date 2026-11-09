@@ -225,7 +225,7 @@
     },
   };
 
-  const GS_KIND_LABEL = { rpc: "接口", enum: "枚举", func: "函数", const: "常量" };
+  const GS_KIND_LABEL = { rpc: "接口", enum: "枚举", func: "函数", const: "常量", excel: "Excel" };
   const globalSearch = {
     items: [],
     active: 0,
@@ -234,6 +234,9 @@
     codeItems: [],
     codeLoaded: false,
     codeLoading: false,
+    excelHits: [],
+    excelLoaded: false,
+    excelQuery: "",
   };
 
   const $ = (id) => document.getElementById(id);
@@ -1443,6 +1446,80 @@
   }
 
   let sourcePreview = { file: "", line: 1 };
+  /** 抽屉当前模式：code=代码预览，graph=函数调用链路图 */
+  let sourceDrawerMode = "code";
+  let callGraphState = { zoom: 1, item: null, depth: 2, graph: null, panX: 0, panY: 0 };
+
+  function applyCallGraphTransform() {
+    const world = $("callGraphWorld");
+    if (!world) return;
+    const { zoom, panX, panY } = callGraphState;
+    world.style.transformOrigin = "0 0";
+    world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    const reset = $("callGraphZoomReset");
+    if (reset) reset.textContent = `${Math.round(zoom * 100)}%`;
+  }
+
+  function applyCallGraphZoom() {
+    callGraphState.zoom = Math.max(0.25, Math.min(2.5, callGraphState.zoom));
+    applyCallGraphTransform();
+  }
+
+  // 画布平移 + 滚轮缩放（缩放以指针为中心）
+  function bindCallGraphPanZoom() {
+    const board = $("callGraphBoard");
+    const world = $("callGraphWorld");
+    if (!board || !world || board.dataset.panZoomBound === "1") return;
+    board.dataset.panZoomBound = "1";
+
+    board.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const rect = board.getBoundingClientRect();
+      const mx = event.clientX - rect.left - board.scrollLeft;
+      const my = event.clientY - rect.top - board.scrollTop;
+      const prev = callGraphState.zoom;
+      const factor = event.deltaY > 0 ? 0.9 : 1.1;
+      const next = Math.max(0.25, Math.min(2.5, prev * factor));
+      if (next === prev) return;
+      // 让指针下的点在缩放前后保持不动
+      callGraphState.panX = mx - ((mx - callGraphState.panX) / prev) * next;
+      callGraphState.panY = my - ((my - callGraphState.panY) / prev) * next;
+      callGraphState.zoom = next;
+      applyCallGraphTransform();
+    }, { passive: false });
+
+    let drag = null;
+    board.addEventListener("mousedown", (event) => {
+      // 点在按钮/节点上不拖动，交给点击逻辑
+      if (event.button !== 0) return;
+      if (event.target.closest?.(".call-graph-node, .gs-action, .call-graph-db-pop")) return;
+      drag = { x: event.clientX, y: event.clientY, panX: callGraphState.panX, panY: callGraphState.panY };
+      board.classList.add("panning");
+      event.preventDefault();
+    });
+    window.addEventListener("mousemove", (event) => {
+      if (!drag) return;
+      callGraphState.panX = drag.panX + (event.clientX - drag.x);
+      callGraphState.panY = drag.panY + (event.clientY - drag.y);
+      applyCallGraphTransform();
+    });
+    window.addEventListener("mouseup", () => {
+      if (!drag) return;
+      drag = null;
+      board.classList.remove("panning");
+    });
+  }
+
+  function setSourceDrawerMode(mode) {
+    sourceDrawerMode = mode === "graph" ? "graph" : "code";
+    const isGraph = sourceDrawerMode === "graph";
+    $("callGraphBar")?.classList.toggle("hidden", !isGraph);
+    $("callGraphBoard")?.classList.toggle("hidden", !isGraph);
+    $("sourceDrawerCode")?.classList.toggle("hidden", isGraph);
+    document.getElementById("app")?.classList.toggle("graph-mode", isGraph);
+    const ext = $("sourceDrawerExtBtn");
+    if (ext) ext.textContent = isGraph ? "打开源码" : "外部打开";
+  }
 
   function closeSourceDrawer() {
     const drawer = $("sourceDrawer");
@@ -1451,13 +1528,20 @@
     app?.classList.remove("source-open");
   }
 
+  function openDrawer() {
+    const drawer = $("sourceDrawer");
+    const app = document.getElementById("app");
+    drawer?.classList.remove("hidden");
+    app?.classList.add("source-open");
+  }
+
   function showSourceDrawer(file, line, content) {
     const drawer = $("sourceDrawer");
     const code = $("sourceDrawerCode");
     const nameEl = $("sourceDrawerName");
     const metaEl = $("sourceDrawerMeta");
-    const app = document.getElementById("app");
     if (!drawer || !code) return;
+    setSourceDrawerMode("code");
     sourcePreview = { file: String(file || ""), line: Math.max(1, Number(line) || 1) };
     const base = String(file || "").replace(/\\/g, "/").split("/").pop() || "源码";
     if (nameEl) nameEl.textContent = base;
@@ -1468,11 +1552,160 @@
       const mark = n === sourcePreview.line ? " is-target" : "";
       return `<div class="source-line${mark}" data-line="${n}"><span class="source-line-no">${n}</span><span class="source-line-text">${esc(text)}</span></div>`;
     }).join("");
-    drawer.classList.remove("hidden");
-    app?.classList.add("source-open");
+    openDrawer();
     requestAnimationFrame(() => {
       code.querySelector(".source-line.is-target")?.scrollIntoView({ block: "center" });
     });
+  }
+
+  // ===== 函数调用链路图 =====
+  /** 统一成 {name,file,line}，避免状态里存 title 又读 name 导致清空 */
+  function callGraphTarget(item) {
+    return {
+      name: String(item?.name || item?.title || ""),
+      file: String(item?.file || ""),
+      line: Math.max(1, Number(item?.line) || 1),
+    };
+  }
+
+  function requestCallGraph(item, depth) {
+    const target = callGraphTarget(item);
+    if (!target.name && !target.file) return;
+    const next = Math.max(1, Math.min(5, Math.floor(Number(depth) || callGraphState.depth || 2)));
+    callGraphState.item = target;
+    callGraphState.depth = next;
+    const sel = $("callGraphDepth");
+    if (sel) sel.value = String(next);
+    const stat = $("callGraphStat");
+    if (stat) stat.textContent = "扫描中…";
+    const world = $("callGraphWorld");
+    if (world) world.innerHTML = `<div class="call-graph-empty">正在分析调用链路…</div>`;
+    if (!vscode) {
+      if (stat) stat.textContent = "独立模式无法分析项目调用链";
+      return;
+    }
+    vscode.postMessage({
+      type: "loadCallGraph",
+      payload: { name: target.name, file: target.file, depth: next },
+    });
+  }
+
+  function showCallGraphPreview(item) {
+    const target = callGraphTarget(item);
+    if (!target.name && !target.file) return;
+    setSourceDrawerMode("graph");
+    callGraphState.item = target;
+    sourcePreview = { file: target.file, line: target.line };
+    const nameEl = $("sourceDrawerName");
+    const metaEl = $("sourceDrawerMeta");
+    if (nameEl) nameEl.textContent = `${target.name} 调用链路`;
+    if (metaEl) metaEl.textContent = target.file ? `${target.file}:${target.line}` : "";
+    openDrawer();
+    requestCallGraph(target, callGraphState.depth || 2);
+  }
+
+  function applyCallGraphZoom() {
+    callGraphState.zoom = Math.max(0.25, Math.min(2.5, callGraphState.zoom));
+    applyCallGraphTransform();
+  }
+
+  function renderCallGraph(graph) {
+    const world = $("callGraphWorld");
+    const stat = $("callGraphStat");
+    if (!world) return;
+    if (!graph || !Array.isArray(graph.nodes) || !graph.nodes.length) {
+      const name = esc(callGraphState.item?.name || "");
+      const scanned = graph ? `，已扫描 ${graph.scannedFiles} 个 .go 文件` : "";
+      world.innerHTML = `<div class="call-graph-empty">没有找到「${name}」的函数调用信息${scanned}
+        <div class="call-graph-empty-tip">接口名通常不是 Go 函数名，可先「跳转源码」找到实现函数名，再到函数 Tab 里预览。</div>
+      </div>`;
+      if (stat) stat.textContent = graph ? `${graph.scannedFiles} 个文件` : "分析失败";
+      return;
+    }
+    // 按层分布：BFS 计算每层序号
+    const children = new Map();
+    for (const edge of graph.edges || []) {
+      const list = children.get(edge.from) || [];
+      list.push(edge.to);
+      children.set(edge.from, list);
+    }
+    const rootId = graph.rootId || graph.nodes[0].id;
+    const levels = new Map([[rootId, 0]]);
+    const queue = [rootId];
+    while (queue.length) {
+      const id = queue.shift();
+      for (const child of children.get(id) || []) {
+        if (!levels.has(child)) {
+          levels.set(child, (levels.get(id) || 0) + 1);
+          queue.push(child);
+        }
+      }
+    }
+    const perLevel = new Map();
+    const placed = new Map();
+    for (const node of graph.nodes) {
+      const level = levels.get(node.id) ?? 0;
+      const idx = perLevel.get(level) || 0;
+      perLevel.set(level, idx + 1);
+      placed.set(node.id, { x: 60 + level * 250, y: 40 + idx * 96, level });
+    }
+    const nodeCard = (node) => {
+      const pos = placed.get(node.id);
+      const dbTags = (node.db || []).map((hit) =>
+        `<span class="call-graph-db-tag is-${hit.op}" title="${esc(hit.table)}">${hit.op === "read" ? "读" : hit.op === "write" ? "写" : "?"} ${esc(hit.table)}</span>`,
+      ).join("");
+      const depthLabel = levels.get(node.id) ?? 0;
+      return `<div class="call-graph-node lv-${depthLabel > 0 ? "child" : "root"}" data-cg-node="${esc(node.id)}"
+        style="left:${pos.x}px;top:${pos.y}px"
+        data-cg-name="${esc(node.name)}" data-cg-file="${esc(node.file)}" data-cg-abs="${esc(node.abs || "")}" data-cg-line="${node.line}">
+        <div class="call-graph-node-head">
+          <strong>${esc(node.receiver ? `${node.receiver}.${node.name}` : node.name)}</strong>
+          <span>${esc(node.file)}:${node.line}</span>
+        </div>
+        ${dbTags ? `<div class="call-graph-db">${dbTags}</div>` : ""}
+        <div class="call-graph-node-actions">
+          <button class="gs-action" type="button" data-cg-src title="跳转源码">跳转源码</button>
+          <button class="gs-action" type="button" data-cg-db title="查看读写的数据库表">查看 DB</button>
+        </div>
+      </div>`;
+    };
+    const lines = (graph.edges || []).map((edge) => {
+      const from = placed.get(edge.from);
+      const to = placed.get(edge.to);
+      if (!from || !to) return "";
+      const x1 = from.x + 190;
+      const y1 = from.y + 34;
+      const x2 = to.x;
+      const y2 = to.y + 34;
+      const mx = (x1 + x2) / 2;
+      return `<path class="call-graph-edge" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" />`;
+    }).join("");
+    world.innerHTML = `${nodeCardGraphSvg(lines)}
+      ${graph.nodes.map(nodeCard).join("")}`;
+    const width = Math.max(600, ...[...placed.values()].map((p) => p.x + 240));
+    const height = Math.max(320, ...[...placed.values()].map((p) => p.y + 110));
+    const svg = world.querySelector("svg");
+    if (svg) {
+      svg.setAttribute("width", String(width));
+      svg.setAttribute("height", String(height));
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    }
+    const board = $("callGraphBoard");
+    if (board) {
+      board.style.setProperty("--cg-w", `${width}px`);
+      board.style.setProperty("--cg-h", `${height}px`);
+    }
+    if (stat) {
+      stat.textContent = `${graph.nodes.length} 函数 · 深度 ${graph.depth}${graph.truncated ? " · 已截断" : ""}`;
+    }
+    callGraphState.graph = graph;
+    callGraphState.panX = 0;
+    callGraphState.panY = 0;
+    applyCallGraphTransform();
+  }
+
+  function nodeCardGraphSvg(inner) {
+    return `<svg class="call-graph-svg" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
   }
 
   /** CLI：浏览器选目录并上传 .proto（宿主落盘后自动应用） */
@@ -1679,17 +1912,64 @@
     void pickProtoDirViaBrowser();
   });
   $("sourceDrawerClose")?.addEventListener("click", closeSourceDrawer);
+  // 抽屉「外部打开」：代码/调用图都直接拆出或复用 VS Code 右侧编辑器分组
   $("sourceDrawerExtBtn")?.addEventListener("click", () => {
     if (!vscode || !sourcePreview.file) return;
-    const target = getOpenWithTarget();
-    const editor = target === "preview" || target === "auto" ? "" : target;
     vscode.postMessage({
       type: "openSource",
       file: sourcePreview.file,
       line: sourcePreview.line,
-      editor,
     });
-    setRespBadge("ok", "正在用外部编辑器打开…");
+    setRespBadge("ok", "已在右侧编辑器打开源码");
+  });
+  $("callGraphDepth")?.addEventListener("change", () => {
+    const depth = Number($("callGraphDepth")?.value || 2);
+    // 深度是相对当前根节点函数的跳数，换深度就用同一根重新展开
+    if (!callGraphState.item) return;
+    requestCallGraph(callGraphState.item, depth);
+  });
+  $("callGraphZoomIn")?.addEventListener("click", () => {
+    callGraphState.zoom = Math.min(2.5, callGraphState.zoom + 0.15);
+    applyCallGraphZoom();
+  });
+  $("callGraphZoomOut")?.addEventListener("click", () => {
+    callGraphState.zoom = Math.max(0.25, callGraphState.zoom - 0.15);
+    applyCallGraphZoom();
+  });
+  $("callGraphZoomReset")?.addEventListener("click", () => {
+    callGraphState.zoom = 1;
+    callGraphState.panX = 0;
+    callGraphState.panY = 0;
+    applyCallGraphTransform();
+  });
+  bindCallGraphPanZoom();
+  $("callGraphWorld")?.addEventListener("click", (event) => {
+    const nodeEl = event.target.closest?.("[data-cg-node]");
+    if (!nodeEl) return;
+    const name = nodeEl.getAttribute("data-cg-name") || "";
+    const file = nodeEl.getAttribute("data-cg-abs") || nodeEl.getAttribute("data-cg-file") || "";
+    const line = Number(nodeEl.getAttribute("data-cg-line") || 1) || 1;
+    if (event.target.closest?.("[data-cg-src]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      jumpToSource({ name, file, line });
+      return;
+    }
+    if (event.target.closest?.("[data-cg-db]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      showCallGraphDb(name, nodeEl.getAttribute("data-cg-file") || file);
+    }
+  });
+  $("callGraphWorld")?.addEventListener("contextmenu", (event) => {
+    const nodeEl = event.target.closest?.("[data-cg-node]");
+    if (!nodeEl) return;
+    event.preventDefault();
+    jumpToSource({
+      name: nodeEl.getAttribute("data-cg-name") || "",
+      file: nodeEl.getAttribute("data-cg-abs") || nodeEl.getAttribute("data-cg-file") || "",
+      line: Number(nodeEl.getAttribute("data-cg-line") || 1) || 1,
+    });
   });
   for (const input of document.querySelectorAll('input[name="sourceMode"]')) {
     input.addEventListener("change", syncSourceModalUi);
@@ -2432,6 +2712,62 @@
     }
   });
 
+  // 首页复用同一套全类型搜索
+  window.ProtoViewSearch = {
+    /** 返回与 Tab 搜索一致的条目（接口/枚举/函数/常量） */
+    searchAll(query) {
+      const q = String(query || "").trim();
+      if (!q) return [];
+      const prevTab = globalSearch.tab;
+      globalSearch.tab = "all";
+      let items = [];
+      try {
+        items = filterGlobalSearch(q);
+      } finally {
+        globalSearch.tab = prevTab;
+      }
+      return items.filter((item) => item.kind !== "excel").map((item) => ({
+        kind: item.kind,
+        title: item.title,
+        sub: item.sub,
+        file: item.file,
+        line: item.line,
+        id: item.id,
+        fromEnum: item.fromEnum,
+        hay: item.hay,
+      }));
+    },
+    /** 首页点结果：与 Tab 搜索的 Enter 行为一致 */
+    openItem(item) {
+      if (!item) return;
+      if (item.kind === "rpc") {
+        selectRpc(item.id, { tab: "docs" });
+        requestAnimationFrame(() => revealTreeTarget("data-rpc", item.id));
+        return;
+      }
+      if (item.kind === "enum") {
+        selectType(item.id);
+        requestAnimationFrame(() => revealTreeTarget("data-type-id", item.id));
+        return;
+      }
+      jumpToSource(item);
+    },
+    /** 让首页在打开时预热代码符号，避免首次搜索为空 */
+    warmup() {
+      ensureCodeSymbols();
+    },
+  };
+
+  // home.js 复用同一套宿主通信
+  window.ProtoViewHost = {
+    post(type, payload) {
+      if (!vscode) return false;
+      vscode.postMessage({ type, ...(payload === undefined ? {} : { payload }) });
+      return true;
+    },
+    isHost: () => Boolean(vscode),
+  };
+
   window.ProtoViewClient = {
     findRpc,
     showRpcDefinition(id) {
@@ -2547,6 +2883,23 @@
     isVsCodeHost: () => isVsCodeWebview,
     getSelectedRpcId: () => state.selected?.id || "",
     getSelectedRpcLabel: () => state.selected?.name || "",
+    /** 链路节点「预览」：打开函数调用链路图抽屉 */
+    openCallGraph(info = {}) {
+      const name = String(info.name || "");
+      if (!name) return false;
+      // 定义浮层开着时先收起，避免两个右侧面板打架
+      try { window.ProtoViewFlow?.closeInspect?.(); } catch { /* ignore */ }
+      showCallGraphPreview({ title: name, file: String(info.file || ""), line: Number(info.line) || 1 });
+      return true;
+    },
+    /** 供链路节点右键「跳转源码」：直接拆出/复用 VS Code 右侧编辑器分组 */
+    openSourceFile(file, line) {
+      const target = String(file || "");
+      if (!target) return false;
+      if (!vscode) return false;
+      vscode.postMessage({ type: "openSource", file: target, line: Math.max(1, Number(line) || 1) });
+      return true;
+    },
     listEnvs: () => state.envs.map((env) => ({ id: env.id, name: env.name, host: env.host || "" })),
     getActiveEnvId: () => state.activeEnvId,
     setActiveEnvId(id) {
@@ -2568,6 +2921,7 @@
       globalSearch.codeItems = [];
     }
     if (data.type === "codeSymbols") applyCodeSymbols(data);
+    if (data.type === "callGraph") renderCallGraph(data.payload);
     if (data.type === "invokeResult") {
       if (state.pendingInvoke && data.id && data.id !== state.pendingInvoke) return;
       showInvokeResult(data);
@@ -2800,6 +3154,8 @@
             id: rpc.id,
             title: rpc.name,
             sub: `${pkg.name}.${service.name}`,
+            file: rpc.path || "",
+            line: Number(rpc.line || 1) || 1,
             hay: `${rpc.name} ${pkg.name} ${service.name} ${rpc.comment || ""} ${rpc.request || ""} ${rpc.response || ""}`.toLowerCase(),
           });
         }
@@ -2807,11 +3163,16 @@
       for (const en of pkg.enums || []) {
         const values = en.values || [];
         const valueNames = values.map((v) => v.name).join(" ");
+        const type = state.catalog.types?.[en.id];
+        const protoFile = type?.path || "";
+        const protoLine = Number(type?.line || 1) || 1;
         items.push({
           kind: "enum",
           id: en.id,
           title: en.name,
           sub: `${pkg.name} · enum`,
+          file: protoFile,
+          line: protoLine,
           hay: `${en.name} ${pkg.name} ${en.comment || ""} ${valueNames}`.toLowerCase(),
         });
         for (const value of values) {
@@ -2820,6 +3181,8 @@
             id: en.id,
             title: value.name,
             sub: `${pkg.name}.${en.name}`,
+            file: protoFile,
+            line: protoLine,
             hay: `${value.name} ${en.name} ${pkg.name} ${value.comment || ""}`.toLowerCase(),
             fromEnum: true,
           });
@@ -2857,13 +3220,18 @@
     if (tab === "rpc") return proto.filter((item) => item.kind === "rpc");
     if (tab === "enum") return proto.filter((item) => item.kind === "enum");
     if (tab === "func") return code.filter((item) => item.kind === "func");
+    if (tab === "excel") return globalSearch.excelHits || [];
     if (tab === "const") {
       return [
         ...proto.filter((item) => item.kind === "const"),
         ...code.filter((item) => item.kind === "const"),
       ];
     }
-    return [...proto.filter((item) => item.kind === "rpc" || item.kind === "enum"), ...code];
+    return [
+      ...proto.filter((item) => item.kind === "rpc" || item.kind === "enum"),
+      ...code,
+      ...(globalSearch.excelHits || []),
+    ];
   }
 
   function filterGlobalSearch(query) {
@@ -2904,14 +3272,42 @@
   }
 
   function setGlobalSearchTab(tab) {
-    const next = ["all", "rpc", "enum", "func", "const"].includes(tab) ? tab : "all";
+    const next = ["all", "rpc", "enum", "func", "const", "excel"].includes(tab) ? tab : "all";
     globalSearch.tab = next;
     if (next === "func" || next === "const" || next === "all") ensureCodeSymbols();
+    if (next === "excel" || next === "all") refreshExcelHits();
     renderGlobalSearchTabs();
     globalSearch.active = 0;
     refreshGlobalSearchList();
   }
 
+  /** Excel 分类：按当前关键词向宿主查询表/行 */
+  function refreshExcelHits() {
+    const query = String($("globalSearchInput")?.value || "").trim();
+    if (!query) {
+      globalSearch.excelHits = [];
+      globalSearch.excelLoaded = false;
+      return;
+    }
+    if (globalSearch.excelLoaded && globalSearch.excelQuery === query) return;
+    globalSearch.excelQuery = query;
+    window.ProtoViewHome?.searchExcel?.(query, (hits) => {
+      globalSearch.excelLoaded = true;
+      globalSearch.excelHits = (Array.isArray(hits) ? hits : []).map((hit) => {
+        const count = Number(hit.count || 0);
+        const fileName = hit.fileName || String(hit.relative || "").split(/[/\\]/).pop() || hit.sheet || "";
+        return {
+          kind: "excel",
+          title: fileName,
+          sub: `${hit.sheet || ""}${count ? ` · ${count} 处` : ""}${hit.row ? ` · 行 ${hit.row}` : ""}`,
+          sheetId: hit.sheetId,
+          row: Number(hit.row || 0),
+          hay: `${fileName} ${hit.sheet || ""} ${hit.relative || ""} ${hit.preview || ""}`.toLowerCase(),
+        };
+      });
+      if (globalSearch.tab === "excel" || globalSearch.tab === "all") refreshGlobalSearchList();
+    });
+  }
   function renderGlobalSearchList() {
     const list = $("globalSearchList");
     if (!list) return;
@@ -2923,15 +3319,25 @@
     }
     list.innerHTML = globalSearch.items.map((item, index) => {
       const kind = GS_KIND_LABEL[item.kind] || item.kind;
-      const addBtn = item.kind === "rpc"
-        ? `<button class="global-search-add" type="button" data-gs-add="${index}" title="添加到画布">添加</button>`
-        : "";
+      const actions = [];
+      if (item.kind === "rpc") {
+        actions.push(`<button class="gs-action primary" type="button" data-gs-add="${index}" title="添加到画布">添加节点</button>`);
+      }
+      if (item.kind === "func") {
+        actions.push(`<button class="gs-action" type="button" data-gs-preview="${index}" title="查看调用链路图">预览</button>`);
+      }
+      if (item.kind === "excel") {
+        actions.push(`<button class="gs-action primary" type="button" data-gs-sheet="${index}" title="在 ExcelView 打开该表">跳转表</button>`);
+      }
+      if (item.file) {
+        actions.push(`<button class="gs-action" type="button" data-gs-src="${index}" title="在右侧编辑器打开源码">跳转源码</button>`);
+      }
       return `
       <div class="global-search-item${index === globalSearch.active ? " active" : ""}" role="option" data-gs-index="${index}">
         <span class="global-search-kind is-${esc(item.kind)}">${kind}</span>
         <span class="global-search-title">${esc(item.title)}</span>
         <span class="global-search-sub">${esc(item.sub)}</span>
-        ${addBtn}
+        ${actions.length ? `<span class="global-search-actions">${actions.join("")}</span>` : ""}
       </div>`;
     }).join("");
     list.querySelector(".global-search-item.active")?.scrollIntoView({ block: "nearest" });
@@ -2969,54 +3375,83 @@
     window.setTimeout(() => el.classList.remove("flash-hit"), 1200);
   }
 
-  function openCodeSymbol(item) {
-    if (!item?.file) {
+  /** 跳转源码：直接拆出/复用 VS Code 右侧编辑器分组（不走抽屉） */
+  function jumpToSource(item) {
+    const file = String(item?.file || "");
+    const line = Math.max(1, Number(item?.line) || 1);
+    if (!file) {
       setRespBadge("err", "未找到源码位置");
       return;
     }
+    closeGlobalSearch();
     if (!vscode) {
-      const loc = `${item.file}:${item.line || 1}`;
+      const loc = `${file}:${line}`;
       if (navigator.clipboard?.writeText) {
         void navigator.clipboard.writeText(loc).then(
           () => setRespBadge("ok", `已复制路径 ${loc}`),
           () => setRespBadge("err", loc),
         );
+      } else {
+        setRespBadge("err", loc);
       }
       return;
     }
-    if (isVsCodeWebview) {
-      vscode.postMessage({ type: "openSource", file: item.file, line: item.line || 1 });
-      return;
-    }
-    const target = getOpenWithTarget();
-    if (target === "preview") {
-      setRespBadge("wait", "加载源码…");
-      vscode.postMessage({ type: "readSource", file: item.file, line: item.line || 1 });
-      return;
-    }
-    vscode.postMessage({
-      type: "openSource",
-      file: item.file,
-      line: item.line || 1,
-      editor: target === "auto" ? "" : target,
-    });
-    setRespBadge("ok", "正在打开源码…");
+    vscode.postMessage({ type: "openSource", file, line });
+    setRespBadge("ok", `已打开 ${file.replace(/\\/g, "/").split("/").pop()}:${line}`);
+  }
+
+  function showCallGraphDb(name, file) {
+    const graph = callGraphState.graph;
+    const node = graph?.nodes?.find((item) => item.name === name && item.file === file)
+      || graph?.nodes?.find((item) => item.name === name);
+    const hits = node?.db || [];
+    const world = $("callGraphWorld");
+    world?.querySelector(".call-graph-db-pop")?.remove();
+    const rows = hits.length
+      ? hits.map((hit) => `
+      <div class="call-graph-db-row">
+        <span class="call-graph-db-tag is-${hit.op}">${hit.op === "read" ? "读" : hit.op === "write" ? "写" : "读写"}</span>
+        <strong>${esc(hit.table)}</strong>
+        <span class="call-graph-db-line">行 ${hit.line}</span>
+      </div>`).join("")
+      : `<div class="call-graph-db-row call-graph-db-none">未识别到数据库表（可能通过 DAO 间接访问）</div>`;
+    const pop = document.createElement("div");
+    pop.className = "call-graph-db-pop";
+    pop.innerHTML = `<div class="call-graph-db-pop-head">${esc(name)} · 数据表</div>${rows}`;
+    world?.appendChild(pop);
+    window.setTimeout(() => pop.remove(), 8000);
+  }
+
+  /** Excel 结果：切到 ExcelView 并定位到表/行 */
+  function openExcelSheet(item) {
+    const sheetId = String(item?.sheetId || "");
+    if (!sheetId) return;
+    closeGlobalSearch();
+    window.ProtoViewHome?.openSheet?.(sheetId, Number(item.row) || 0);
   }
 
   function applyGlobalSearchItem(item) {
     if (!item) return;
-    closeGlobalSearch();
-    if (item.kind === "func" || (item.kind === "const" && item.file)) {
-      openCodeSymbol(item);
+    // Excel：跳到 ExcelView 对应表
+    if (item.kind === "excel") {
+      openExcelSheet(item);
       return;
     }
-    if (item.kind === "enum" || (item.kind === "const" && item.fromEnum)) {
+    // 接口 / 枚举：回车跳到左侧定义
+    if (item.kind === "rpc") {
+      closeGlobalSearch();
+      selectRpc(item.id, { tab: "docs" });
+      requestAnimationFrame(() => revealTreeTarget("data-rpc", item.id));
+      return;
+    }
+    if (item.kind === "enum") {
+      closeGlobalSearch();
       selectType(item.id);
       requestAnimationFrame(() => revealTreeTarget("data-type-id", item.id));
       return;
     }
-    selectRpc(item.id, { tab: "docs" });
-    requestAnimationFrame(() => revealTreeTarget("data-rpc", item.id));
+    // 函数 / 常量：回车等同「跳转源码」
+    jumpToSource(item);
   }
 
   function addGlobalSearchRpcToCanvas(item) {
@@ -3035,7 +3470,10 @@
 
   $("globalSearchInput")?.addEventListener("input", () => {
     globalSearch.active = 0;
+    globalSearch.excelLoaded = false;
+    globalSearch.excelHits = [];
     refreshGlobalSearchList();
+    if (globalSearch.tab === "excel" || globalSearch.tab === "all") refreshExcelHits();
   });
   $("globalSearchTabs")?.addEventListener("click", (event) => {
     const tab = event.target.closest?.("[data-gs-tab]");
@@ -3050,6 +3488,32 @@
       event.stopPropagation();
       const index = Number(add.getAttribute("data-gs-add"));
       addGlobalSearchRpcToCanvas(globalSearch.items[index]);
+      return;
+    }
+    const preview = event.target.closest?.("[data-gs-preview]");
+    if (preview) {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(preview.getAttribute("data-gs-preview"));
+      const item = globalSearch.items[index];
+      closeGlobalSearch();
+      showCallGraphPreview(item);
+      return;
+    }
+    const sheet = event.target.closest?.("[data-gs-sheet]");
+    if (sheet) {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(sheet.getAttribute("data-gs-sheet"));
+      openExcelSheet(globalSearch.items[index]);
+      return;
+    }
+    const src = event.target.closest?.("[data-gs-src]");
+    if (src) {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(src.getAttribute("data-gs-src"));
+      jumpToSource(globalSearch.items[index]);
       return;
     }
     const row = event.target.closest?.("[data-gs-index]");
@@ -3078,7 +3542,7 @@
         return;
       }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        const order = ["all", "rpc", "enum", "func", "const"];
+        const order = ["all", "rpc", "enum", "func", "const", "excel"];
         const idx = order.indexOf(globalSearch.tab);
         if (idx >= 0 && event.target === $("globalSearchInput")) {
           // keep arrows for text caret when input has selection intent; only cycle tabs with Alt
@@ -3094,16 +3558,19 @@
       }
       if (event.key === "Enter") {
         event.preventDefault();
+        const current = globalSearch.items[globalSearch.active];
         if (event.shiftKey) {
-          addGlobalSearchRpcToCanvas(globalSearch.items[globalSearch.active]);
+          if (current?.kind === "rpc") addGlobalSearchRpcToCanvas(current);
+          else if (current?.kind === "excel") openExcelSheet(current);
+          else if (current?.file) jumpToSource(current);
           return;
         }
-        applyGlobalSearchItem(globalSearch.items[globalSearch.active]);
+        applyGlobalSearchItem(current);
         return;
       }
       if (event.key === "Tab") {
         event.preventDefault();
-        const order = ["all", "rpc", "enum", "func", "const"];
+        const order = ["all", "rpc", "enum", "func", "const", "excel"];
         const idx = Math.max(0, order.indexOf(globalSearch.tab));
         const next = event.shiftKey
           ? order[(idx - 1 + order.length) % order.length]

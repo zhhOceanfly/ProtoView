@@ -14,6 +14,8 @@ import { InvokePayload, dispatchInvoke } from "./invokeDispatch";
 import { openInEditor } from "./openEditor";
 import { ProtoParseError, parseProto } from "./parser";
 import { collectCodeSymbols } from "./codeSymbols";
+import { buildCallGraph } from "./callGraph";
+import { excelCatalog, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
 import {
   ProtoSourceConfig,
   collectProtoFiles,
@@ -125,6 +127,51 @@ export class ClientHost {
       const root = this.codeRoot();
       const items = root ? await collectCodeSymbols(root) : [];
       send({ type: "codeSymbols", items, root });
+      return;
+    }
+    if (type === "loadCallGraph") {
+      const root = this.codeRoot();
+      const payload = message.payload as { name?: string; file?: string; depth?: number } | undefined;
+      const graph = root && payload
+        ? await buildCallGraph({ root, name: String(payload.name || ""), file: payload.file, depth: payload.depth })
+        : null;
+      send({ type: "callGraph", payload: graph, depth: payload?.depth ?? 2 });
+      return;
+    }
+    if (type === "excelCatalog") {
+      const catalog = await excelCatalog(this.codeRoot());
+      send({ type: "excelCatalog", payload: catalog });
+      return;
+    }
+    if (type === "excelPage") {
+      const payload = message.payload as { id?: string; offset?: number; limit?: number; focusRow?: number } | undefined;
+      const page = payload?.id
+        ? await excelPage(this.codeRoot(), String(payload.id), {
+          offset: payload.offset,
+          limit: payload.limit,
+          focusRow: payload.focusRow,
+        })
+        : null;
+      send({ type: "excelPage", payload: page });
+      return;
+    }
+    if (type === "excelUpdate") {
+      const payload = message.payload as { id?: string; row?: number; col?: number; value?: string } | undefined;
+      const result = payload?.id
+        ? await excelUpdateCell(this.codeRoot(), {
+          id: String(payload.id),
+          row: Number(payload.row),
+          col: Number(payload.col),
+          value: String(payload.value ?? ""),
+        })
+        : { ok: false, error: "缺少表标识" };
+      send({ type: "excelUpdate", payload: result });
+      return;
+    }
+    if (type === "excelSearch") {
+      const payload = message.payload as { query?: string } | undefined;
+      const hits = await excelSearch(this.codeRoot(), String(payload?.query || ""));
+      send({ type: "excelSearch", payload: hits });
       return;
     }
     if (type === "refresh") {

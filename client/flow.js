@@ -807,7 +807,7 @@
 
   function isInspectOutsideTarget(target) {
     if (!(target instanceof Element)) return false;
-    if (target.closest("#mainClient, .modal-mask, .flow-menu, .flow-edge-menu, .flow-float-tools")) return false;
+    if (target.closest("#mainClient, #sourceDrawer, .call-graph-board, .modal-mask, .flow-menu, .flow-edge-menu, .flow-float-tools")) return false;
     if (target.closest("[data-node], [data-flow-act]")) return false;
     return true;
   }
@@ -925,13 +925,15 @@
               <span>运行 ${runs} 次${runs > 1 ? ` · 间隔 ${intervalSec}s` : ""}</span>
             </div>
           </div>
-          <div class="flow-start-actions">
-            <label class="flow-start-switch" title="全量运行时是否执行本步骤">
+          <div class="flow-node-actions">
+            <label class="flow-node-toggle" title="全量运行时是否执行本步骤">
               <input type="checkbox" data-start-toggle="${esc(node.id)}"${enabled ? " checked" : ""} />
               <span>${enabled ? "启用" : "禁用"}</span>
             </label>
-            <button type="button" class="flow-start-run-btn" data-start-run="${esc(node.id)}" title="只运行本步骤（不依赖顺序）"${busy ? " disabled" : ""}>${busy ? "运行中" : "运行"}</button>
-            <button type="button" class="flow-start-var-btn" data-start-vars="${esc(node.id)}" title="查看本步骤提取到的变量">变量${varCount ? ` ${varCount}` : ""}</button>
+            <div class="flow-node-btns">
+              <button type="button" class="flow-node-btn run" data-start-run="${esc(node.id)}" title="只运行本步骤（不依赖顺序）"${busy ? " disabled" : ""}>${busy ? "运行中" : "运行"}</button>
+              <button type="button" class="flow-node-btn" data-start-vars="${esc(node.id)}" title="查看本步骤提取到的变量">变量${varCount ? ` ${varCount}` : ""}</button>
+            </div>
           </div>
           ${badge}
           <div class="flow-port in" data-port-in="${esc(node.id)}" title="连入"></div>
@@ -1012,18 +1014,23 @@
     const enabled = node.enabled !== false;
     const busy = flow.nodeRunning === node.id;
     const count = Object.keys(node.vars || {}).length;
-    const runnable = node.kind === "variable" || Boolean(api()?.findRpc?.(node.rpcId));
-    return `<div class="flow-start-actions">
-      <label class="flow-start-switch" title="链路运行时是否执行本节点">
+    const hit = node.kind === "variable" ? null : api()?.findRpc?.(node.rpcId);
+    const runnable = node.kind === "variable" || Boolean(hit);
+    const previewable = Boolean(hit);
+    return `<div class="flow-node-actions">
+      <label class="flow-node-toggle" title="链路运行时是否执行本节点">
         <input type="checkbox" data-node-toggle="${esc(node.id)}"${enabled ? " checked" : ""} />
         <span>${enabled ? "启用" : "禁用"}</span>
       </label>
-      ${runnable ? `<button type="button" class="flow-start-run-btn" data-node-run="${esc(node.id)}"${busy ? " disabled" : ""}>${busy ? "运行中" : "运行"}</button>` : ""}
-      <button type="button" class="flow-start-var-btn" data-node-vars="${esc(node.id)}" title="查看本节点产生的变量">变量${count ? ` ${count}` : ""}</button>
+      <div class="flow-node-btns">
+        ${runnable ? `<button type="button" class="flow-node-btn run" data-node-run="${esc(node.id)}"${busy ? " disabled" : ""}>${busy ? "运行中" : "运行"}</button>` : ""}
+        ${previewable ? `<button type="button" class="flow-node-btn" data-node-preview="${esc(node.id)}" title="查看调用链路">预览</button>` : ""}
+        <button type="button" class="flow-node-btn" data-node-vars="${esc(node.id)}" title="查看本节点产生的变量">变量${count ? ` ${count}` : ""}</button>
+      </div>
     </div>`;
   }
 
-  const EDGE_NODE_W = 200;
+  const EDGE_NODE_W = 208;
   const EDGE_PORT_Y = 36;
 
   function edgeFromPoint(node) {
@@ -1453,6 +1460,7 @@
       const act = btn.getAttribute("data-flow-act");
       let show = true;
       if (act === "view-definition") show = Boolean(node?.rpcId && !isStart && node.kind !== "variable");
+      if (act === "open-source") show = Boolean(node?.rpcId && !isStart && node.kind !== "variable");
       if (act === "view-resp") show = !isStart && node?.kind !== "variable";
       if (act === "send-msg") show = canSendMsg;
       if (act === "close-stream") show = canSendMsg && hasLive;
@@ -4996,6 +5004,7 @@
     render,
     importData,
     onHostStreamEvent,
+    closeInspect: () => closeFlowNodeInspect({ sync: false }),
   };
 
   function bind() {
@@ -5255,6 +5264,16 @@
       hideMenu();
       if (!nodeId || !act) return;
       if (act === "view-definition") openFlowNodeInspect(nodeId);
+      if (act === "open-source") {
+        const n = flow.nodes.find((item) => item.id === nodeId);
+        const hit = n?.rpcId ? api()?.findRpc?.(n.rpcId) : null;
+        if (hit) {
+          const path = hit.rpc?.path || hit.service?.path || hit.pkg?.path || "";
+          const line = Number(hit.rpc?.line || 1) || 1;
+          if (path) api()?.openSourceFile?.(path, line);
+          else void notify("该接口缺少源码位置");
+        }
+      }
       if (act === "edit") openEdit(nodeId);
       if (act === "duplicate") duplicateNode(nodeId);
       if (act === "view-resp") {
@@ -5308,6 +5327,11 @@
     }
 
     stage.addEventListener("wheel", (event) => {
+      // 浮动详情面板 / 源码抽屉内的滚轮交给它们自己滚动
+      if (event.target instanceof Element
+        && event.target.closest("#mainClient, #sourceDrawer, .modal-mask, .flow-menu, .flow-edge-menu, .flow-float-tools")) {
+        return;
+      }
       event.preventDefault();
       const delta = event.deltaY > 0 ? 0.9 : 1.1;
       const next = Math.min(2.2, Math.max(0.35, flow.scale * delta));
@@ -5599,6 +5623,24 @@
         openVarsModal(nodeVarsBtn.getAttribute("data-node-vars"));
         return;
       }
+      const nodePreviewBtn = event.target.closest?.("[data-node-preview]");
+      if (nodePreviewBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const nodeId = nodePreviewBtn.getAttribute("data-node-preview");
+        const node = flow.nodes.find((n) => n.id === nodeId);
+        const hit = node?.rpcId ? api()?.findRpc?.(node.rpcId) : null;
+        // 预览：打开该接口对应函数的调用链路图（不是定义浮层）
+        const opened = hit
+          ? api()?.openCallGraph?.({
+            name: hit.rpc?.name || node?.name || "",
+            file: hit.rpc?.path || "",
+            line: Number(hit.rpc?.line || 1) || 1,
+          })
+          : false;
+        if (!opened) openFlowNodeInspect(nodeId);
+        return;
+      }
       const runBtn = event.target.closest?.("[data-start-run]");
       if (runBtn) {
         event.preventDefault();
@@ -5634,7 +5676,8 @@
       hideMenu();
       hideEdgeMenu();
       nodeClickWatch = { id: null, at: 0 };
-      openFlowNodeInspect(nodeEl.getAttribute("data-node"));
+      // 接口节点双击 = 打开编辑弹窗；起始/变量节点本来就是编辑
+      openEdit(nodeEl.getAttribute("data-node"));
     });
     stage.addEventListener("contextmenu", (event) => {
       if (suppressContextMenu || (panning && panMoved)) {
@@ -5735,6 +5778,7 @@
       render,
       importData,
       onHostStreamEvent,
+      closeInspect: () => closeFlowNodeInspect({ sync: false }),
     };
   }
 

@@ -218,9 +218,26 @@ export class ProtoPanel {
   }
 }
 
+/** 右侧已有的源码编辑分组（用于复用，而不是每次新拆一列） */
+function findReusableSourceColumn(): vscode.ViewColumn | undefined {
+  const groups = vscode.window.tabGroups?.all || [];
+  const textGroups = groups.filter((group) =>
+    group.tabs.some((tab) => tab.input instanceof vscode.TabInputText),
+  );
+  if (!textGroups.length) return undefined;
+  // 取最右侧的文本分组
+  const rightmost = textGroups.reduce((a, b) => (b.viewColumn > a.viewColumn ? b : a));
+  return rightmost.viewColumn;
+}
+
 export async function openSource(file: string, line: number): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
-  const editor = await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.One });
+  const target = findReusableSourceColumn() ?? vscode.ViewColumn.Beside;
+  const editor = await vscode.window.showTextDocument(doc, {
+    preview: false,
+    viewColumn: target,
+    preserveFocus: false,
+  });
   const pos = new vscode.Position(Math.max(0, line - 1), 0);
   editor.selection = new vscode.Selection(pos, pos);
   editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
