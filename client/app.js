@@ -18,6 +18,7 @@
   const SIDEBAR_BREAKPOINT = 960;
   const SIDEBAR_WIDTH_KEY = "protoview.client.sidebarWidth";
   const DRAFT_KEY = "protoview.client.drafts";
+  const HISTORY_KEY = "protoview.client.history";
   const SPLIT_KEY = "protoview.client.split";
   /** null=跟宽度走；true/false=手动覆盖（窗口跨过断点后清除） */
   let sidebarManual = null;
@@ -209,7 +210,7 @@
     docsNav: [],
     metadata: [{ name: "", value: "", description: "" }],
     auth: defaultAuth(),
-    history: [],
+    history: loadHistory(),
     drafts: loadDrafts(),
     messageDirty: false,
     stressMode: "light",
@@ -299,7 +300,7 @@
   }
 
   function persistCurrentDraft() {
-    if (!state.selected) return;
+    if (clientSnapshot || !state.selected) return;
     state.drafts[state.selected.id] = {
       message: els.messageEditor.value,
       metadata: state.metadata,
@@ -311,12 +312,70 @@
     saveDrafts();
   }
 
+  /** 打开链路浮窗前记下 Client 正在编辑的请求，返回时还原，避免被节点草稿盖掉 */
+  let clientSnapshot = null;
+
+  function captureClientSnapshot() {
+    if (clientSnapshot || !state.selected) return;
+    clientSnapshot = {
+      rpcId: state.selected.id,
+      message: els.messageEditor.value,
+      metadata: state.metadata.map((row) => ({ ...row })),
+      auth: { ...state.auth },
+      protocol: $("protocolSelect")?.value || "grpc",
+      httpMethod: $("httpMethodSelect")?.value || "POST",
+      httpPath: $("httpPath")?.value || "",
+      tab: state.tab || "message",
+      messageDirty: state.messageDirty,
+    };
+  }
+
+  function discardClientSnapshot() {
+    clientSnapshot = null;
+  }
+
+  function restoreClientSnapshot() {
+    const snap = clientSnapshot;
+    if (!snap) return false;
+    clientSnapshot = null;
+    if (!findRpc(snap.rpcId)) return false;
+    selectRpc(snap.rpcId, {
+      skipPersist: true,
+      tab: snap.tab || "message",
+      draft: {
+        message: snap.message,
+        metadata: snap.metadata,
+        auth: snap.auth,
+        protocol: snap.protocol,
+        httpMethod: snap.httpMethod,
+        httpPath: snap.httpPath,
+      },
+    });
+    state.messageDirty = Boolean(snap.messageDirty);
+    return true;
+  }
+
   function loadDrafts() {
     try {
       return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}");
     } catch {
       return {};
     }
+  }
+
+  function loadHistory() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveHistory() {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, 40)));
+    } catch { /* ignore */ }
   }
 
   function saveDrafts() {
@@ -549,30 +608,18 @@
   }
 
   function renderEnvList() {
-    els.envList.innerHTML = state.envs.map((env, index) => `
+    els.envList.innerHTML = state.envs.map((env) => `
       <div class="env-item${env.id === state.activeEnvId ? " active" : ""}">
         <div>
           <strong>${esc(env.name)}</strong>
           <span>${esc(env.host || "(未配置地址)")}</span>
         </div>
         <div class="env-actions">
-          <button class="icon-btn" type="button" data-env-up="${esc(env.id)}" title="上移" ${index ? "" : "disabled"}>↑</button>
-          <button class="icon-btn" type="button" data-env-down="${esc(env.id)}" title="下移" ${index < state.envs.length - 1 ? "" : "disabled"}>↓</button>
           <button class="icon-btn" type="button" data-env-del="${esc(env.id)}" title="删除">✕</button>
           <button class="btn" type="button" data-pick-env="${esc(env.id)}">编辑</button>
         </div>
       </div>
     `).join("");
-  }
-
-  function moveEnv(id, dir) {
-    const index = state.envs.findIndex((env) => env.id === id);
-    const next = index + dir;
-    if (index < 0 || next < 0 || next >= state.envs.length) return;
-    const [item] = state.envs.splice(index, 1);
-    state.envs.splice(next, 0, item);
-    persistEnvs();
-    renderEnvSelect();
   }
 
   function deleteEnv(id) {
@@ -810,6 +857,7 @@
     refreshGhzCommand();
     renderTree();
     setTab(opts.tab || state.tab);
+    syncScopedHistory(Boolean(opts.showLatest));
   }
 
   function renderRpcInfo() {
@@ -826,18 +874,20 @@
       chips.push(`<span class="rpc-info-chip${badge.warn ? " warn" : ""}">${esc(badge.text)}</span>`);
     }
     const source = rpc.source
-      ? `<details class="rpc-info-def" open><summary>接口定义</summary><pre>${esc(rpc.source)}</pre></details>`
+      ? `<details class="rpc-info-block rpc-info-def" open><summary>接口定义</summary><pre>${esc(rpc.source)}</pre></details>`
       : "";
     el.innerHTML = `
-      <h3 class="rpc-info-title">${esc(rpc.name)}</h3>
-      <p class="rpc-info-lead">${esc(rpc.comment || "无注释")}</p>
-      <p class="rpc-info-meta">${esc(rpc.package)}.${esc(rpc.service)} · ${esc(rpc.file || "")}${rpc.line ? `:${rpc.line}` : ""}</p>
-      ${chips.length ? `<div class="rpc-info-chips">${chips.join("")}</div>` : ""}
-      <div class="rpc-info-row"><span>请求</span><code>${esc(rpc.request)}</code></div>
-      <div class="rpc-info-row"><span>响应</span><code>${esc(rpc.response)}</code></div>
-      <div class="rpc-info-row"><span>字段</span><code>${(rpc.requestFields || []).length} 个请求字段</code></div>
+      <section class="rpc-info-block">
+        <h3 class="rpc-info-title">${esc(rpc.name)}</h3>
+        <p class="rpc-info-lead">${esc(rpc.comment || "无注释")}</p>
+        <p class="rpc-info-meta">${esc(rpc.package)}.${esc(rpc.service)} · ${esc(rpc.file || "")}${rpc.line ? `:${rpc.line}` : ""}</p>
+        ${chips.length ? `<div class="rpc-info-chips">${chips.join("")}</div>` : ""}
+      </section>
+      <section class="rpc-info-block rpc-info-row"><span>请求</span><code>${esc(rpc.request)}</code></section>
+      <section class="rpc-info-block rpc-info-row"><span>响应</span><code>${esc(rpc.response)}</code></section>
+      <section class="rpc-info-block rpc-info-row"><span>字段</span><code>${(rpc.requestFields || []).length} 个请求字段</code></section>
       ${source}
-      ${rpc.path ? `<button class="btn" type="button" style="margin-top:10px" data-src="${esc(rpc.path)}" data-line="${rpc.line || 1}">跳转到源码</button>` : ""}
+      ${rpc.path ? `<section class="rpc-info-block"><button class="btn" type="button" data-src="${esc(rpc.path)}" data-line="${rpc.line || 1}">跳转到源码</button></section>` : ""}
     `;
   }
 
@@ -1365,13 +1415,15 @@
     for (const node of document.querySelectorAll(".tab")) {
       node.classList.toggle("active", node.getAttribute("data-tab") === tab);
     }
-    for (const node of document.querySelectorAll(".view")) {
+    // 只切换主面板的 view-*；db 的 .view 面板单独由 db.js 管理
+    for (const node of document.querySelectorAll(".view[id^='view-']")) {
       node.classList.toggle("active", node.id === `view-${tab}`);
     }
     const messageTools = tab === "message";
     $("genMsgBtn").hidden = !messageTools;
     $("formatMsgBtn").hidden = !messageTools;
     $("clearMsgBtn").hidden = !messageTools;
+    if (tab === "history") renderHistory();
     els.toolbarHint.textContent = tab === "message"
       ? "左侧为接口说明，右侧编辑请求 JSON"
       : tab === "metadata"
@@ -1528,7 +1580,7 @@
     board.addEventListener("mousedown", (event) => {
       // 点在按钮/节点上不拖动，交给点击逻辑
       if (event.button !== 0) return;
-      if (event.target.closest?.(".call-graph-node, .gs-action, .call-graph-db-pop")) return;
+      if (event.target.closest?.(".call-graph-node, .gs-action, .call-graph-db-panel")) return;
       drag = { x: event.clientX, y: event.clientY, panX: callGraphState.panX, panY: callGraphState.panY };
       board.classList.add("panning");
       event.preventDefault();
@@ -1907,15 +1959,157 @@
   function closeModal(el) { el.classList.remove("show"); }
 
   function pushHistory(entry) {
+    if (entry && !entry.rpcId && state.selected) entry.rpcId = state.selected.id;
     state.history.unshift(entry);
-    state.history = state.history.slice(0, 30);
-    els.historyView.textContent = state.history.map((item, i) =>
-      `${i + 1}. ${item.time}  ${item.package ? `${item.package}.${item.service}/` : ""}${item.method}\n   ${item.host}\n`).join("\n") || "暂无历史";
+    state.history = state.history.slice(0, 40);
+    saveHistory();
+    renderHistory();
+  }
+
+  function historyMatches(item, rpc) {
+    if (!rpc || !item) return false;
+    if (item.rpcId && rpc.id) return item.rpcId === rpc.id;
+    return historyLabel(item) === `${rpc.package}.${rpc.service}/${rpc.name}`;
+  }
+
+  function scopedHistory() {
+    const rpc = state.selected;
+    if (!rpc) return [];
+    return state.history.filter((item) => historyMatches(item, rpc));
+  }
+
+  function recordHistoryResult(id, data) {
+    const entry = state.history.find((item) => item.id === id);
+    if (!entry) return;
+    entry.response = {
+      ok: Boolean(data?.ok),
+      status: data?.status || "",
+      ms: Number(data?.ms) || 0,
+      body: data?.body,
+      error: data?.error || "",
+      at: new Date().toLocaleTimeString(),
+    };
+    saveHistory();
+    renderHistory();
+  }
+
+  /** 链路里发出的请求也进同一个 History，方便回看 */
+  function pushFlowSend(entry) {
+    if (!entry || !entry.method) return "";
+    const id = entry.id || `flow-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    pushHistory({
+      id,
+      time: new Date().toLocaleString(),
+      protocol: entry.protocol || "grpc",
+      host: entry.host || "",
+      package: entry.package || "",
+      service: entry.service || "",
+      method: entry.method,
+      body: entry.body || {},
+      metadata: entry.metadata || {},
+      message: entry.message || "",
+      label: entry.label || "",
+      rpcId: entry.rpcId || "",
+      nodeId: entry.nodeId || "",
+      response: entry.response || null,
+    });
+    return id;
+  }
+
+  function historyLabel(item) {
+    const name = item.method?.includes("/")
+      ? item.method
+      : `${item.package ? `${item.package}.${item.service}/` : ""}${item.method || ""}`;
+    return name || "(未知接口)";
+  }
+
+  function renderHistory() {
+    if (!els.historyView) return;
+    const title = document.querySelector(".history-title");
+    const rpc = state.selected;
+    if (title) title.textContent = rpc ? `${rpc.name} 的发送记录` : "发送记录";
+    const items = scopedHistory();
+    if (!rpc) {
+      els.historyView.innerHTML = `<div class="history-empty">先选择一个接口，这里只显示该接口的发送记录。</div>`;
+      return;
+    }
+    if (!items.length) {
+      els.historyView.innerHTML = `<div class="history-empty">「${esc(rpc.name)}」还没有发送记录。</div>`;
+      return;
+    }
+    els.historyView.innerHTML = items.map((item, visibleIndex) => {
+      const index = state.history.indexOf(item);
+      const resp = item.response;
+      const status = !resp ? "未返回" : resp.ok ? (resp.status || "OK") : (resp.status || "ERROR");
+      const tag = resp ? (resp.ok ? "ok" : "err") : "wait";
+      const ms = resp?.ms ? ` · ${resp.ms}ms` : "";
+      const active = item.id && item.id === state.historyActiveId ? " active" : "";
+      return `<button class="history-row${active}" type="button" data-history-index="${index}" data-history-id="${esc(item.id || "")}" title="双击在链路浮窗的 History 中打开">
+        <span class="history-idx">${visibleIndex + 1}</span>
+        <span class="history-main">
+          <strong>${esc(historyLabel(item))}</strong>
+          <span class="history-sub">${esc(item.time || "")} · ${esc(item.host || "")}${ms}</span>
+        </span>
+        <span class="history-tag ${tag}">${esc(status)}</span>
+      </button>`;
+    }).join("");
+  }
+
+  function showLatestForSelection() {
+    const rpc = state.selected;
+    if (!rpc) return;
+    state.responseRpcId = rpc.id;
+    const latest = state.history.find((item) => historyMatches(item, rpc) && item.response);
+    if (!latest) {
+      state.historyActiveId = "";
+      setRespBadge("", "");
+      if (els.responseView) els.responseView.innerHTML = `<div class="resp-empty">该接口还没有响应。</div>`;
+      renderHistory();
+      return;
+    }
+    state.historyActiveId = latest.id || "";
+    renderHistory();
+    showHistoryEntry(state.history.indexOf(latest), { activate: false });
+  }
+
+  function syncScopedHistory(forceLatest = false) {
+    const rpc = state.selected;
+    const changed = !rpc || state.responseRpcId !== rpc.id;
+    if (forceLatest || changed) showLatestForSelection();
+    else renderHistory();
+  }
+
+  function showHistoryEntry(index, { activate = false } = {}) {
+    const item = state.history[index];
+    if (!item) return;
+    if (state.selected && !historyMatches(item, state.selected)) return;
+    state.historyActiveId = item.id || "";
+    state.responseRpcId = state.selected?.id || item.rpcId || "";
+    for (const row of els.historyView?.querySelectorAll(".history-row") || []) {
+      row.classList.toggle("active", row.getAttribute("data-history-id") === (item.id || ""));
+    }
+    const resp = item.response;
+    if (!resp) {
+      setRespBadge("wait", "该次请求还没有结果");
+      return;
+    }
+    state.pendingResponse = { protocol: item.protocol, fields: undefined };
+    showInvokeResult({
+      ok: resp.ok,
+      status: resp.status,
+      ms: resp.ms,
+      body: resp.body,
+      error: resp.error,
+      method: historyLabel(item),
+      host: item.host,
+    });
+    if (activate) setTab("message");
   }
 
   // events
   initTheme();
   initOpenWithUi();
+  renderHistory();
   initSidebarCollapsed();
   initSidebarResize();
   els.themeBtn.addEventListener("click", toggleTheme);
@@ -1983,7 +2177,20 @@
     applyCallGraphTransform();
   });
   bindCallGraphPanZoom();
-  $("callGraphWorld")?.addEventListener("click", (event) => {
+  $("callGraphBoard")?.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-cg-db-close]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.target.closest(".call-graph-db-panel")?.remove();
+      return;
+    }
+    const dbOpen = event.target.closest?.("[data-cg-db-open]");
+    if (dbOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      openDbTableFromCallGraph(dbOpen.getAttribute("data-cg-db-open") || "");
+      return;
+    }
     const nodeEl = event.target.closest?.("[data-cg-node]");
     if (!nodeEl) return;
     const name = nodeEl.getAttribute("data-cg-name") || "";
@@ -2223,6 +2430,39 @@
     setRespBadge("", "");
     els.responseView.innerHTML = `<div class="resp-empty">选择接口，配置地址后发送。</div>`;
   });
+  $("historyView")?.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-history-index]");
+    if (!row) return;
+    showHistoryEntry(Number(row.getAttribute("data-history-index")), { activate: false });
+  });
+  $("historyView")?.addEventListener("dblclick", (event) => {
+    const row = event.target.closest("[data-history-index]");
+    if (!row) return;
+    const item = state.history[Number(row.getAttribute("data-history-index"))];
+    if (!item) return;
+    showHistoryEntry(state.history.indexOf(item), { activate: false });
+    const flowApi = window.ProtoViewFlow;
+    if (!flowApi?.isFlowOpen?.()) return;
+    const nodeId = item.nodeId || flowApi.nodeIdForRpc?.(item.rpcId || state.selected?.id);
+    if (nodeId) flowApi.openInspect?.(nodeId, { tab: "history" });
+  });
+  $("clearHistoryBtn")?.addEventListener("click", () => {
+    const rpc = state.selected;
+    const items = rpc ? state.history.filter((item) => historyMatches(item, rpc)) : state.history.slice();
+    if (!items.length) return;
+    const label = rpc ? rpc.name : "全部接口";
+    if (!window.confirm(`清空「${label}」的发送记录？`)) return;
+    const drop = new Set(items);
+    state.history = state.history.filter((item) => !drop.has(item));
+    saveHistory();
+    state.historyActiveId = "";
+    if (!rpc || state.responseRpcId === rpc.id) {
+      state.responseRpcId = "";
+      setRespBadge("", "");
+      if (els.responseView) els.responseView.innerHTML = `<div class="resp-empty">该接口还没有响应。</div>`;
+    }
+    renderHistory();
+  });
 
   els.metaBody.addEventListener("input", (event) => {
     const input = event.target.closest("input[data-meta-key]");
@@ -2285,17 +2525,7 @@
   });
   $("closeEnvModal").addEventListener("click", () => closeModal(els.envModal));
   els.envList.addEventListener("click", (event) => {
-    const up = event.target.closest("[data-env-up]");
-    const down = event.target.closest("[data-env-down]");
     const del = event.target.closest("[data-env-del]");
-    if (up) {
-      moveEnv(up.getAttribute("data-env-up"), -1);
-      return;
-    }
-    if (down) {
-      moveEnv(down.getAttribute("data-env-down"), 1);
-      return;
-    }
     if (del) {
       deleteEnv(del.getAttribute("data-env-del"));
       return;
@@ -2366,6 +2596,7 @@
   }
 
   function showInvokeResult(data) {
+    if (state.selected) state.responseRpcId = data.rpcId || state.selected.id;
     const kind = data.ok ? "ok" : "err";
     const timing = typeof data.ms === "number" ? ` · ${data.ms} ms` : "";
     setRespBadge(kind, `${data.status || (data.ok ? "OK" : "ERROR")}${timing}`);
@@ -2652,12 +2883,26 @@
         resolve({ ok: false, status: "UNAVAILABLE", ms: 0, error: "需要 VS Code Client" });
         return;
       }
-      const id = `flow-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id = partial?.id || `flow-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const host = partial?.host || els.address.value.trim() || activeEnv()?.host || "";
+      // 链路里的每次调用也记进 History，运行完可以逐条回看
+      pushFlowSend({
+        id,
+        host,
+        protocol: partial?.protocol || "grpc",
+        package: partial?.package || "",
+        service: partial?.service || "",
+        method: partial?.method || "",
+        body: partial?.body,
+        metadata: partial?.metadata,
+        message: partial?.message || "",
+        label: partial?.label || "",
+      });
       const handler = (event) => {
         const data = event.data;
         if (!data || data.type !== "invokeResult" || data.id !== id) return;
         window.removeEventListener("message", handler);
+        recordHistoryResult(id, data);
         resolve(data);
       };
       window.addEventListener("message", handler);
@@ -2825,6 +3070,15 @@
 
   window.ProtoViewClient = {
     findRpc,
+    discardClientSnapshot,
+    healAfterFlow() {
+      const restored = restoreClientSnapshot();
+      if (!restored && state.selected && state.tab === "message" && !String(els.messageEditor.value || "").trim()) {
+        const draft = state.drafts[state.selected.id];
+        els.messageEditor.value = draft?.message || generateMessage(state.selected);
+      }
+      if (state.tab) setTab(state.tab);
+    },
     showRpcDefinition(id) {
       if (!findRpc(id)) return false;
       selectRpc(id, { tab: "docs" });
@@ -2834,23 +3088,34 @@
     loadFlowInspectDraft(payload = {}) {
       const rpcId = payload.rpcId;
       if (!rpcId || !findRpc(rpcId)) return false;
-      let messageText = "{}";
-      try {
-        if (typeof payload.message === "string") messageText = payload.message || "{}";
-        else if (payload.message && typeof payload.message === "object") {
-          messageText = JSON.stringify(payload.message, null, 2);
+      if (!payload.keepClient) captureClientSnapshot();
+      const nodeMessageEmpty = payload.message == null
+        || (typeof payload.message === "string" && (!payload.message.trim() || payload.message.trim() === "{}"))
+        || (typeof payload.message === "object" && !Object.keys(payload.message).length);
+      let messageText = "";
+      if (!nodeMessageEmpty) {
+        try {
+          messageText = typeof payload.message === "string"
+            ? payload.message
+            : JSON.stringify(payload.message, null, 2);
+        } catch {
+          messageText = "";
         }
-      } catch {
-        messageText = "{}";
       }
+      if (!messageText && clientSnapshot?.rpcId === rpcId) messageText = clientSnapshot.message || "";
+      if (!messageText) messageText = state.drafts[rpcId]?.message || "";
+      const nodeMeta = Array.isArray(payload.metadata)
+        ? payload.metadata.filter((row) => row && String(row.name || "").trim())
+        : [];
       selectRpc(rpcId, {
         skipPersist: true,
+        showLatest: Boolean(payload.showLatest),
         tab: payload.tab || "docs",
         draft: {
           message: messageText,
-          metadata: Array.isArray(payload.metadata) && payload.metadata.length
+          metadata: nodeMeta.length
             ? payload.metadata
-            : [{ name: "", value: "", description: "" }],
+            : (state.drafts[rpcId]?.metadata || [{ name: "", value: "", description: "" }]),
           protocol: payload.protocol || "grpc",
           httpMethod: payload.httpMethod || "POST",
           httpPath: payload.httpPath || "",
@@ -2978,7 +3243,18 @@
     if (data.type === "codeSymbols") applyCodeSymbols(data);
     if (data.type === "callGraph") renderCallGraph(data.payload);
     if (data.type === "invokeResult") {
-      if (state.pendingInvoke && data.id && data.id !== state.pendingInvoke) return;
+      if (state.pendingInvoke && data.id && data.id !== state.pendingInvoke) {
+        // 别的请求（例如链路里另一个节点）只更新它自己的 History，不盖住当前接口的响应
+        recordHistoryResult(data.id, data);
+        const entry = state.history.find((item) => item.id === data.id);
+        if (state.selected && entry && historyMatches(entry, state.selected)) {
+          showHistoryEntry(state.history.indexOf(entry), { activate: false });
+        }
+        return;
+      }
+      recordHistoryResult(data.id, data);
+      const entry = state.history.find((item) => item.id === data.id);
+      if (state.selected && entry && !historyMatches(entry, state.selected)) return;
       showInvokeResult(data);
     }
     if (data.type === "stressProgress" && data.id === state.stressId) showStressProgress(data);
@@ -3506,26 +3782,71 @@
     setRespBadge("ok", `已打开 ${file.replace(/\\/g, "/").split("/").pop()}:${line}`);
   }
 
+  /** 调用图「查看 DB」：整条链路聚合出的读写表列表，每行可跳到 DbView 对应表 */
   function showCallGraphDb(name, file) {
     const graph = callGraphState.graph;
-    const node = graph?.nodes?.find((item) => item.name === name && item.file === file)
-      || graph?.nodes?.find((item) => item.name === name);
-    const hits = node?.db || [];
-    const world = $("callGraphWorld");
-    world?.querySelector(".call-graph-db-pop")?.remove();
-    const rows = hits.length
-      ? hits.map((hit) => `
-      <div class="call-graph-db-row">
-        <span class="call-graph-db-tag is-${hit.op}">${hit.op === "read" ? "读" : hit.op === "write" ? "写" : "读写"}</span>
-        <strong>${esc(hit.table)}</strong>
-        <span class="call-graph-db-line">行 ${hit.line}</span>
-      </div>`).join("")
-      : `<div class="call-graph-db-row call-graph-db-none">未识别到数据库表（可能通过 DAO 间接访问）</div>`;
-    const pop = document.createElement("div");
-    pop.className = "call-graph-db-pop";
-    pop.innerHTML = `<div class="call-graph-db-pop-head">${esc(name)} · 数据表</div>${rows}`;
-    world?.appendChild(pop);
-    window.setTimeout(() => pop.remove(), 8000);
+    const board = $("callGraphBoard");
+    board?.querySelector(".call-graph-db-panel")?.remove();
+    const seen = new Map();
+    for (const node of graph?.nodes || []) {
+      const isFocus = node.name === name && (!file || node.file === file);
+      for (const hit of node.db || []) {
+        const table = String(hit.table || "").trim();
+        if (!table) continue;
+        const key = table.toLowerCase();
+        const prev = seen.get(key);
+        const op = hit.op === "write" ? "write" : hit.op === "read" ? "read" : "unknown";
+        if (!prev) {
+          seen.set(key, { table, ops: new Set([op]), sources: isFocus ? [node.name] : [], focus: isFocus, line: hit.line, file: node.file });
+        } else {
+          prev.ops.add(op);
+          if (isFocus) { prev.focus = true; prev.line = hit.line; prev.file = node.file; }
+          if (isFocus && !prev.sources.includes(node.name)) prev.sources.push(node.name);
+        }
+      }
+    }
+    const rows = [...seen.values()].sort((a, b) => Number(b.focus) - Number(a.focus) || a.table.localeCompare(b.table));
+    const opLabel = (ops) => {
+      const read = ops.has("read");
+      const write = ops.has("write");
+      if (read && write) return { text: "读写", cls: "is-rw" };
+      if (write) return { text: "写", cls: "is-write" };
+      if (read) return { text: "读", cls: "is-read" };
+      return { text: "未知", cls: "is-unknown" };
+    };
+    const body = rows.length
+      ? rows.map((row) => {
+        const op = opLabel(row.ops);
+        return `<div class="call-graph-db-item">
+          <span class="call-graph-db-tag ${op.cls}">${op.text}</span>
+          <span class="call-graph-db-name" title="${esc(row.table)}">${esc(row.table)}</span>
+          <button class="gs-action" type="button" data-cg-db-open="${esc(row.table)}" title="在 DbView 打开这张表">查看</button>
+        </div>`;
+      }).join("")
+      : `<div class="call-graph-db-item call-graph-db-none">未识别到数据库表（可能通过 DAO 间接访问）</div>`;
+    const panel = document.createElement("div");
+    panel.className = "call-graph-db-panel";
+    panel.innerHTML = `<div class="call-graph-db-panel-head">
+        <strong>${esc(name || "调用链")} · 数据表</strong>
+        <span class="call-graph-db-count">${rows.length} 张</span>
+        <button class="icon-btn" type="button" data-cg-db-close title="关闭">✕</button>
+      </div>
+      <div class="call-graph-db-panel-body">${body}</div>`;
+    (board || $("sourceDrawer"))?.appendChild(panel);
+  }
+
+
+  /** 调用图里点「查看」：切到 DbView 并定位到该表（库名自动匹配） */
+  function openDbTableFromCallGraph(tableName) {
+    const target = String(tableName || "").trim();
+    if (!target) return;
+    closeSourceDrawer();
+    const db = window.ProtoViewDb;
+    if (!db?.openTableByName) return;
+    window.ProtoViewHome?.openTab?.("db", "DbView Client");
+    window.ProtoViewHome?.setView?.("db");
+    // 等视图切换后再定位，避免 setView 的 ensure 覆盖选中态
+    requestAnimationFrame(() => db.openTableByName(target));
   }
 
   /** Excel 结果：切到 ExcelView 并定位到表/行 */

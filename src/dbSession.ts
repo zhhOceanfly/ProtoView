@@ -98,11 +98,11 @@ export async function dbDatabases(root: string, options: { envId?: string }): Pr
   }
 }
 
-export async function dbTableDefinition(root: string, options: { envId?: string; tableId: string }): Promise<Record<string, unknown>> {
+export async function dbTableDefinition(root: string, options: { envId?: string; tableId: string; database?: string }): Promise<Record<string, unknown>> {
   const table = await tableById(root, options.tableId);
   if (!table) return { ok: false, error: "找不到这张表" };
   const local = String(table.definition || "");
-  const env = await envById(root, options.envId);
+  const env = await envById(root, options.envId, options.database);
   if (!env) return { ok: false, error: "还没有数据库环境", local, table: table.name };
   try {
     const pool = poolOf(env);
@@ -121,10 +121,11 @@ export async function dbTablePage(root: string, options: {
   tableId: string;
   limit?: number;
   offset?: number;
+  database?: string;
 }): Promise<Record<string, unknown>> {
   const table = await tableById(root, options.tableId);
   if (!table) return { ok: false, error: "找不到这张表" };
-  const env = await envById(root, options.envId);
+  const env = await envById(root, options.envId, options.database);
   if (!env) return { ok: false, error: "还没有数据库环境" };
   const limit = clamp(options.limit ?? 50, 1, 500);
   const offset = clamp(options.offset ?? 0, 0, 10_000_000);
@@ -156,11 +157,12 @@ export async function dbMutate(root: string, edit: {
   column?: string;
   value?: unknown;
   values?: Record<string, unknown>;
+  database?: string;
 }): Promise<Record<string, unknown>> {
   const table = await tableById(root, edit.tableId);
   if (!table) return { ok: false, error: "找不到这张表" };
   if (!table.primaryKey.length) return { ok: false, error: "这张表没有主键，无法直接改数据" };
-  const env = await envById(root, edit.envId);
+  const env = await envById(root, edit.envId, edit.database);
   if (!env) return { ok: false, error: "还没有数据库环境" };
   try {
     const pool = poolOf(env);
@@ -193,8 +195,8 @@ export async function dbMutate(root: string, edit: {
   }
 }
 
-export async function dbQuery(root: string, options: { envId?: string; sql: string }): Promise<Record<string, unknown>> {
-  const env = await envById(root, options.envId);
+export async function dbQuery(root: string, options: { envId?: string; sql: string; database?: string }): Promise<Record<string, unknown>> {
+  const env = await envById(root, options.envId, options.database);
   if (!env) return { ok: false, error: "还没有数据库环境" };
   const statements = splitStatements(options.sql).slice(0, 20);
   if (!statements.length) return { ok: false, error: "SQL 是空的" };
@@ -224,9 +226,13 @@ async function tableById(root: string, id: string): Promise<SqlTableMeta | undef
   return findSqlTable(catalog.tables, id);
 }
 
-async function envById(root: string, id?: string): Promise<DbEnv | undefined> {
+async function envById(root: string, id?: string, database?: string): Promise<DbEnv | undefined> {
   const file = await loadDbEnvs(root);
-  return file.envs.find((item) => item.id === id) || file.envs[0];
+  const env = file.envs.find((item) => item.id === id) || file.envs[0];
+  if (!env) return undefined;
+  // 前端切换表时会显式带上库名，避免「先保存再查询」的回包竞态
+  const db = String(database || "").trim();
+  return db && db !== env.database ? { ...env, database: db } : env;
 }
 
 function poolOf(env: DbEnv): mysql.Pool {

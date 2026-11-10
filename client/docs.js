@@ -116,7 +116,7 @@
     refreshTabs();
     if (input) input.value = page.text || "";
     state.mode = page.editable ? state.mode : "preview";
-    const markdown = /^\.(md|markdown|mdx)$/i.test(page.ext || "");
+    const markdown = /^\.(md|markdown|mdx|docx)$/i.test(page.ext || "");
     $("docsToolbar")?.classList.toggle("is-plain", !markdown);
     applyMode();
     paintGutter();
@@ -174,7 +174,7 @@
     const page = state.pageData;
     if (!page) return;
     const text = state.mode === "preview" ? String(page.text || "") : String($("docsInput")?.value ?? page.text ?? "");
-    const isMarkdown = /^\.(md|markdown|mdx)$/i.test(page.ext || "");
+    const isMarkdown = /^\.(md|markdown|mdx|docx)$/i.test(page.ext || "");
     const html = isMarkdown ? markdownToHtml(text, state.focusLine) : plainToHtml(text, state.focusLine);
     if (preview) preview.innerHTML = `<article class="docs-article">${html}</article>`;
     if (body && state.mode === "preview") {

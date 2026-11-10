@@ -70,6 +70,7 @@ export async function handleOceanMessage(
         tableId: String(body.tableId || ""),
         limit: Number(body.limit || 50),
         offset: Number(body.offset || 0),
+        database: String(body.database || ""),
       }),
     };
   }
@@ -79,6 +80,7 @@ export async function handleOceanMessage(
       payload: await dbTableDefinition(root, {
         envId: String(body.envId || ""),
         tableId: String(body.tableId || ""),
+        database: String(body.database || ""),
       }),
     };
   }
@@ -92,11 +94,19 @@ export async function handleOceanMessage(
       column: String(body.column || ""),
       value: body.value,
       values: (body.values || {}) as Record<string, unknown>,
+      database: String(body.database || ""),
     });
     return { type: "dbMutate", payload: result };
   }
   if (type === "dbQuery") {
-    return { type: "dbQuery", payload: await dbQuery(root, { envId: String(body.envId || ""), sql: String(body.sql || "") }) };
+    return {
+      type: "dbQuery",
+      payload: await dbQuery(root, {
+        envId: String(body.envId || ""),
+        sql: String(body.sql || ""),
+        database: String(body.database || ""),
+      }),
+    };
   }
   return null;
 }

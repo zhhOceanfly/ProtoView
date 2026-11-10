@@ -481,6 +481,7 @@ export class ClientPanel {
         <button class="btn" id="flowInspectExpand" type="button" title="关闭链路，进入完整 Client">在 Client 打开</button>
         <button class="icon-btn" id="flowInspectClose" type="button" title="关闭">✕</button>
       </div>
+      <div class="flow-inspect-grip" id="flowInspectGrip" title="上下拖动调整面板高度"></div>
       <div class="topbar">
         <button class="icon-btn sidebar-toggle" data-sidebar-toggle type="button" title="收起侧栏" aria-label="收起侧栏">◧</button>
         <select class="pill" id="protocolSelect" title="协议">
@@ -499,11 +500,13 @@ export class ClientPanel {
         <input class="pill hidden http-path" id="httpPath" placeholder="/path" title="HTTP 路径" />
         <select class="pill" id="envSelect" title="环境"></select>
         <button class="btn" id="envConfigBtn" type="button">环境配置</button>
-        <button class="btn" id="globalVarsBtn" type="button" title="全局变量（优先级低于步骤/节点）">变量</button>
-        <input class="pill addr" id="address" placeholder="gRPC host:port" />
-        <div class="pill method" id="methodLabel">未选择接口</div>
-        <button class="btn" id="grpcurlBtn" type="button" title="Generate grpcurl command">&lt;/&gt;</button>
         <label class="tls-toggle" title="不勾选时使用明文 gRPC"><input id="tlsCheck" type="checkbox" /> TLS</label>
+        <button class="btn" id="globalVarsBtn" type="button" title="全局变量（优先级低于步骤/节点）">变量</button>
+        <div class="addr-group">
+          <input class="pill addr" id="address" placeholder="gRPC host:port" />
+          <div class="pill method" id="methodLabel">未选择接口</div>
+        </div>
+        <button class="btn" id="grpcurlBtn" type="button" title="Generate grpcurl command">&lt;/&gt;</button>
         <label class="open-with-wrap hidden" id="openWithWrap" title="跳转源码的打开方式（仅浏览器 / npm）">
           <span class="open-with-label">源码</span>
           <select class="pill" id="openWithSelect">
@@ -627,6 +630,11 @@ export class ClientPanel {
               </div>
             </div>
             <div class="view" id="view-history">
+              <div class="history-head">
+                <span class="history-title">发送记录</span>
+                <span class="spacer"></span>
+                <button class="btn" id="clearHistoryBtn" type="button">清空记录</button>
+              </div>
               <div class="history" id="historyView">发送记录会显示在这里（当前为本地会话历史，无数据库）。</div>
             </div>
           </div>
@@ -681,7 +689,6 @@ export class ClientPanel {
         <button type="button" data-flow-act="open-source">跳转源码</button>
         <button type="button" data-flow-act="edit">编辑</button>
         <button type="button" data-flow-act="duplicate">复制节点</button>
-        <button type="button" data-flow-act="view-resp">查看响应</button>
         <button type="button" data-flow-act="send-msg" class="hidden">收发消息</button>
         <button type="button" data-flow-act="close-stream" class="hidden">关闭连接</button>
         <button type="button" data-flow-act="enable">启用</button>
@@ -833,7 +840,7 @@ export class ClientPanel {
         <button class="icon-btn" id="closeFlowVars" type="button">✕</button>
       </div>
       <div class="modal-body">
-        <p class="stress-note" id="flowVarsHint">发送时可用 <code>{{变量名}}</code> 引用。同名优先级：节点 › 步骤 › 全局。</p>
+        <p class="stress-note" id="flowVarsHint">发送时可用 {{变量名}} 引用。右侧方框勾选后，该变量会按变量名写入 Metadata，所有节点都能用。取值优先级：节点 › 步骤 › 全局；同名时手写 Metadata 优先。</p>
         <div id="flowVarsBody" class="flow-vars-list"></div>
       </div>
       <div class="modal-foot">
@@ -1140,7 +1147,7 @@ export class ClientPanel {
           <button class="btn active" type="button" data-excel-mode="read">阅读</button>
           <button class="btn" type="button" data-excel-mode="edit">编辑</button>
         </div>
-        <button class="btn" id="excelJump" type="button">跳转源码</button>
+        <button class="btn primary hidden" id="excelSave" type="button">保存</button>
       </div>
       <div class="excel-sheets" id="excelSheets"></div>
       <div class="excel-table-wrap" id="excelTableWrap">
@@ -1240,10 +1247,6 @@ export class ClientPanel {
         <span class="spacer"></span>
         <strong id="dbTitle">选择左侧的表</strong>
         <span class="excel-meta" id="dbPath"></span>
-        <div class="docs-mode" id="dbMode">
-          <button class="btn active" type="button" data-db-mode="read">阅读</button>
-          <button class="btn" type="button" data-db-mode="edit">编辑</button>
-        </div>
         <button class="btn" id="dbJump" type="button">跳转源码</button>
       </div>
       <div class="tabs db-tabs" id="dbTabs">
@@ -1251,47 +1254,33 @@ export class ClientPanel {
         <button class="tab" type="button" data-db-tab="ddl">表定义</button>
       </div>
       <div class="db-body" id="dbBody">
-        <section class="db-pane view active" id="dbQueryView">
-          <div class="db-stack" id="dbStack">
-            <div class="db-query-workspace workspace" id="dbQueryWorkspace">
-              <div class="db-sql-pane">
-                <div class="db-pane-bar">
-                  <span>SQL</span>
-                  <button class="btn primary" id="dbRunSql" type="button">执行</button>
-                  <span class="excel-meta" id="dbResultMeta"></span>
-                </div>
-                <textarea class="db-sql" id="dbSql" spellcheck="false" placeholder="SELECT * FROM player LIMIT 20"></textarea>
-              </div>
-              <div class="split-bar" id="dbSplitBar" title="拖动调整 SQL 与结果高度">
-                <button class="split-btn" id="dbCollapseSql" type="button" title="收起 SQL">▲</button>
-                <div class="split-grip" id="dbSplitHandle"></div>
-                <button class="split-btn" id="dbCollapseResult" type="button" title="收起结果">▼</button>
-              </div>
-              <div class="db-result-pane">
-                <div class="db-pane-bar">
-                  <span>结果</span>
-                  <span class="excel-meta" id="dbQueryMeta"></span>
-                </div>
-                <div class="excel-table-wrap" id="dbResultWrap"><div class="excel-empty">执行 SQL 后在这里看结果</div></div>
-              </div>
-            </div>
-            <div class="split-bar" id="dbStackBar" title="拖动调整查询区和表数据高度">
-              <div class="split-grip" id="dbStackHandle"></div>
-            </div>
-            <div class="db-table-block">
+        <section class="db-pane active" id="dbQueryView">
+          <div class="db-query-workspace workspace" id="dbQueryWorkspace">
+            <div class="db-sql-pane">
               <div class="db-pane-bar">
-                <span>表数据</span>
-                <button class="btn" id="dbAddRow" type="button">新增行</button>
-                <button class="btn" id="dbRefreshRows" type="button">刷新</button>
-                <span class="excel-meta" id="dbTableMeta"></span>
-                <span class="spacer"></span>
-                <div class="pager db-row-pager" id="dbRowPager"></div>
+                <span>SQL</span>
+                <button class="btn primary" id="dbRunSql" type="button">执行</button>
+                <span class="excel-meta" id="dbResultMeta"></span>
               </div>
-              <div class="excel-table-wrap" id="dbTableWrap"><div class="excel-empty">选择左侧 SQL 文件里的表</div></div>
+              <textarea class="db-sql" id="dbSql" spellcheck="false" placeholder="SELECT * FROM player LIMIT 20"></textarea>
+            </div>
+            <div class="split-bar" id="dbSplitBar" title="拖动调整 SQL 与结果高度">
+              <button class="split-btn" id="dbCollapseSql" type="button" title="收起 SQL">▲</button>
+              <div class="split-grip" id="dbSplitHandle"></div>
+              <button class="split-btn" id="dbCollapseResult" type="button" title="收起结果">▼</button>
+            </div>
+            <div class="db-result-pane">
+              <div class="db-pane-bar">
+                <span>结果</span>
+                <span class="excel-meta" id="dbQueryMeta"></span>
+                <span class="spacer"></span>
+                <div class="pager db-result-pager" id="dbResultPager"></div>
+              </div>
+              <div class="excel-table-wrap" id="dbResultWrap"><div class="excel-empty">执行 SQL 后在这里看结果</div></div>
             </div>
           </div>
         </section>
-        <section class="db-pane view" id="dbDdlView">
+        <section class="db-pane" id="dbDdlView">
           <div class="db-pane-bar">
             <span>表定义对比</span>
             <span class="excel-meta" id="dbDdlMeta"></span>

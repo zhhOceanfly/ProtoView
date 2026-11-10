@@ -24,6 +24,7 @@
     excelPage: 0,
     excelPageSize: 60,
     excelEditing: false,
+    excelPending: new Map(),
     docsPage: 0,
     docsPageSize: 60,
     searchTimer: 0,
@@ -55,6 +56,7 @@
     if (view === "docs") window.ProtoViewDocs?.ensure?.();
     if (view === "db") window.ProtoViewDb?.ensure?.();
     if (view === "home") requestAnimationFrame(() => $("homeSearch")?.focus());
+    if (view === "client") window.ProtoViewFlow?.ensureClientHome?.();
   }
 
   /** 入口：已打开就切过去，没有才新建标签 */
@@ -232,6 +234,8 @@
         .join("")}</tr>`;
     }).join("");
     wrap.innerHTML = `<table class="excel-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+    applyExcelEditability();
+    syncExcelSave();
     const meta = $("excelMeta");
     if (meta) {
       const from = page.offset + 1;
@@ -243,7 +247,7 @@
     });
   }
 
-  /** 单元格编辑：失焦或回车时写回文件 */
+  /** 单元格编辑：失焦或回车时先记到本地，Ctrl+S / 保存按钮再落盘 */
   function commitExcelCell(cell) {
     const page = state.page;
     if (!state.excelEditing || !cell || !page) return;
@@ -252,15 +256,39 @@
     if (!Number.isFinite(row) || !Number.isFinite(col)) return;
     const value = cell.textContent ?? "";
     const original = page.rows.find((item) => item.row === row)?.cells[col] ?? "";
-    if (value === original) return;
-    if (!post("excelUpdate", { id: page.id, row, col, value })) {
-      setExcelStatus("独立模式无法保存修改", true);
+    const key = `${row}:${col}`;
+    if (value === original && !state.excelPending.has(key)) return;
+    if (value === original) state.excelPending.delete(key);
+    else state.excelPending.set(key, { row, col, value });
+    syncExcelSave();
+  }
+
+  function syncExcelSave() {
+    const btn = $("excelSave");
+    if (!btn) return;
+    const dirty = state.excelPending.size > 0;
+    btn.classList.toggle("hidden", !state.excelEditing);
+    btn.disabled = !dirty;
+    btn.textContent = dirty ? `保存 (${state.excelPending.size})` : "保存";
+    btn.title = dirty ? "保存修改（Ctrl+S）" : "没有需要保存的修改";
+  }
+
+  function saveExcel() {
+    const page = state.page;
+    if (!state.excelEditing || !page) return;
+    if (!state.excelPending.size) {
+      setExcelStatus("没有需要保存的修改");
       return;
     }
-    setExcelStatus(`保存中 · 行 ${row} 列 ${col + 1}…`);
-    // 本地先记住，避免重复提交同一值
-    const target = page.rows.find((item) => item.row === row);
-    if (target) target.cells[col] = value;
+    const edits = [...state.excelPending.values()].sort((a, b) => a.row - b.row || a.col - b.col);
+    state.excelPending.clear();
+    syncExcelSave();
+    setExcelStatus(`保存中 · ${edits.length} 处…`);
+    for (const edit of edits) {
+      post("excelUpdate", { id: page.id, row: edit.row, col: edit.col, value: edit.value });
+      const target = page.rows.find((item) => item.row === edit.row);
+      if (target) target.cells[edit.col] = edit.value;
+    }
   }
 
   function setExcelStatus(text, isError = false) {
@@ -270,8 +298,7 @@
     meta.classList.toggle("is-error", isError);
   }
 
-  function applyExcelUpdate(result) {
-    if (!result) return;
+  function applyExcelUpdate(result) {    if (!result) return;
     if (!result.ok) {
       setExcelStatus(`保存失败：${result.error || "未知错误"}`, true);
       return;
@@ -521,22 +548,50 @@
       openProtoHit(item);
     });
 
-    function paintExcelMode() {
-      for (const btn of document.querySelectorAll("[data-excel-mode]")) {
-        btn.classList.toggle("active", (btn.getAttribute("data-excel-mode") === "edit") === state.excelEditing);
+    function applyExcelEditability() {
+      const editable = state.excelEditing;
+      for (const cell of document.querySelectorAll("#excelTableWrap .excel-cell")) {
+        if (editable) cell.setAttribute("contenteditable", "true");
+        else cell.removeAttribute("contenteditable");
       }
+    }
+    function paintExcelMode() {
+      for (const btn of document.querySelectorAll("[data-excel-mode]")) {        btn.classList.toggle("active", (btn.getAttribute("data-excel-mode") === "edit") === state.excelEditing);
+      }
+      if (!state.excelEditing) state.excelPending.clear();
+      syncExcelSave();
     }
     $("excelMode")?.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-excel-mode]");
       if (!btn) return;
-      state.excelEditing = btn.getAttribute("data-excel-mode") === "edit";
+      const next = btn.getAttribute("data-excel-mode") === "edit";
+      if (!next && state.excelPending.size && !window.confirm(`还有 ${state.excelPending.size} 处未保存的修改，切回阅读会丢弃，继续？`)) return;
+      state.excelEditing = next;
       paintExcelMode();
-      if (state.page) applyExcelPage(state.page);
+      applyExcelEditability();
+      if (!next) {
+        const wrap = $("excelTableWrap");
+        if (wrap) {
+          for (const cell of wrap.querySelectorAll(".excel-cell")) {
+            const page = state.page;
+            if (!page) break;
+            const row = Number(cell.getAttribute("data-row"));
+            const col = Number(cell.getAttribute("data-col"));
+            const original = page.rows.find((item) => item.row === row)?.cells[col] ?? "";
+            cell.textContent = original;
+          }
+        }
+      }
     });
-    $("excelJump")?.addEventListener("click", () => {
-      const sheet = state.sheets.find((item) => item.id === state.activeSheetId);
-      if (!sheet?.file) return;
-      window.ProtoViewClient?.openSourceFile?.(sheet.file, 1);
+    $("excelSave")?.addEventListener("click", saveExcel);
+    document.addEventListener("keydown", (event) => {
+      if (!state.excelEditing) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        if (!document.getElementById("excelView")?.classList.contains("hidden")) {
+          event.preventDefault();
+          saveExcel();
+        }
+      }
     });
     paintExcelMode();
 

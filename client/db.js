@@ -16,21 +16,22 @@
     envs: [],
     activeEnvId: "",
     databases: [],
-    page: null,
-    draft: null,
+    database: "",
     tab: "query",
     envEditing: "",
     limits: [],
     sqlRatio: 0.46,
     sqlCollapsed: false,
     resultCollapsed: false,
-    rowOffset: 0,
     rowLimit: 50,
-    rowTotal: 0,
     definition: null,
     diffOnly: false,
-    mode: "read",
-    stackRatio: 0.5,
+    query: null,
+    lastSyncKey: "",
+    resultBlocks: [],
+    resultPage: 0,
+    resultPageSize: 100,
+    pendingTableName: "",
   };
   const MANUAL_DB_KEY = "protoview.db.lastManualDatabase";
   let searchWaiters = [];
@@ -50,6 +51,11 @@
     if (data.type === "sqlCatalog") {
       state.tables = Array.isArray(data.payload?.tables) ? data.payload.tables : [];
       renderTree();
+      if (state.pendingTableName) {
+        const name = state.pendingTableName;
+        state.pendingTableName = "";
+        openTableByName(name);
+      }
     }
     if (data.type === "sqlSearch") {
       const waiters = searchWaiters;
@@ -60,12 +66,15 @@
     if (data.type === "dbEnvs") applyEnvs(data.payload);
     if (data.type === "dbTest") applyTest(data.payload);
     if (data.type === "dbDatabases") applyDatabases(data.payload);
-    if (data.type === "dbTable") renderTable(data.payload);
     if (data.type === "dbDefinition") renderDefinition(data.payload);
     if (data.type === "dbMutate") {
       const result = data.payload || {};
-      setTableMeta(result.ok ? `已更新 ${result.affected || 0} 行` : `失败：${result.error || "未知错误"}`, !result.ok);
-      if (result.ok && state.activeId) loadTable();
+      const meta = $("dbQueryMeta");
+      if (meta) {
+        meta.textContent = result.ok ? `已更新 ${result.affected || 0} 行` : `失败：${result.error || "未知错误"}`;
+        meta.classList.toggle("is-error", !result.ok);
+      }
+      if (result.ok) renderQueryPage();
     }
     if (data.type === "dbQuery") renderQuery(data.payload);
   });
@@ -119,24 +128,98 @@
     try { localStorage.setItem(MANUAL_DB_KEY, name); } catch { /* ignore */ }
   }
 
-  /** 库名与 SQL 文件名（去后缀、小写）完全一致才自动选中。 */
+  /** 归一化：去掉下划线、横线等分隔符并转小写，便于 GamePlayerStorage ≈ game_player_storage */
+  function normalizeName(name) {
+    return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function databaseCandidates(table) {
+    const out = [];
+    const push = (value) => {
+      const text = String(value || "").trim();
+      if (text && !out.includes(text)) out.push(text);
+    };
+    push(fileStem(table));
+    push(table?.name);
+    const base = String(table?.relative || "").split("/").pop() || "";
+    push(base.replace(/\.[^.]+$/, ""));
+    return out.map((item) => ({ raw: item, key: item.toLowerCase(), norm: normalizeName(item) }))
+      .filter((item) => item.key && item.norm.length >= 3);
+  }
+
+  // ===== 环境 =====
+  /**
+   * 库名与 SQL 文件名 / 表名匹配：忽略大小写与分隔符，
+   * 并接受「库名里包含文件名」这类前缀后缀（zyyg_game_player_storage ≈ GamePlayerStorage.sql）。
+   * 匹配不到返回空，交由用户手选。
+   */
+  function matchDatabase(table) {
+    const candidates = databaseCandidates(table);
+    if (!candidates.length) return "";
+    const lower = state.databases.map((name) => ({ name, key: name.toLowerCase(), norm: normalizeName(name) }));
+    for (const candidate of candidates) {
+      const exact = lower.find((item) => item.key === candidate.key);
+      if (exact) return exact.name;
+    }
+    for (const candidate of candidates) {
+      const normed = lower.find((item) => item.norm && item.norm === candidate.norm);
+      if (normed) return normed.name;
+    }
+    // 库名以文件名 / 表名开头或结尾（长候选优先，避免 game 抢走 game_player）
+    const sorted = [...candidates].sort((a, b) => b.norm.length - a.norm.length);
+    for (const candidate of sorted) {
+      const prefixed = lower.filter((item) => item.key.startsWith(candidate.key) || item.norm.startsWith(candidate.norm));
+      if (prefixed.length) {
+        prefixed.sort((a, b) => a.key.length - b.key.length);
+        return prefixed[0].name;
+      }
+    }
+    for (const candidate of sorted) {
+      const suffixed = lower.filter((item) => item.key.endsWith(candidate.key) || item.norm.endsWith(candidate.norm));
+      if (suffixed.length) {
+        suffixed.sort((a, b) => a.key.length - b.key.length);
+        return suffixed[0].name;
+      }
+    }
+    // 最后：库名中间包含文件名 / 表名（zyyg_game_player_storage）
+    for (const candidate of sorted) {
+      if (candidate.norm.length < 4) continue;
+      const contained = lower
+        .filter((item) => item.norm.includes(candidate.norm) || item.key.includes(candidate.key))
+        .sort((a, b) => a.key.length - b.key.length);
+      if (contained.length) return contained[0].name;
+    }
+    // 反向：文件名里包含库名（GamePlayerStorage2024.sql）
+    for (const candidate of sorted) {
+      const holders = lower
+        .filter((item) => item.norm.length >= 3 && candidate.norm.includes(item.norm))
+        .sort((a, b) => b.key.length - a.key.length);
+      if (holders.length) return holders[0].name;
+    }
+    return "";
+  }
+
   function resolveDatabase(table) {
-    const stem = fileStem(table);
-    const matched = stem ? state.databases.find((name) => name.toLowerCase() === stem) : "";
+    const matched = matchDatabase(table);
     if (matched) return matched;
     const manual = lastManualDatabase();
     if (manual && state.databases.includes(manual)) return manual;
     return "";
   }
 
+  function paintDatabaseSelect() {
+    const select = $("dbDatabaseSelect");
+    if (!select) return "";
+    select.innerHTML = `<option value="">选择数据库</option>${state.databases.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("")}`;
+    const table = state.tables.find((item) => item.id === state.activeId);
+    const desired = table ? resolveDatabase(table) : (currentEnv()?.database || "");
+    select.value = state.databases.includes(desired) ? desired : "";
+    return select.value;
+  }
+
   function applyDatabases(payload) {
     state.databases = Array.isArray(payload?.databases) ? payload.databases : [];
-    const select = $("dbDatabaseSelect");
-    if (!select) return;
-    const table = state.tables.find((item) => item.id === state.activeId);
-    const chosen = table ? resolveDatabase(table) : "";
-    select.innerHTML = `<option value="">选择数据库</option>${state.databases.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("")}`;
-    select.value = state.databases.includes(chosen) ? chosen : "";
+    const chosen = paintDatabaseSelect();
     if (!state.databases.length && payload?.error) {
       const meta = $("dbEnvMeta");
       if (meta) {
@@ -145,49 +228,79 @@
       }
     }
     updateEnvMeta();
-    if (table) syncDatabaseForTable(table, payload?.error || "");
+    const table = state.tables.find((item) => item.id === state.activeId);
+    if (table && chosen) syncDatabase(table, chosen);
+    else if (table) hintNoDatabase(table);
+  }
+
+  function hintNoDatabase(table) {
+    const meta = $("dbEnvMeta");
+    if (!meta || !state.databases.length) return;
+    meta.textContent = `没有和「${fileStem(table)}」同名的库，请在上方手选`;
+    meta.classList.add("is-error");
+  }
+
+  /** 把库写到当前环境上（服务端池按它连库），再按当前标签页刷新。 */
+  function syncDatabase(table, name) {
+    const env = currentEnv();
+    if (!env || !name) return;
+    const key = `${state.activeId}|${name}`;
+    const changed = env.database !== name;
+    if (changed) {
+      const envs = state.envs.map((item) => item.id === env.id ? { ...item, database: name } : item);
+      state.envs = envs;
+      post("dbEnvSave", { envs });
+      const select = $("dbEnvSelect");
+      if (select) select.value = state.activeEnvId;
+    }
+    state.database = name;
+    updateEnvMeta();
+    const node = $("dbDatabaseSelect");
+    if (node) node.value = name;
+    // 库变化会触发一次 dbEnvs/dbDatabases 回包；查询本身也带 database，避免二次刷新
+    if (state.lastSyncKey === key && !changed) return;
+    state.lastSyncKey = key;
+    if (state.tab === "ddl") loadDefinition();
+    else runSql();
   }
 
   function pickDatabase(name) {
-    const env = currentEnv();
-    if (!env) return;
     const select = $("dbDatabaseSelect");
     if (select) select.value = state.databases.includes(name) ? name : "";
-    if (env.database === name) {
+    if (name) rememberManual(name);
+    const table = state.tables.find((item) => item.id === state.activeId);
+    if (!table) {
+      const env = currentEnv();
+      if (env && env.database !== name) {
+        state.envs = state.envs.map((item) => item.id === env.id ? { ...item, database: name } : item);
+        post("dbEnvSave", { envs: state.envs });
+      }
       updateEnvMeta();
-      if (name && state.activeId) loadTable();
       return;
     }
-    const envs = state.envs.map((item) => item.id === env.id ? { ...item, database: name } : item);
-    post("dbEnvSave", { envs });
-    state.envs = envs;
-    updateEnvMeta();
-    if (!name || !state.activeId) return;
-    switchTab("query");
-    loadTable();
-    const table = state.tables.find((item) => item.id === state.activeId);
-    if (table && $("dbSql")) $("dbSql").value = `SELECT * FROM \`${table.name}\` LIMIT ${state.rowLimit}`;
+    syncDatabase(table, name);
   }
 
-  function syncDatabaseForTable(table, error) {
+  function syncDatabaseForTable(table) {
     if (!table) return;
     paintTableHead(table);
     if (!state.databases.length) {
-      const wrap = $("dbTableWrap");
-      if (wrap) wrap.innerHTML = `<div class="excel-empty">${esc(error || "正在读取数据库列表…")}</div>`;
+      refreshDatabases();
       return;
     }
-    const name = resolveDatabase(table);
-    const select = $("dbDatabaseSelect");
-    if (select) select.value = name;
+    const name = paintDatabaseSelect();
     if (!name) {
-      const wrap = $("dbTableWrap");
-      if (wrap) wrap.innerHTML = `<div class="excel-empty">没有和「${esc(fileStem(table))}」同名的库，请在上方手选。下次仍匹配不到时会沿用这次的选择。</div>`;
-      setTableMeta("未选择数据库", true);
-      renderRowPager(0, 0, 0);
+      hintNoDatabase(table);
+      if (state.tab === "ddl") loadDefinition();
+      else {
+        const wrap = $("dbResultWrap");
+        if (wrap) {
+          wrap.innerHTML = `<div class="excel-empty">没有和「${esc(fileStem(table))} / ${esc(table.name)}」匹配的库，请在上方手选。下次仍匹配不到时会沿用这次的选择。</div>`;
+        }
+      }
       return;
     }
-    pickDatabase(name);
+    syncDatabase(table, name);
   }
 
   function applyTest(payload) {
@@ -212,15 +325,13 @@
   function renderEnvList() {
     const list = $("dbEnvList");
     if (!list) return;
-    list.innerHTML = state.envs.map((env, index) => `
+    list.innerHTML = state.envs.map((env) => `
       <div class="env-item${env.id === state.envEditing ? " active" : ""}" data-db-env="${esc(env.id)}">
         <div>
           <strong>${esc(env.name)}</strong>
           <span>${esc(env.user)}@${esc(env.host)}:${esc(env.port)}</span>
         </div>
         <div class="env-actions">
-          <button class="icon-btn" type="button" data-db-env-up="${esc(env.id)}" title="上移" ${index ? "" : "disabled"}>↑</button>
-          <button class="icon-btn" type="button" data-db-env-down="${esc(env.id)}" title="下移" ${index < state.envs.length - 1 ? "" : "disabled"}>↓</button>
           <button class="icon-btn" type="button" data-db-env-del="${esc(env.id)}" title="删除">✕</button>
         </div>
       </div>`).join("");
@@ -334,101 +445,72 @@
   }
 
   function paintDbMode() {
-    for (const btn of document.querySelectorAll("[data-db-mode]")) {
-      btn.classList.toggle("active", btn.getAttribute("data-db-mode") === state.mode);
-    }
-    $("dbAddRow")?.toggleAttribute("disabled", state.mode !== "edit");
+    const sql = $("dbSql");
+    if (sql) sql.readOnly = false;
   }
+  void paintDbMode;
 
   function openTable(id) {
     if (!id) return;
     ensureTab();
     state.activeId = id;
-    state.draft = null;
-    state.rowOffset = 0;
+    state.lastSyncKey = "";
     const table = state.tables.find((item) => item.id === id);
     if (table) state.collapsed.delete(table.relative);
     renderTree();
     paintTableHead(table);
     const sql = $("dbSql");
     if (sql && table) sql.value = `SELECT * FROM \`${table.name}\` LIMIT ${state.rowLimit}`;
-    switchTab("query");
     if (table) syncDatabaseForTable(table);
   }
 
-  function loadTable(offset = state.rowOffset) {
-    if (!state.activeId) return;
-    state.rowOffset = offset;
-    post("dbTable", {
-      envId: state.activeEnvId,
-      tableId: state.activeId,
-      limit: state.rowLimit,
-      offset,
-    });
+  /** 按表名找表并打开（链路「查看 DB」跳转用），表还没扫描到时记下来等目录回包 */
+  function findTableByName(name) {
+    const raw = String(name || "").trim();
+    if (!raw) return null;
+    const key = normalizeName(raw);
+    const bare = raw.includes(".") ? raw.split(".").pop() : raw;
+    const bareKey = normalizeName(bare);
+    return state.tables.find((table) => table.name.toLowerCase() === raw.toLowerCase())
+      || state.tables.find((table) => table.name.toLowerCase() === bare.toLowerCase())
+      || state.tables.find((table) => normalizeName(table.name) === bareKey)
+      || state.tables.find((table) => normalizeName(table.name).endsWith(bareKey) || bareKey.endsWith(normalizeName(table.name)))
+      || null;
+  }
+
+  function openTableByName(name) {
+    const table = findTableByName(name);
+    if (table) {
+      openTable(table.id);
+      switchTab("query");
+      return true;
+    }
+    state.pendingTableName = String(name || "");
+    ensureTab();
+    ensure(true);
+    return false;
   }
 
   function loadDefinition() {
     if (!state.activeId) return;
-    post("dbDefinition", { envId: state.activeEnvId, tableId: state.activeId });
+    post("dbDefinition", { envId: state.activeEnvId, tableId: state.activeId, database: currentDatabase() });
   }
 
-  function renderTable(payload) {
-    const wrap = $("dbTableWrap");
-    if (!wrap) return;
-    if (!payload?.ok) {
-      wrap.innerHTML = `<div class="excel-empty">${esc(payload?.error || "读取失败")}</div>`;
-      setTableMeta(payload?.error || "读取失败", true);
-      renderRowPager(0, 0, 0);
+  function runSql() {
+    const sql = $("dbSql")?.value || "";
+    if (!sql.trim()) {
+      const wrap = $("dbResultWrap");
+      if (wrap) wrap.innerHTML = `<div class="excel-empty">先写一条 SQL</div>`;
       return;
     }
-    state.page = payload;
-    state.rowTotal = Number(payload.total || 0);
-    state.rowOffset = Number(payload.offset || 0);
-    const columns = payload.columns || [];
-    const pk = payload.table?.primaryKey || [];
-    const editing = state.mode === "edit" && pk.length > 0;
-    const count = (payload.rows || []).length;
-    const offset = Number(payload.offset || 0);
-    const head = `<tr><th class="excel-rowno"></th>${columns.map((name) => `<th>${esc(name)}</th>`).join("")}</tr>`;
-    const rows = (payload.rows || []).map((row, index) => {
-      const key = JSON.stringify(pk.map((name) => row[name]));
-      return `<tr data-db-index="${index}">
-        <td class="excel-rowno">${editing ? `<button class="icon-btn db-del" type="button" data-db-del="${index}" title="删除">✕</button>` : ""}</td>
-        ${columns.map((name) => {
-          const editable = editing ? ` contenteditable="true" data-db-col="${esc(name)}" data-db-key="${esc(key)}"` : "";
-          return `<td class="excel-cell"${editable}>${esc(formatCell(row[name]))}</td>`;
-        }).join("")}
-      </tr>`;
-    }).join("");
-    const draft = state.draft && editing
-      ? `<tr class="db-draft"><td class="excel-rowno"></td>${columns.map((name) => `<td contenteditable="true" data-draft-col="${esc(name)}"></td>`).join("")}</tr>`
-      : "";
-    wrap.innerHTML = `<table class="excel-table"><thead>${head}</thead><tbody>${rows}${draft}</tbody></table>`;
-    const from = count ? offset + 1 : 0;
-    const to = count ? offset + count : 0;
-    const modeNote = state.mode === "edit" ? "" : " · 阅读";
-    setTableMeta(`${from}-${to} / ${payload.total} 行 · 每页 ${state.rowLimit}${pk.length ? modeNote : " · 无主键，只读"}`, false);
-    renderRowPager(from, to, Number(payload.total || 0));
+    const meta = $("dbResultMeta");
+    if (meta) meta.textContent = "执行中…";
+    post("dbQuery", { envId: state.activeEnvId, sql, database: currentDatabase() });
   }
 
-  function renderRowPager(from, to, total) {
-    const pager = $("dbRowPager");
-    if (!pager) return;
-    const pages = Math.max(1, Math.ceil(total / state.rowLimit));
-    const current = Math.floor(state.rowOffset / state.rowLimit) + 1;
-    const hasPrev = state.rowOffset > 0;
-    const hasNext = to < total;
-    const sizes = [20, 50, 100, 200];
-    if (!sizes.includes(state.rowLimit)) sizes.push(state.rowLimit);
-    pager.innerHTML = `
-      <button class="btn" type="button" data-row-page="first" ${hasPrev ? "" : "disabled"} title="首页">«</button>
-      <button class="btn" type="button" data-row-page="-1" ${hasPrev ? "" : "disabled"} title="上一页">上一页</button>
-      <span class="pager-info">${total ? `${from}-${to} / ${total}` : "0 行"} · ${current}/${pages}</span>
-      <button class="btn" type="button" data-row-page="1" ${hasNext ? "" : "disabled"} title="下一页">下一页</button>
-      <button class="btn" type="button" data-row-page="last" ${hasNext ? "" : "disabled"} title="末页">»</button>
-      <select class="pill pager-size" id="dbPageSize" title="每页行数">
-        ${sizes.map((size) => `<option value="${size}"${size === state.rowLimit ? " selected" : ""}>${size}</option>`).join("")}
-      </select>`;
+  /** 当前要连的库：下拉框优先，其次环境里存的 */
+  function currentDatabase() {
+    return $("dbDatabaseSelect")?.value || currentEnv()?.database || "";
   }
 
   function renderDefinition(payload) {
@@ -515,27 +597,6 @@
     return String(value);
   }
 
-  function setTableMeta(text, isError) {
-    const meta = $("dbTableMeta");
-    if (!meta) return;
-    meta.textContent = text;
-    meta.classList.toggle("is-error", Boolean(isError));
-  }
-
-  function commitCell(cell) {
-    const page = state.page;
-    if (state.mode !== "edit" || !cell || !page?.ok) return;
-    const col = cell.getAttribute("data-db-col");
-    const index = Number(cell.closest("tr")?.getAttribute("data-db-index"));
-    const row = page.rows?.[index];
-    if (!col || !row) return;
-    const value = cell.textContent ?? "";
-    if (value === formatCell(row[col])) return;
-    const pk = {};
-    for (const name of page.table?.primaryKey || []) pk[name] = row[name];
-    post("dbUpdate", { envId: state.activeEnvId, tableId: state.activeId, column: col, value, pk });
-  }
-
   function renderQuery(payload) {
     const wrap = $("dbResultWrap");
     const meta = $("dbQueryMeta");
@@ -543,20 +604,133 @@
     if (!payload?.ok) {
       wrap.innerHTML = `<div class="excel-empty">${esc(payload?.error || "执行失败")}</div>`;
       if (meta) meta.textContent = "";
+      state.resultBlocks = [];
+      renderResultPager();
       return;
     }
-    const blocks = payload.results || [];
+    state.resultBlocks = payload.results || [];
+    state.resultPage = 0;
+    renderQueryPage();
+  }
+
+  function resultRowBlock() {
+    return (state.resultBlocks || []).find((block) => Array.isArray(block.rows) && block.rows.length) || null;
+  }
+
+  function renderQueryPage() {
+    const wrap = $("dbResultWrap");
+    const meta = $("dbQueryMeta");
+    if (!wrap) return;
+    const blocks = state.resultBlocks || [];
+    if (!blocks.length) {
+      wrap.innerHTML = `<div class="excel-empty">执行 SQL 后在这里看结果</div>`;
+      renderResultPager();
+      return;
+    }
+    const size = state.resultPageSize || 100;
+    const target = resultRowBlock();
+    const total = target ? target.rows.length : 0;
+    const pages = Math.max(1, Math.ceil(total / size));
+    const page = Math.min(Math.max(0, state.resultPage), pages - 1);
+    state.resultPage = page;
+    const from = page * size;
+    const slice = target ? target.rows.slice(from, from + size) : [];
     if (meta) {
-      const last = blocks[blocks.length - 1];
-      meta.textContent = last?.rows ? `${last.rows.length} 行` : `影响 ${last?.affected || 0} 行`;
+      if (target) {
+        meta.textContent = total > size
+          ? `${from + 1}-${from + slice.length} / ${target.rows.length} 行`
+          : `${target.rows.length} 行`;
+      } else {
+        const last = blocks[blocks.length - 1];
+        meta.textContent = `影响 ${last?.affected || 0} 行`;
+      }
     }
     wrap.innerHTML = blocks.map((block) => {
       if (!block.rows) return `<div class="excel-empty">${esc(block.sql)} · 影响 ${block.affected || 0} 行</div>`;
+      if (block !== target) {
+        const cols = block.columns || [];
+        return `<table class="excel-table"><thead><tr>${cols.map((name) => `<th>${esc(name)}</th>`).join("")}</tr></thead><tbody>${
+          block.rows.slice(0, 50).map((row) => `<tr>${cols.map((name) => `<td>${esc(formatCell(row[name]))}</td>`).join("")}</tr>`).join("")
+        }</tbody></table>`;
+      }
       const cols = block.columns || [];
-      return `<table class="excel-table"><thead><tr>${cols.map((name) => `<th>${esc(name)}</th>`).join("")}</tr></thead><tbody>${
-        block.rows.map((row) => `<tr>${cols.map((name) => `<td>${esc(formatCell(row[name]))}</td>`).join("")}</tr>`).join("")
+      const table = state.tables.find((item) => item.id === state.activeId);
+      const pk = table?.primaryKey || [];
+      const editable = canEditQueryResult(block);
+      return `<table class="excel-table db-result-table"><thead><tr><th class="excel-rowno"></th>${cols.map((name) => `<th>${esc(name)}</th>`).join("")}</tr></thead><tbody>${
+        slice.map((row, index) => {
+          const key = JSON.stringify(pk.map((name) => row[name]));
+          return `<tr data-result-row="${from + index}"><td class="excel-rowno">${from + index + 1}</td>${cols.map((name) => {
+            const attr = editable ? ` data-result-col="${esc(name)}" data-result-key="${esc(key)}" title="双击修改"` : "";
+            return `<td class="excel-cell"${attr}>${esc(formatCell(row[name]))}</td>`;
+          }).join("")}</tr>`;
+        }).join("")
       }</tbody></table>`;
     }).join("");
+    renderResultPager(from, from + slice.length, total, pages, page);
+  }
+
+  /** 只有当前表（含主键）的结果集才能就地改数据 */
+  function canEditQueryResult(block) {
+    const table = state.tables.find((item) => item.id === state.activeId);
+    if (!table || !(table.primaryKey || []).length) return false;
+    const cols = block.columns || [];
+    return table.primaryKey.every((name) => cols.includes(name));
+  }
+
+  function renderResultPager(from, to, total, pages, page) {
+    const pager = $("dbResultPager");
+    if (!pager) return;
+    if (!total) {
+      pager.innerHTML = "";
+      return;
+    }
+    const sizes = [50, 100, 200, 500];
+    pager.innerHTML = `
+      <button class="btn" type="button" data-result-page="-1" ${page <= 0 ? "disabled" : ""}>上一页</button>
+      <span class="pager-info">${from + 1}-${to} / ${total} · ${page + 1}/${pages}</span>
+      <button class="btn" type="button" data-result-page="1" ${page >= pages - 1 ? "disabled" : ""}>下一页</button>
+      <select class="pill pager-size" id="dbResultPageSize" title="每页行数">
+        ${sizes.map((size) => `<option value="${size}"${size === (state.resultPageSize || 100) ? " selected" : ""}>${size}</option>`).join("")}
+      </select>`;
+  }
+
+  /** 查询结果双击改单元格：写库后只改动当前行，避免整表重查 */
+  function beginEditResultCell(cell) {
+    if (!cell || cell.getAttribute("contenteditable") === "true") return;
+    const col = cell.getAttribute("data-result-col");
+    const block = resultRowBlock();
+    if (!col || !block) return;
+    cell.setAttribute("contenteditable", "true");
+    cell.dataset.original = cell.textContent ?? "";
+    cell.focus();
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  function commitResultCell(cell) {
+    if (!cell || cell.getAttribute("contenteditable") !== "true") return;
+    cell.removeAttribute("contenteditable");
+    const col = cell.getAttribute("data-result-col");
+    const value = cell.textContent ?? "";
+    const original = cell.dataset.original ?? "";
+    delete cell.dataset.original;
+    if (!col || value === original) {
+      cell.textContent = original;
+      return;
+    }
+    const block = resultRowBlock();
+    const rowIndex = Number(cell.closest("tr")?.getAttribute("data-result-row"));
+    const row = block?.rows?.[rowIndex];
+    const table = state.tables.find((item) => item.id === state.activeId);
+    if (!row || !table) return;
+    const pk = {};
+    for (const name of table.primaryKey || []) pk[name] = row[name];
+    post("dbUpdate", { envId: state.activeEnvId, tableId: table.id, column: col, value, pk, database: currentDatabase() });
+    row[col] = value;
   }
 
   function ensureTab() {
@@ -598,26 +772,6 @@
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     });
-    const stack = $("dbStack");
-    const applyStack = () => {
-      stack?.style.setProperty("--db-stack-size", `${Math.round(state.stackRatio * 1000) / 10}%`);
-    };
-    $("dbStackBar")?.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      const move = (ev) => {
-        const rect = stack.getBoundingClientRect();
-        if (!rect.height) return;
-        state.stackRatio = Math.min(0.78, Math.max(0.22, (ev.clientY - rect.top) / rect.height));
-        applyStack();
-      };
-      const up = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-    });
-    applyStack();
     $("dbCollapseSql")?.addEventListener("click", () => {
       state.sqlCollapsed = !state.sqlCollapsed;
       if (state.sqlCollapsed && state.resultCollapsed) state.resultCollapsed = false;
@@ -658,9 +812,9 @@
     renderTree();
   });
   $("dbReload")?.addEventListener("click", () => ensure(true));
-  $("dbRefreshRows")?.addEventListener("click", () => loadTable());
   $("dbEnvSelect")?.addEventListener("change", () => {
     state.activeEnvId = $("dbEnvSelect").value;
+    state.lastSyncKey = "";
     updateEnvMeta();
     refreshDatabases();
   });
@@ -669,13 +823,17 @@
     if (name) rememberManual(name);
     pickDatabase(name);
   });
-  $("dbMode")?.addEventListener("click", (event) => {
-    const btn = event.target.closest("[data-db-mode]");
-    if (!btn) return;
-    state.mode = btn.getAttribute("data-db-mode") === "edit" ? "edit" : "read";
-    if (state.mode !== "edit") state.draft = null;
-    paintDbMode();
-    if (state.page) renderTable(state.page);
+  $("dbResultPager")?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-result-page]");
+    if (!btn || btn.disabled) return;
+    state.resultPage = Math.max(0, state.resultPage + Number(btn.getAttribute("data-result-page")));
+    renderQueryPage();
+  });
+  $("dbResultPager")?.addEventListener("change", (event) => {
+    if (event.target.id !== "dbResultPageSize") return;
+    state.resultPageSize = Number(event.target.value) || 100;
+    state.resultPage = 0;
+    renderQueryPage();
   });
   $("dbJump")?.addEventListener("click", () => {
     const table = state.tables.find((item) => item.id === state.activeId);
@@ -692,28 +850,18 @@
     if (event.target === $("dbEnvModal")) $("dbEnvModal").classList.remove("show");
   });
   $("dbEnvList")?.addEventListener("click", (event) => {
-    const up = event.target.closest("[data-db-env-up]");
-    const down = event.target.closest("[data-db-env-down]");
     const del = event.target.closest("[data-db-env-del]");
-    if (up || down || del) {
-      const id = (up || down || del).getAttribute(up ? "data-db-env-up" : down ? "data-db-env-down" : "data-db-env-del");
+    if (del) {
+      const id = del.getAttribute("data-db-env-del");
       const index = state.envs.findIndex((env) => env.id === id);
       if (index < 0) return;
-      if (del) {
-        if (!window.confirm(`删除环境「${state.envs[index].name}」？`)) return;
-        state.envs.splice(index, 1);
-        if (state.envEditing === id) state.envEditing = state.envs[0]?.id || "";
-        if (state.activeEnvId === id) state.activeEnvId = state.envs[0]?.id || "";
-        persistEnvOrder();
-        refreshDatabases();
-        fillEnvForm();
-        return;
-      }
-      const next = index + (up ? -1 : 1);
-      if (next < 0 || next >= state.envs.length) return;
-      const [item] = state.envs.splice(index, 1);
-      state.envs.splice(next, 0, item);
+      if (!window.confirm(`删除环境「${state.envs[index].name}」？`)) return;
+      state.envs.splice(index, 1);
+      if (state.envEditing === id) state.envEditing = state.envs[0]?.id || "";
+      if (state.activeEnvId === id) state.activeEnvId = state.envs[0]?.id || "";
       persistEnvOrder();
+      refreshDatabases();
+      fillEnvForm();
       return;
     }
     const item = event.target.closest("[data-db-env]");
@@ -734,6 +882,7 @@
     state.activeEnvId = edited.id;
     post("dbEnvSave", { envs: state.envs });
     $("dbEnvModal")?.classList.remove("show");
+    refreshDatabases();
   });
   $("dbEnvAdd")?.addEventListener("click", () => {
     const id = `env-${Date.now()}`;
@@ -751,13 +900,11 @@
     state.activeEnvId = id;
     fillEnvForm();
   });
-  $("dbRunSql")?.addEventListener("click", () => {
-    post("dbQuery", { envId: state.activeEnvId, sql: $("dbSql")?.value || "" });
-  });
+  $("dbRunSql")?.addEventListener("click", () => runSql());
   $("dbSql")?.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
-      post("dbQuery", { envId: state.activeEnvId, sql: $("dbSql")?.value || "" });
+      runSql();
     }
   });
   $("dbTabs")?.addEventListener("click", (event) => {
@@ -765,72 +912,32 @@
     if (!tab) return;
     switchTab(tab.getAttribute("data-db-tab"));
   });
-  $("dbRowPager")?.addEventListener("click", (event) => {
-    const btn = event.target.closest("[data-row-page]");
-    if (!btn || btn.disabled) return;
-    const dir = btn.getAttribute("data-row-page");
-    const pages = Math.max(1, Math.ceil(state.rowTotal / state.rowLimit));
-    let next = state.rowOffset;
-    if (dir === "first") next = 0;
-    else if (dir === "last") next = (pages - 1) * state.rowLimit;
-    else next = state.rowOffset + Number(dir) * state.rowLimit;
-    loadTable(Math.max(0, Math.min(next, (pages - 1) * state.rowLimit)));
-  });
-  $("dbRowPager")?.addEventListener("change", (event) => {
-    if (event.target.id !== "dbPageSize") return;
-    state.rowLimit = Number(event.target.value) || 50;
-    loadTable(0);
-  });
   $("dbDiffOnly")?.addEventListener("change", () => {
     if (state.definition) renderDefinition(state.definition);
   });
-  $("dbAddRow")?.addEventListener("click", () => {
-    if (state.mode !== "edit" || !state.page?.ok) return;
-    state.draft = {};
-    renderTable(state.page);
-    const row = $("dbTableWrap")?.querySelector(".db-draft");
-    row?.querySelector("[data-draft-col]")?.focus();
+  $("dbTreeToggle")?.addEventListener("click", () => toggleAllFiles());
+  $("dbResultWrap")?.addEventListener("dblclick", (event) => {
+    const cell = event.target.closest?.(".excel-cell");
+    if (cell) beginEditResultCell(cell);
   });
-  $("dbTableWrap")?.addEventListener("focusout", (event) => {
-    const draftCell = event.target.closest?.("[data-draft-col]");
-    if (draftCell) {
-      const row = draftCell.closest("tr");
-      if (row?.contains(event.relatedTarget)) return;
-      const values = {};
-      row.querySelectorAll("[data-draft-col]").forEach((cell) => {
-        values[cell.getAttribute("data-draft-col")] = cell.textContent ?? "";
-      });
-      state.draft = null;
-      if (!Object.values(values).some((value) => String(value).trim())) {
-        renderTable(state.page);
-        return;
-      }
-      post("dbInsert", { envId: state.activeEnvId, tableId: state.activeId, values });
-      return;
-    }
-    const cell = event.target.closest?.("[data-db-col]");
-    if (cell) commitCell(cell);
-  });
-  $("dbTableWrap")?.addEventListener("keydown", (event) => {
-    const cell = event.target.closest?.(".excel-cell, [data-draft-col]");
+  $("dbResultWrap")?.addEventListener("keydown", (event) => {
+    const cell = event.target.closest?.(".excel-cell");
     if (!cell) return;
     if (event.key === "Enter") {
       event.preventDefault();
-      cell.blur();
+      commitResultCell(cell);
+    }
+    if (event.key === "Escape") {
+      cell.textContent = cell.dataset.original ?? cell.textContent;
+      delete cell.dataset.original;
+      cell.removeAttribute("contenteditable");
     }
   });
-  $("dbTableWrap")?.addEventListener("click", (event) => {
-    const del = event.target.closest("[data-db-del]");
-    if (!del || !state.page?.ok) return;
-    const row = state.page.rows[Number(del.getAttribute("data-db-del"))];
-    if (!row) return;
-    const pk = {};
-    for (const name of state.page.table?.primaryKey || []) pk[name] = row[name];
-    post("dbDelete", { envId: state.activeEnvId, tableId: state.activeId, pk });
+  $("dbResultWrap")?.addEventListener("focusout", (event) => {
+    const cell = event.target.closest?.(".excel-cell");
+    if (cell) commitResultCell(cell);
   });
-
   bindSplit();
-  $("dbTreeToggle")?.addEventListener("click", () => toggleAllFiles());
 
   window.ProtoViewDb = {
     ensure: () => ensure(false),
@@ -839,6 +946,8 @@
       post("sqlSearch", { query });
     },
     openTable,
+    openTableByName,
+    matchDatabase,
     toggleAll: () => toggleAllFiles(),
     isTreeOpen: () => [...new Set(state.tables.map((table) => table.relative))].some((file) => !state.collapsed.has(file)),
   };

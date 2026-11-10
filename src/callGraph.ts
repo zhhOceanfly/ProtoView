@@ -66,7 +66,10 @@ async function loadFuncDefs(root: string): Promise<FuncDef[]> {
   const absRoot = path.resolve(root || "");
   if (!absRoot) return [];
   const cached = fileIndexCache.get(absRoot);
-  if (cached && Date.now() - cached.at < 30_000) return cached.defs;
+  if (cached && Date.now() - cached.at < 30_000) {
+    if (!tableNameMap.size) for (const def of cached.defs) collectTableName("", def);
+    return cached.defs;
+  }
 
   const files: string[] = [];
   await walk(absRoot, files);
@@ -83,6 +86,8 @@ async function loadFuncDefs(root: string): Promise<FuncDef[]> {
     const rel = path.relative(absRoot, file).replace(/\\/g, "/");
     defs.push(...parseGoFile(text, file, rel));
   }
+  tableNameMap.clear();
+  for (const def of defs) collectTableName("", def);
   fileIndexCache.set(absRoot, { at: Date.now(), defs });
   return defs;
 }
@@ -145,58 +150,118 @@ function snakeCase(name: string): string {
     .toLowerCase();
 }
 
-const READ_METHODS = /^(find|first|last|take|get|list|all|count|scan|pluck|select|load|query|exist|fetch|where)$/i;
-const WRITE_METHODS = /^(create|save|update|updates|delete|remove|insert|exec|upsert|patch|incr|set|put)$/i;
+const READ_METHODS = /^(find|first|last|take|get|list|all|count|scan|pluck|select|load|query|exist|exists|fetch|where|preload|joins|raw|rows|value|values)$/i;
+const WRITE_METHODS = /^(create|save|update|updates|delete|remove|insert|exec|upsert|patch|incr|increment|decrement|set|put|replace|truncate|migrate|rename)$/i;
 
 function opFromMethod(method: string): CallGraphDbHit["op"] {
   if (!method) return "unknown";
-  if (READ_METHODS.test(method)) return "read";
   if (WRITE_METHODS.test(method)) return "write";
+  if (READ_METHODS.test(method)) return "read";
   return "unknown";
 }
 
-/** 从函数体里找读写的 DB 表。 */
+/** struct 名 → TableName() 返回的表名，用于 .Model(&User{}) 精确落表 */
+const tableNameMap = new Map<string, string>();
+
+export function clearDbTableCache(): void {
+  tableNameMap.clear();
+}
+
+/** 收集 `func (x User) TableName() string { return "app_user" }` 这类映射 */
+function collectTableName(_text: string, func: FuncDef): void {
+  if (!func.name || func.name.toLowerCase() !== "tablename" || !func.receiver) return;
+  const m = func.body.match(/return\s+"([\w.]+)"/);
+  if (!m) return;
+  tableNameMap.set(func.receiver.toLowerCase(), m[1]);
+}
+
+/** 从函数体里找读写的 DB 表（GORM / xorm / 原生 SQL）。 */
 export function extractDbTables(func: FuncDef): CallGraphDbHit[] {
   const hits = new Map<string, CallGraphDbHit>();
   const lines = func.body.split("\n");
-  const add = (table: string, op: CallGraphDbHit["op"], line: number) => {
+  const add = (rawTable: string, op: CallGraphDbHit["op"], line: number) => {
+    const table = String(rawTable || "").replace(/[`"']/g, "").trim();
+    if (!table || /^(select|where|from|values|set)$/i.test(table)) return;
     const finalOp = op === "unknown" ? guessOpByName(func.name) : op;
     const key = `${table}|${finalOp}`;
     if (!hits.has(key)) hits.set(key, { table, op: finalOp, line });
   };
-  for (let i = 0; i < lines.length; i++) {
-    const text = lines[i];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    // 链式调用可能跨多行：把后续几行拼成窗口再看读写方法
+    const window = lines.slice(i, i + 6).join("\n");
     const lineNo = func.line + i;
-    // 1) gorm / 常见 ORM：.Table("xxx") / Table(xxxTable)；读写方向看同一语句链上的方法名
-    const tableCall = text.match(/\.Table\(\s*(?:"([\w.]+)"|([A-Za-z_]\w*))\s*\)/);
-    if (tableCall) {
-      const raw = tableCall[1] || tableCall[2];
-      const table = tableCall[1] ? raw : inferConstTableName(raw, func.body);
-      const tail = lines.slice(i, i + 4).join(" ");
-      const after = tail.slice(tail.indexOf(tableCall[0]) + tableCall[0].length);
-      const method = (after.match(/\.\s*([A-Za-z_]\w*)\s*\(/) || [])[1] || "";
-      add(table, opFromMethod(method), lineNo);
+
+    // 1) ORM：.Table("xxx") / .Table(TableName) / .Table(xxxTable)
+    if (/\.\s*Table\s*\(/.test(line)) {
+      const call = window.match(/\.\s*Table\s*\(\s*(?:"([\w.]+)"|([A-Za-z_]\w*))\s*\)/);
+      if (call) {
+        const raw = call[1] || call[2];
+        const table = call[1] ? raw : inferConstTableName(raw, window);
+        add(table, chainOp(window), lineNo);
+      }
     }
-    // 2) 原始 SQL 字面量
-    const sql = text.match(/(?:SELECT\s+[\s\S]{0,120}?FROM|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+[`"]?([A-Za-z_][\w.]*)/i);
-    if (sql) {
-      const verb = sql[0].trim().split(/\s+/)[0].toUpperCase();
-      add(sql[1], verb === "SELECT" ? "read" : "write", lineNo);
+
+    // 2) .Model(&User{}) / .Model(&user) —— 用结构体的 TableName() 或 gorm 命名推断
+    if (/\.\s*Model\s*\(/.test(line)) {
+      const model = window.match(/\.\s*Model\s*\(\s*&?\s*([A-Z]\w*)\s*(?:\{|\b)/);
+      if (model) add(tableForStruct(model[1]), chainOp(window), lineNo);
     }
-    // 3) .Model(&User{}) —— 用结构体名推断表名
-    const model = text.match(/\.Model\(\s*&?([A-Z]\w*)\s*\{/);
-    if (model) {
-      const after = text.slice(text.indexOf(model[0]) + model[0].length);
-      const method = (after.match(/\.\s*([A-Za-z_]\w*)\s*\(/) || [])[1] || "";
-      add(snakeCase(model[1]), opFromMethod(method), lineNo);
+
+    // 3) db.Create(&User{}) / db.Save(&u) / db.Where(...).Delete(&User{}) 这类不带 Table/Model 的
+    if (/\.\s*(?:Create|Save|Updates?|Delete|First|Last|Take|Find|Count|Scan|Pluck)\s*\(/.test(line)) {
+      const arg = window.match(/\.\s*(?:Create|Save|Updates?|Delete|First|Last|Take|Find|Count|Scan|Pluck)\s*\(\s*&?\s*([A-Z]\w*)\s*(?:\{|\b)/);
+      if (arg) add(tableForStruct(arg[1]), chainOp(window), lineNo);
     }
+
+    // 4) 原生 SQL 字面量（含多行拼接）
+    const sqlRe = /(SELECT[\s\S]{0,200}?FROM|INSERT\s+(?:IGNORE\s+)?INTO|REPLACE\s+INTO|UPDATE|DELETE\s+FROM)\s+([`"']?[\w.]+[`"']?)/gi;
+    let sql;
+    while ((sql = sqlRe.exec(window))) {
+      const verb = sql[1].trim().split(/\s+/)[0].toUpperCase();
+      add(sql[2], verb === "SELECT" ? "read" : "write", lineNo);
+    }
+    // 5) JOIN 的表按读处理（同一窗口里已经出现 SELECT 时）
+    const joinRe = /\bJOIN\s+([`"']?[\w.]+[`"']?)/gi;
+    let join;
+    while ((join = joinRe.exec(window))) add(join[1], "read", lineNo);
   }
   return [...hits.values()];
 }
 
+/** 链式方法 → 读写方向：写优先，其次读 */
+function chainOp(window: string): CallGraphDbHit["op"] {
+  const methods: string[] = [];
+  const re = /\.\s*([A-Za-z_]\w*)\s*\(/g;
+  let m;
+  while ((m = re.exec(window))) methods.push(m[1]);
+  const ops = methods.map(opFromMethod);
+  if (ops.includes("write")) return "write";
+  if (ops.includes("read")) return "read";
+  return "unknown";
+}
+
+/** 结构体名 → 表名：优先 TableName()，否则 gorm 默认复数蛇形 */
+export function tableForStruct(name: string): string {
+  const key = String(name || "").toLowerCase();
+  if (!key) return "";
+  const mapped = tableNameMap.get(key);
+  if (mapped) return mapped;
+  return pluralizeTable(snakeCase(name));
+}
+
+function pluralizeTable(name: string): string {
+  if (!name) return name;
+  if (/(s|x|z|ch|sh)$/i.test(name)) return `${name}es`;
+  if (/[^aeiou]y$/i.test(name)) return `${name.slice(0, -1)}ies`;
+  return `${name}s`;
+}
+
 function inferConstTableName(ident: string, body: string): string {
   // 尝试在同一函数体内找 tableName = "xxx"
-  const re = new RegExp(`${ident}\\s*=\\s*"([\\w.]+)"`);
+  const re = new RegExp(`${ident}\\s*[:=]\\s*"([\\w.]+)"`);
   const hit = body.match(re);
   return hit ? hit[1] : ident;
 }
