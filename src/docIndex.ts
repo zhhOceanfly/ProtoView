@@ -43,14 +43,26 @@ export interface DocSearchHit {
   preview: string;
 }
 
-interface Cache {
-  key: string;
-  at: number;
-  docs: (DocMeta & { text: string })[];
+interface IndexedDoc extends DocMeta {
+  text: string;
+  nameBlob: string;
+  lines: { line: number; lower: string; raw: string }[];
+}
+
+interface ParsedDoc {
+  mtimeMs: number;
+  size: number;
+  doc: IndexedDoc;
+}
+
+interface DocRoot {
+  paths: string[];
   warnings: string[];
 }
 
-let cache: Cache | null = null;
+const docFiles = new Map<string, ParsedDoc>();
+const docRoots = new Map<string, DocRoot>();
+const docBuild = new Map<string, { promise: Promise<void>; force: boolean }>();
 
 function rootsOf(root: string, extra = ""): string[] {
   const seen = new Set<string>();
@@ -69,14 +81,17 @@ export async function docCatalog(root: string, force = false, extra = ""): Promi
   const indexed = await load(roots, force);
   return {
     source: roots.join(" + "),
-    docs: indexed.docs.map(({ text: _text, ...meta }) => meta),
+    docs: indexed.docs.map(({ text: _text, nameBlob: _name, lines: _lines, ...meta }) => meta),
     warnings: indexed.warnings,
   };
 }
 
 export async function docPage(root: string, id: string, extra = ""): Promise<DocPage | null> {
-  const indexed = await load(rootsOf(root, extra), false);
-  const doc = indexed.docs.find((item) => item.id === id);
+  const roots = rootsOf(root, extra);
+  const indexed = await load(roots, false);
+  const found = indexed.docs.find((item) => item.id === id);
+  if (!found) return null;
+  const doc = await readDocFresh(found.file, roots);
   if (!doc) return null;
   const ext = path.extname(doc.file).toLowerCase();
   return {
@@ -97,9 +112,10 @@ export async function docSave(root: string, id: string, text: string, extra = ""
   if (!doc) return { ok: false, error: "找不到该文档" };
   if (!EDIT_EXTS.has(path.extname(doc.file).toLowerCase())) return { ok: false, error: "该格式不支持编辑" };
   try {
-    await fs.writeFile(doc.file, String(text ?? ""), "utf8");
-    doc.text = String(text ?? "");
-    cache = null;
+    const next = String(text ?? "");
+    await fs.writeFile(doc.file, next, "utf8");
+    const stat = await fs.stat(doc.file);
+    docFiles.set(doc.file, indexDoc(doc.file, rootsOf(root, extra), next, stat));
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -112,23 +128,19 @@ export async function docSearch(root: string, query: string, limit = 40, extra =
   const indexed = await load(rootsOf(root, extra), false);
   const hits: DocSearchHit[] = [];
   for (const doc of indexed.docs) {
-    const nameBlob = `${doc.title}\n${doc.fileName}\n${doc.relative}`.toLowerCase();
+    const nameBlob = doc.nameBlob;
     const nameHit = tokens.every((token) => nameBlob.includes(token));
-    const searchBody = CONTENT_EXTS.has(doc.ext);
     let count = 0;
     let line = 0;
     let preview = "";
-    if (searchBody) {
-      doc.text.split(/\r?\n/).forEach((raw, index) => {
-        const text = raw.toLowerCase();
-        if (!tokens.some((token) => text.includes(token))) return;
-        if (!tokens.every((token) => text.includes(token) || nameBlob.includes(token))) return;
-        count += 1;
-        if (!line) {
-          line = index + 1;
-          preview = raw.trim().slice(0, 160);
-        }
-      });
+    for (const row of doc.lines) {
+      if (!tokens.some((token) => row.lower.includes(token))) continue;
+      if (!tokens.every((token) => row.lower.includes(token) || nameBlob.includes(token))) continue;
+      count += 1;
+      if (!line) {
+        line = row.line;
+        preview = row.raw.trim().slice(0, 160);
+      }
     }
     if (!count && !nameHit) continue;
     hits.push({
@@ -156,19 +168,125 @@ function relativeTo(file: string, roots: string[]): string {
   return best;
 }
 
-async function load(roots: string[], force: boolean): Promise<Cache> {
-  const key = roots.join("|");
-  if (!force && cache && cache.key === key && Date.now() - cache.at < 60_000) return cache;
-  const warnings: string[] = [];
-  const docs: Cache["docs"] = [];
-  if (!roots.length) {
-    cache = { key, at: Date.now(), docs, warnings: ["未配置扫描目录"] };
-    return cache;
+function docStampSame(parsed: ParsedDoc, stat: { mtimeMs: number; size: number }): boolean {
+  return parsed.size === stat.size && Math.abs(parsed.mtimeMs - stat.mtimeMs) < 1;
+}
+
+function indexDoc(file: string, roots: string[], text: string, stat: { mtimeMs: number; size: number }): ParsedDoc {
+  const ext = path.extname(file).toLowerCase();
+  const relative = relativeTo(file, roots);
+  const fileName = path.basename(file);
+  let title = path.basename(file, ext);
+  if (ext === ".docx") {
+    const heading = text.match(/^\s*#\s+(.+)$/m)?.[1]?.trim()
+      || text.split(/\n/).map((line) => line.trim()).find(Boolean)
+      || "";
+    title = heading.slice(0, 80) || title;
+  } else {
+    title = text.match(/^\s*#\s+(.+)$/m)?.[1]?.trim() || title;
   }
+  const lines: IndexedDoc["lines"] = [];
+  if (CONTENT_EXTS.has(ext)) {
+    text.split(/\r?\n/).forEach((raw, index) => {
+      const lower = raw.toLowerCase();
+      if (!lower.trim()) return;
+      lines.push({ line: index + 1, lower, raw });
+    });
+  }
+  return {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    doc: {
+      id: relative,
+      file,
+      fileName,
+      relative,
+      title,
+      ext,
+      text,
+      nameBlob: `${title}\n${fileName}\n${relative}`.toLowerCase(),
+      lines,
+    },
+  };
+}
+
+async function readDocFile(file: string, roots: string[], stat: { mtimeMs: number; size: number }): Promise<ParsedDoc> {
+  const ext = path.extname(file).toLowerCase();
+  const text = ext === ".docx" ? await readDocxText(file) : await fs.readFile(file, "utf8");
+  return indexDoc(file, roots, text, stat);
+}
+
+/** 打开单篇时只核对这一个文件，没改过就用内存里的正文 */
+async function readDocFresh(file: string, roots: string[]): Promise<IndexedDoc | null> {
+  let stat;
+  try {
+    stat = await fs.stat(file);
+  } catch {
+    docFiles.delete(file);
+    return null;
+  }
+  const cached = docFiles.get(file);
+  if (cached && docStampSame(cached, stat)) return cached.doc;
+  try {
+    const parsed = await readDocFile(file, roots, stat);
+    docFiles.set(file, parsed);
+    return parsed.doc;
+  } catch {
+    return cached?.doc ?? null;
+  }
+}
+
+function docsOf(key: string): IndexedDoc[] {
+  const index = docRoots.get(key);
+  if (!index) return [];
+  const docs: IndexedDoc[] = [];
+  for (const file of index.paths) {
+    const parsed = docFiles.get(file);
+    if (parsed) docs.push(parsed.doc);
+  }
+  return docs;
+}
+
+async function load(roots: string[], force: boolean): Promise<{ docs: IndexedDoc[]; warnings: string[] }> {
+  const key = roots.join("|");
+  if (!roots.length) return { docs: [], warnings: ["未配置扫描目录"] };
+  if (!force) {
+    const hit = docRoots.get(key);
+    if (hit) return { docs: docsOf(key), warnings: hit.warnings };
+    const running = docBuild.get(key);
+    if (running) {
+      await running.promise;
+      return { docs: docsOf(key), warnings: docRoots.get(key)?.warnings ?? [] };
+    }
+  } else {
+    const running = docBuild.get(key);
+    if (running?.force) {
+      await running.promise;
+      return { docs: docsOf(key), warnings: docRoots.get(key)?.warnings ?? [] };
+    }
+  }
+  const previous = docBuild.get(key)?.promise;
+  const promise = (async () => {
+    if (previous && force) await previous.catch(() => undefined);
+    await rebuildDocs(key, roots);
+  })();
+  docBuild.set(key, { promise, force });
+  try {
+    await promise;
+  } finally {
+    if (docBuild.get(key)?.promise === promise) docBuild.delete(key);
+  }
+  return { docs: docsOf(key), warnings: docRoots.get(key)?.warnings ?? [] };
+}
+
+async function rebuildDocs(key: string, roots: string[]): Promise<void> {
+  const warnings: string[] = [];
   const files: string[] = [];
   const seen = new Set<string>();
   for (const root of roots) await walk(root, files, false, seen);
   files.sort((a, b) => a.localeCompare(b, "zh", { numeric: true, sensitivity: "base" }));
+  const prev = docRoots.get(key)?.paths ?? [];
+  const paths: string[] = [];
   for (const file of files) {
     let stat;
     try {
@@ -180,46 +298,32 @@ async function load(roots: string[], force: boolean): Promise<Cache> {
     const ext = path.extname(file).toLowerCase();
     if (ext === ".docx") {
       if (stat.size > MAX_DOCX_BYTES) continue;
-      try {
-        const text = await readDocxText(file);
-        const relative = relativeTo(file, roots);
-        const heading = text.match(/^\s*#\s+(.+)$/m)?.[1]?.trim()
-          || text.split(/\n/).map((line) => line.trim()).find(Boolean)
-          || "";
-        docs.push({
-          id: relative,
-          file,
-          fileName: path.basename(file),
-          relative,
-          title: heading.slice(0, 80) || path.basename(file, ext),
-          ext,
-          text,
-        });
-      } catch (error) {
-        warnings.push(`${relativeTo(file, roots)} 无法解析：${error instanceof Error ? error.message : String(error)}`);
-      }
+    } else if (stat.size > MAX_BYTES) {
       continue;
     }
-    if (stat.size > MAX_BYTES) continue;
+    paths.push(file);
+    const cached = docFiles.get(file);
+    if (cached && docStampSame(cached, stat)) continue;
     try {
-      const text = await fs.readFile(file, "utf8");
-      const relative = relativeTo(file, roots);
-      const heading = text.match(/^\s*#\s+(.+)$/m)?.[1]?.trim();
-      docs.push({
-        id: relative,
-        file,
-        fileName: path.basename(file),
-        relative,
-        title: heading || path.basename(file, ext),
-        ext,
-        text,
-      });
+      docFiles.set(file, await readDocFile(file, roots, stat));
     } catch (error) {
+      docFiles.delete(file);
       warnings.push(`${relativeTo(file, roots)} 无法读取：${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  cache = { key, at: Date.now(), docs, warnings };
-  return cache;
+  docRoots.set(key, { paths, warnings });
+  const next = new Set(paths);
+  for (const old of prev) {
+    if (next.has(old)) continue;
+    let used = false;
+    for (const index of docRoots.values()) {
+      if (index.paths.includes(old)) {
+        used = true;
+        break;
+      }
+    }
+    if (!used) docFiles.delete(old);
+  }
 }
 
 /** docx = zip + word/document.xml，按段落把 w:t 文本抽出来当纯文本/Markdown 用 */

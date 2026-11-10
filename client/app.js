@@ -3128,6 +3128,12 @@
     warmup() {
       ensureCodeSymbols();
     },
+    /** Excel 左上角刷新：强制重扫符号，未改动的文件沿用已解析结果 */
+    reloadSymbols() {
+      if (!vscode) return;
+      globalSearch.codeLoading = true;
+      vscode.postMessage({ type: "loadCodeSymbols", payload: { force: true } });
+    },
   };
 
   // home.js 复用同一套宿主通信

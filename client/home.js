@@ -208,6 +208,9 @@
     window.clearTimeout(excelScanTimer);
     state.sheets = Array.isArray(catalog?.sheets) ? catalog.sheets : [];
     renderExcelList();
+    if (state.activeSheetId && state.sheets.some((sheet) => sheet.id === state.activeSheetId)) {
+      post("excelPage", { id: state.activeSheetId });
+    }
     if (catalog?.warnings?.length) {
       // 只在有问题时提示，不打断使用
       console.warn("[ProtoView] excel warnings:", catalog.warnings.slice(0, 5));
@@ -846,9 +849,10 @@
     });
 
     $("excelReload")?.addEventListener("click", () => {
-      hasCatalog = false;
-      state.sheets = [];
       ensureExcelCatalog(true);
+      try { window.ProtoViewDocs?.reload?.(); } catch { /* ignore */ }
+      try { window.ProtoViewDb?.reload?.(); } catch { /* ignore */ }
+      try { window.ProtoViewSearch?.reloadSymbols?.(); } catch { /* ignore */ }
     });
 
     // Tab Tab 打开首页（输入框内不劫持）

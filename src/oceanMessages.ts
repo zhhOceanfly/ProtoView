@@ -1,4 +1,6 @@
 import { docCatalog, docPage, docSave, docSearch } from "./docIndex";
+import { excelCatalogMerged } from "./excelIndex";
+import { collectCodeSymbols } from "./codeSymbols";
 import {
   dbDatabases,
   dbDiffSchemas,
@@ -14,6 +16,14 @@ import {
   DbEnvFile,
 } from "./dbSession";
 import { sqlCatalog, sqlSearch } from "./sqlIndex";
+
+/** 面板打开后在后台建索引。之后搜索直接走内存。 */
+export function warmSearchIndexes(root: string, extraRoot = ""): void {
+  void excelCatalogMerged([root, extraRoot], false);
+  void docCatalog(root, false, extraRoot);
+  void sqlCatalog(root, false);
+  if (String(root || "").trim()) void collectCodeSymbols(root, false);
+}
 
 /** Docs / SQL / 数据库消息。不认识的类型返回 null，交给原来的处理。 */
 export async function handleOceanMessage(

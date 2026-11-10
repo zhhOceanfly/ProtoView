@@ -17,7 +17,7 @@ import { collectCodeSymbols } from "./codeSymbols";
 import { buildCallGraph } from "./callGraph";
 import { excelCatalogMerged, excelDiff, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
 import { gitChangesMerged } from "./gitChanges";
-import { handleOceanMessage } from "./oceanMessages";
+import { handleOceanMessage, warmSearchIndexes } from "./oceanMessages";
 import {
   ProtoSourceConfig,
   collectProtoFiles,
@@ -85,6 +85,11 @@ export class ClientHost {
     return this.source.dirPath?.trim() || this.workspaceRoot;
   }
 
+  /** Excel 可能在代码根，也可能在工作区（git 模式下代码根是临时目录） */
+  private excelRoots(): string[] {
+    return [this.codeRoot(), this.workspaceRoot];
+  }
+
   async reload(syncGit = true): Promise<void> {
     if (this.source.mode === "git") {
       if (syncGit || !this.source.localPath) {
@@ -132,7 +137,8 @@ export class ClientHost {
     }
     if (type === "loadCodeSymbols") {
       const root = this.codeRoot();
-      const items = root ? await collectCodeSymbols(root) : [];
+      const force = Boolean((message.payload as { force?: boolean } | undefined)?.force);
+      const items = root ? await collectCodeSymbols(root, force) : [];
       send({ type: "codeSymbols", items, root });
       return;
     }
@@ -147,14 +153,15 @@ export class ClientHost {
     }
     if (type === "excelCatalog") {
       // codeRoot 在 git 模式下是临时 clone，Excel 通常在工作区里，两个根都要扫
-      const catalog = await excelCatalogMerged([this.codeRoot(), this.workspaceRoot]);
+      const force = Boolean((message.payload as { force?: boolean } | undefined)?.force);
+      const catalog = await excelCatalogMerged(this.excelRoots(), force);
       send({ type: "excelCatalog", payload: catalog });
       return;
     }
     if (type === "excelPage") {
       const payload = message.payload as { id?: string; offset?: number; limit?: number; focusRow?: number } | undefined;
       const page = payload?.id
-        ? await excelPage(this.codeRoot(), String(payload.id), {
+        ? await excelPage(this.excelRoots(), String(payload.id), {
           offset: payload.offset,
           limit: payload.limit,
           focusRow: payload.focusRow,
@@ -166,7 +173,7 @@ export class ClientHost {
     if (type === "excelUpdate") {
       const payload = message.payload as { id?: string; row?: number; col?: number; value?: string } | undefined;
       const result = payload?.id
-        ? await excelUpdateCell(this.codeRoot(), {
+        ? await excelUpdateCell(this.excelRoots(), {
           id: String(payload.id),
           row: Number(payload.row),
           col: Number(payload.col),
@@ -178,14 +185,14 @@ export class ClientHost {
     }
     if (type === "excelSearch") {
       const payload = message.payload as { query?: string } | undefined;
-      const hits = await excelSearch(this.codeRoot(), String(payload?.query || ""));
+      const hits = await excelSearch(this.excelRoots(), String(payload?.query || ""));
       send({ type: "excelSearch", payload: hits });
       return;
     }
     if (type === "excelDiff") {
       const payload = message.payload as { id?: string; sheet?: string } | undefined;
       const diff = payload?.id
-        ? await excelDiff(this.codeRoot(), { id: String(payload.id), sheet: payload.sheet })
+        ? await excelDiff(this.excelRoots(), { id: String(payload.id), sheet: payload.sheet })
         : { ok: false, error: "缺少表标识" };
       send({ type: "excelDiff", payload: diff });
       return;
@@ -362,6 +369,7 @@ export class ClientHost {
         lastError: this.source.lastError,
       },
     });
+    warmSearchIndexes(this.codeRoot(), this.workspaceRoot);
   }
 
   private async loadFromDirectory(root: string): Promise<void> {

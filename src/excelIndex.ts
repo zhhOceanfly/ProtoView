@@ -62,24 +62,60 @@ export interface ExcelSearchHit {
 
 interface IndexedSheet extends ExcelSheetMeta {
   rows: string[][];
+  /** 文件名、相对路径、表名，已小写，搜索时不用再拼 */
+  nameBlob: string;
+  /** 非空行的小写文本。index 对应 rows 下标 */
+  lines: { index: number; line: string }[];
 }
 
-interface SheetCache {
-  root: string;
-  at: number;
+interface ParsedFile {
+  file: string;
+  mtimeMs: number;
+  size: number;
   sheets: IndexedSheet[];
+}
+
+interface RootIndex {
+  root: string;
+  filePaths: string[];
   warnings: string[];
 }
 
-let cache: SheetCache | null = null;
+/** 按绝对路径记住已解析的工作簿，刷新时用 mtime + size 判断要不要重解析 */
+const fileCache = new Map<string, ParsedFile>();
+const rootCache = new Map<string, RootIndex>();
+const rootBuild = new Map<string, { promise: Promise<void>; force: boolean }>();
+
+function normalizeRoots(input: string | string[]): string[] {
+  const list = Array.isArray(input) ? input : [input];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of list) {
+    const text = String(item || "").trim();
+    if (!text) continue;
+    const abs = path.resolve(text);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    out.push(abs);
+  }
+  return out;
+}
+
+function sheetMeta(sheet: IndexedSheet): ExcelSheetMeta {
+  const { rows: _rows, nameBlob: _name, lines: _lines, ...meta } = sheet;
+  return meta;
+}
 
 export async function excelCatalog(root: string, force = false): Promise<ExcelCatalog> {
-  const abs = path.resolve(root || "");
-  const indexed = await loadSheets(abs, force);
+  const roots = normalizeRoots(root);
+  if (!roots.length) {
+    return { source: "", scannedAt: Date.now(), sheets: [], warnings: ["未配置扫描目录"] };
+  }
+  const indexed = await collectSheets(roots[0], force);
   return {
-    source: abs,
+    source: roots[0],
     scannedAt: Date.now(),
-    sheets: indexed.sheets.map(({ rows: _rows, ...meta }) => meta),
+    sheets: indexed.sheets.map(sheetMeta),
     warnings: indexed.warnings,
   };
 }
@@ -91,8 +127,10 @@ export async function excelCatalogMerged(roots: string[], force = false): Promis
   const warnings: string[] = [];
   let source = "";
   for (const root of roots) {
-    const abs = path.resolve(root || "");
-    if (!abs || seen.has(abs)) continue;
+    const text = String(root || "").trim();
+    if (!text) continue;
+    const abs = path.resolve(text);
+    if (seen.has(abs)) continue;
     seen.add(abs);
     if (!source) source = abs;
     const catalog = await excelCatalog(abs, force);
@@ -107,12 +145,17 @@ export async function excelCatalogMerged(roots: string[], force = false): Promis
 }
 
 export async function excelPage(
-  root: string,
+  root: string | string[],
   id: string,
   options?: { offset?: number; limit?: number; focusRow?: number },
 ): Promise<ExcelSheetPage | null> {
-  const indexed = await loadSheets(path.resolve(root || ""), false);
-  const sheet = indexed.sheets.find((item) => item.id === id);
+  const roots = normalizeRoots(root);
+  const indexed = await collectSheets(roots, false);
+  const found = indexed.sheets.find((item) => item.id === id);
+  if (!found) return null;
+  // 打开单表时只核对这一个文件，改过就重解析，没改过直接用内存
+  const fresh = await readFresh(rootContaining(found.file, roots), found.file);
+  const sheet = fresh?.sheets.find((item) => item.id === id);
   if (!sheet) return null;
   // rows[0] 是表头，对应 Excel 行号 rowOffset + 1
   const data = sheet.rows.slice(1).map((cells, index) => ({
@@ -160,9 +203,9 @@ export interface ExcelEditResult {
 }
 
 /** 写回单元格并立即失效缓存（仅支持可写的 xlsx/xlsm/csv）。 */
-export async function excelUpdateCell(root: string, edit: ExcelCellEdit): Promise<ExcelEditResult> {
-  const absRoot = path.resolve(root || "");
-  const indexed = await loadSheets(absRoot, false);
+export async function excelUpdateCell(root: string | string[], edit: ExcelCellEdit): Promise<ExcelEditResult> {
+  const roots = normalizeRoots(root);
+  const indexed = await collectSheets(roots, false);
   const sheet = indexed.sheets.find((item) => item.id === edit.id);
   if (!sheet) return { ok: false, error: "找不到该表" };
   const ext = path.extname(sheet.file).toLowerCase();
@@ -194,33 +237,33 @@ export async function excelUpdateCell(root: string, edit: ExcelCellEdit): Promis
     range.e.c = Math.max(range.e.c, colIndex);
     ws["!ref"] = XLSX.utils.encode_range(range);
     XLSX.writeFile(book, sheet.file, { cellDates: true });
-    cache = null;
-    const page = await excelPage(absRoot, edit.id, {});
+    await refreshFile(rootContaining(sheet.file, roots), sheet.file);
+    const page = await excelPage(roots, edit.id, {});
     return { ok: true, page };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-export async function excelSearch(root: string, query: string, limit = 40): Promise<ExcelSearchHit[]> {
+export async function excelSearch(root: string | string[], query: string, limit = 40): Promise<ExcelSearchHit[]> {
   const tokens = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
-  const indexed = await loadSheets(path.resolve(root || ""), false);
+  const indexed = await collectSheets(root, false);
   const hits: { hit: ExcelSearchHit; score: number }[] = [];
   for (const sheet of indexed.sheets) {
-    const fileSheet = `${sheet.fileName}\n${sheet.relative}\n${sheet.sheet}`.toLowerCase();
+    const fileSheet = sheet.nameBlob;
     let bestScore = -1;
     let bestRow = 0;
     let bestPreview = "";
     let count = 0;
-    for (let i = 0; i < sheet.rows.length; i++) {
-      const cells = sheet.rows[i];
-      const line = cells.join("\t").toLowerCase();
-      if (!tokens.every((token) => fileSheet.includes(token) || line.includes(token))) continue;
+    for (const entry of sheet.lines) {
+      const line = entry.line;
       if (!tokens.some((token) => line.includes(token))) continue;
+      if (!tokens.every((token) => fileSheet.includes(token) || line.includes(token))) continue;
       count += 1;
+      const cells = sheet.rows[entry.index] ?? [];
       const score = scoreRow(tokens, fileSheet, cells);
-      const row = sheet.rowOffset + i + 1;
+      const row = sheet.rowOffset + entry.index + 1;
       if (score > bestScore || (score === bestScore && (bestRow === 0 || row < bestRow))) {
         bestScore = score;
         bestRow = row;
@@ -247,22 +290,100 @@ export async function excelSearch(root: string, query: string, limit = 40): Prom
   return hits.slice(0, limit).map((item) => item.hit);
 }
 
-async function loadSheets(root: string, force: boolean): Promise<SheetCache> {
-  if (!force && cache && cache.root === root && Date.now() - cache.at < 60_000) return cache;
-  const warnings: string[] = [];
-  if (!root) {
-    cache = { root, at: Date.now(), sheets: [], warnings: ["未配置扫描目录"] };
-    return cache;
+function stampSame(parsed: ParsedFile, stat: { mtimeMs: number; size: number }): boolean {
+  return parsed.size === stat.size && Math.abs(parsed.mtimeMs - stat.mtimeMs) < 1;
+}
+
+function rootContaining(file: string, roots: string[]): string {
+  const abs = path.resolve(file);
+  for (const root of roots) {
+    const rel = path.relative(root, abs);
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) return root;
   }
-  const files: string[] = [];
+  return roots[0] || path.dirname(abs);
+}
+
+function sheetsOf(index: RootIndex): IndexedSheet[] {
+  const out: IndexedSheet[] = [];
+  for (const file of index.filePaths) {
+    const parsed = fileCache.get(file);
+    if (parsed) out.push(...parsed.sheets);
+  }
+  return out;
+}
+
+function fileStillIndexed(file: string): boolean {
+  for (const index of rootCache.values()) {
+    if (index.filePaths.includes(file)) return true;
+  }
+  return false;
+}
+
+async function collectSheets(
+  root: string | string[],
+  force: boolean,
+): Promise<{ sheets: IndexedSheet[]; warnings: string[] }> {
+  const roots = normalizeRoots(root);
+  if (!roots.length) return { sheets: [], warnings: ["未配置扫描目录"] };
+  const sheets: IndexedSheet[] = [];
+  const warnings: string[] = [];
+  const seen = new Set<string>();
+  for (const item of roots) {
+    const indexed = await loadRoot(item, force);
+    warnings.push(...indexed.warnings);
+    for (const sheet of sheetsOf(indexed)) {
+      const key = `${sheet.file}\0${sheet.sheet}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      sheets.push(sheet);
+    }
+  }
+  return { sheets, warnings };
+}
+
+/** 有缓存就直接用；force 会重新扫目录，但 mtime 和大小都没变的文件不重解析。 */
+async function loadRoot(root: string, force: boolean): Promise<RootIndex> {
+  if (!force) {
+    const hit = rootCache.get(root);
+    if (hit) return hit;
+    const running = rootBuild.get(root);
+    if (running) {
+      await running.promise;
+      return rootCache.get(root) || { root, filePaths: [], warnings: [] };
+    }
+  } else {
+    const running = rootBuild.get(root);
+    if (running?.force) {
+      await running.promise;
+      return rootCache.get(root) || { root, filePaths: [], warnings: [] };
+    }
+  }
+  const previous = rootBuild.get(root)?.promise;
+  const promise = (async () => {
+    if (previous && force) await previous.catch(() => undefined);
+    await rebuildRoot(root);
+  })();
+  rootBuild.set(root, { promise, force });
   try {
-    await walk(root, files);
+    await promise;
+  } finally {
+    if (rootBuild.get(root)?.promise === promise) rootBuild.delete(root);
+  }
+  return rootCache.get(root) || { root, filePaths: [], warnings: [] };
+}
+
+async function rebuildRoot(root: string): Promise<void> {
+  const warnings: string[] = [];
+  const found: string[] = [];
+  try {
+    await walk(root, found);
   } catch (error) {
     warnings.push(`扫描失败：${error instanceof Error ? error.message : String(error)}`);
   }
-  files.sort((a, b) => a.localeCompare(b, "zh", { numeric: true, sensitivity: "base" }));
-  const sheets: IndexedSheet[] = [];
-  for (const file of files) {
+  found.sort((a, b) => a.localeCompare(b, "zh", { numeric: true, sensitivity: "base" }));
+  const prev = rootCache.get(root)?.filePaths ?? [];
+  const filePaths: string[] = [];
+  for (const file of found) {
     let stat;
     try {
       stat = await fs.stat(file);
@@ -274,37 +395,88 @@ async function loadSheets(root: string, force: boolean): Promise<SheetCache> {
       warnings.push(`${relativeOf(root, file)} 超过 30MB，已跳过`);
       continue;
     }
+    filePaths.push(file);
+    const cached = fileCache.get(file);
+    if (cached && stampSame(cached, stat)) continue;
     try {
-      const text = await fs.readFile(file, "utf8").catch(() => "");
-      void text;
-      const book = XLSX.readFile(file, { cellDates: true, dense: false });
-      const relative = relativeOf(root, file);
-      book.SheetNames.forEach((sheetName, index) => {
-        const parsed = parseSheet(sheetName, book.Sheets[sheetName]);
-        const width = parsed.rows.reduce((max, row) => Math.max(max, row.length), 0);
-        const headers = (parsed.rows[0] ?? []).map((cell, col) => cell || columnLetter(col));
-        sheets.push({
-          id: `${relative}\u0000${sheetName}\u0000${index}`,
-          file,
-          fileName: path.basename(file),
-          relative,
-          sheet: sheetName,
-          order: sheets.length,
-          rowOffset: parsed.rowOffset,
-          rowCount: parsed.rows.length ? parsed.rowOffset + parsed.rows.length : 0,
-          dataCount: Math.max(0, parsed.rows.length - 1),
-          colCount: width,
-          headers: headers.slice(0, 12),
-          truncated: parsed.truncated,
-          rows: parsed.rows,
-        });
-      });
+      fileCache.set(file, await parseExcelFile(root, file, stat));
     } catch (error) {
+      fileCache.delete(file);
       warnings.push(`${relativeOf(root, file)} 无法读取：${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  cache = { root, at: Date.now(), sheets, warnings };
-  return cache;
+  rootCache.set(root, { root, filePaths, warnings });
+  const next = new Set(filePaths);
+  for (const old of prev) {
+    if (next.has(old)) continue;
+    if (!fileStillIndexed(old)) fileCache.delete(old);
+  }
+}
+
+async function readFresh(root: string, file: string): Promise<ParsedFile | null> {
+  const abs = path.resolve(file || "");
+  if (!abs) return null;
+  let stat;
+  try {
+    stat = await fs.stat(abs);
+  } catch {
+    fileCache.delete(abs);
+    return null;
+  }
+  if (!stat.isFile() || stat.size > MAX_BYTES) return fileCache.get(abs) ?? null;
+  const cached = fileCache.get(abs);
+  if (cached && stampSame(cached, stat)) return cached;
+  try {
+    const parsed = await parseExcelFile(root || path.dirname(abs), abs, stat);
+    fileCache.set(abs, parsed);
+    return parsed;
+  } catch {
+    return cached ?? null;
+  }
+}
+
+async function refreshFile(root: string, file: string): Promise<void> {
+  fileCache.delete(path.resolve(file));
+  await readFresh(root, file);
+}
+
+async function parseExcelFile(
+  root: string,
+  file: string,
+  stat: { mtimeMs: number; size: number },
+): Promise<ParsedFile> {
+  const book = XLSX.readFile(file, { cellDates: true, dense: false });
+  const relative = relativeOf(root, file);
+  const fileName = path.basename(file);
+  const sheets: IndexedSheet[] = [];
+  book.SheetNames.forEach((sheetName, index) => {
+    const parsed = parseSheet(sheetName, book.Sheets[sheetName]);
+    const width = parsed.rows.reduce((max, row) => Math.max(max, row.length), 0);
+    const headers = (parsed.rows[0] ?? []).map((cell, col) => cell || columnLetter(col));
+    const lines: { index: number; line: string }[] = [];
+    parsed.rows.forEach((cells, rowIndex) => {
+      if (!cells.some((cell) => cell)) return;
+      lines.push({ index: rowIndex, line: cells.join("\t").toLowerCase() });
+    });
+    sheets.push({
+      id: `${relative}\u0000${sheetName}\u0000${index}`,
+      file,
+      fileName,
+      relative,
+      sheet: sheetName,
+      order: index,
+      rowOffset: parsed.rowOffset,
+      rowCount: parsed.rows.length ? parsed.rowOffset + parsed.rows.length : 0,
+      dataCount: Math.max(0, parsed.rows.length - 1),
+      colCount: width,
+      headers: headers.slice(0, 12),
+      truncated: parsed.truncated,
+      rows: parsed.rows,
+      nameBlob: `${fileName}\n${relative}\n${sheetName}`.toLowerCase(),
+      lines,
+    });
+  });
+  return { file, mtimeMs: stat.mtimeMs, size: stat.size, sheets };
 }
 
 async function walk(dir: string, out: string[]): Promise<void> {
@@ -414,9 +586,9 @@ export async function diffWorkbookByUris(
 export async function diffWorkbook(root: string, file: string): Promise<WorkbookDiff> {
   const abs = path.resolve(root || "");
   const target = path.resolve(file || "");
-  const indexed = await loadSheets(abs, false);
+  const fresh = await readFresh(abs, target);
   const rel = path.relative(abs, target).split(path.sep).join("/");
-  const mine = indexed.sheets.filter((sheet) => sheet.relative === rel || sheet.file === target);
+  const mine = (fresh?.sheets ?? []).filter((sheet) => sheet.relative === rel || sheet.file === target);
   if (!mine.length) {
     return { ok: false, file: target, sheets: [], changedSheets: [], error: "没有找到这个 Excel 文件" };
   }
@@ -490,19 +662,22 @@ export async function gitShowFile(root: string, relative: string): Promise<Buffe
 
 /** Excel 左右对比：当前文件 vs git HEAD 版本，按 Sheet 名 + 行号对齐 */
 export async function excelDiff(
-  root: string,
+  root: string | string[],
   options: { id: string; sheet?: string; maxRows?: number },
 ): Promise<ExcelSheetDiff> {
-  const abs = path.resolve(root || "");
-  const indexed = await loadSheets(abs, false);
-  const sheet = indexed.sheets.find((item) => item.id === options.id)
+  const roots = normalizeRoots(root);
+  const indexed = await collectSheets(roots, false);
+  const found = indexed.sheets.find((item) => item.id === options.id)
     || indexed.sheets.find((item) => item.relative === options.id);
+  const owner = found ? rootContaining(found.file, roots) : roots[0] || "";
+  const fresh = found ? await readFresh(owner, found.file) : null;
+  const sheet = fresh?.sheets.find((item) => item.id === found?.id || item.sheet === found?.sheet) || found;
   if (!sheet) {
     return { ok: false, file: "", relative: "", sheet: "", current: [], base: [], rows: [], changedRows: 0, error: "找不到这个 Sheet" };
   }
   const current = sheet.rows;
   let base: string[][] = [];
-  const raw = await gitShowFile(abs, sheet.relative);
+  const raw = await gitShowFile(owner, sheet.relative);
   if (raw) {
     try {
       const book = XLSX.read(raw, { type: "buffer", cellDates: true, cellNF: true, sheetStubs: true });

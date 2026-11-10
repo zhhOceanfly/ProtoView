@@ -546,6 +546,7 @@
 
   window.ProtoViewDocs = {
     ensure: () => ensure(false),
+    reload: () => ensure(true),
     rerender: () => renderList(),
     openByName,
     docs: () => state.docs.map((doc) => ({ id: doc.id, relative: doc.relative, fileName: doc.fileName })),

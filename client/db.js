@@ -1424,6 +1424,7 @@
 
   window.ProtoViewDb = {
     ensure: () => ensure(false),
+    reload: () => post("sqlCatalog", { force: true }),
     rerender: () => renderTree(),
     search(query, onHits) {
       if (typeof onHits === "function") searchWaiters.push(onHits);

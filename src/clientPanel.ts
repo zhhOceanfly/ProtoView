@@ -16,7 +16,7 @@ import { collectCodeSymbols } from "./codeSymbols";
 import { buildCallGraph } from "./callGraph";
 import { excelCatalogMerged, excelDiff, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
 import { gitChangesMerged } from "./gitChanges";
-import { handleOceanMessage } from "./oceanMessages";
+import { handleOceanMessage, warmSearchIndexes } from "./oceanMessages";
 import { openSource } from "./panel";
 import { ProtoSourceConfig } from "./source";
 import { handleTemplates } from "./hostCore";
@@ -169,7 +169,8 @@ export class ClientPanel {
       }
       if (message.type === "loadCodeSymbols") {
         const root = this.codeRoot();
-        const items = root ? await collectCodeSymbols(root) : [];
+        const force = Boolean((message.payload as { force?: boolean } | undefined)?.force);
+        const items = root ? await collectCodeSymbols(root, force) : [];
         this.post({ type: "codeSymbols", items, root });
         return;
       }
@@ -280,17 +281,15 @@ export class ClientPanel {
         return;
       }
       if (message.type === "excelCatalog" && this.panel) {
-        const catalog = await excelCatalogMerged([
-          this.codeRoot(),
-          vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "",
-        ]);
+        const force = Boolean((message.payload as { force?: boolean } | undefined)?.force);
+        const catalog = await excelCatalogMerged(this.excelRoots(), force);
         this.post({ type: "excelCatalog", payload: catalog });
         return;
       }
       if (message.type === "excelPage" && this.panel) {
         const payload = message.payload as { id?: string; offset?: number; limit?: number; focusRow?: number } | undefined;
         const page = payload?.id
-          ? await excelPage(this.codeRoot(), String(payload.id), {
+          ? await excelPage(this.excelRoots(), String(payload.id), {
             offset: payload.offset,
             limit: payload.limit,
             focusRow: payload.focusRow,
@@ -302,7 +301,7 @@ export class ClientPanel {
       if (message.type === "excelUpdate" && this.panel) {
         const payload = message.payload as { id?: string; row?: number; col?: number; value?: string } | undefined;
         const result = payload?.id
-          ? await excelUpdateCell(this.codeRoot(), {
+          ? await excelUpdateCell(this.excelRoots(), {
             id: String(payload.id),
             row: Number(payload.row),
             col: Number(payload.col),
@@ -314,14 +313,14 @@ export class ClientPanel {
       }
       if (message.type === "excelSearch" && this.panel) {
         const payload = message.payload as { query?: string } | undefined;
-        const hits = await excelSearch(this.codeRoot(), String(payload?.query || ""));
+        const hits = await excelSearch(this.excelRoots(), String(payload?.query || ""));
         this.post({ type: "excelSearch", payload: hits });
         return;
       }
       if (message.type === "excelDiff" && this.panel) {
         const payload = message.payload as { id?: string; sheet?: string } | undefined;
         const diff = payload?.id
-          ? await excelDiff(this.codeRoot(), { id: String(payload.id), sheet: payload.sheet })
+          ? await excelDiff(this.excelRoots(), { id: String(payload.id), sheet: payload.sheet })
           : { ok: false, error: "缺少表标识" };
         this.post({ type: "excelDiff", payload: diff });
         return;
@@ -458,6 +457,7 @@ export class ClientPanel {
       source: this.sourceState,
       qr: qr.toString(),
     });
+    warmSearchIndexes(this.codeRoot(), vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "");
   }
 
   private codeRoot(): string {
@@ -467,6 +467,10 @@ export class ClientPanel {
     return this.sourceState.dirPath
       || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
       || "";
+  }
+
+  private excelRoots(): string[] {
+    return [this.codeRoot(), vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ""];
   }
 
   private htmlFor(webview: vscode.Webview): string {
@@ -1201,7 +1205,7 @@ export class ClientPanel {
           <div class="brand">Excel<span>View</span> Client</div>
           <div class="side-tools">
             <button class="icon-btn" type="button" data-theme-toggle title="切换亮/暗色">◐</button>
-            <button class="icon-btn" id="excelReload" type="button" title="刷新">↻</button>
+            <button class="icon-btn" id="excelReload" type="button" title="刷新索引，未改动的表会跳过">↻</button>
             <button class="btn ai-btn" type="button" data-open-ai title="AI"><span class="ai-spark">✦</span>AI</button>
           </div>
         </div>

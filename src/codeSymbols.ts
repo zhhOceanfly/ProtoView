@@ -28,28 +28,103 @@ const MAX_FILES = 800;
 const MAX_SYMBOLS = 4000;
 const MAX_FILE_BYTES = 512 * 1024;
 
-export async function collectCodeSymbols(root: string): Promise<CodeSymbol[]> {
+interface SymbolFile {
+  mtimeMs: number;
+  size: number;
+  symbols: CodeSymbol[];
+}
+
+const symbolFiles = new Map<string, SymbolFile>();
+const symbolRoots = new Map<string, string[]>();
+const symbolBuild = new Map<string, { promise: Promise<void>; force: boolean }>();
+
+export async function collectCodeSymbols(root: string, force = false): Promise<CodeSymbol[]> {
   const absRoot = path.resolve(root || "");
-  if (!absRoot) return [];
-  const files: string[] = [];
-  await walk(absRoot, files);
-  const items: CodeSymbol[] = [];
-  for (const file of files) {
-    if (items.length >= MAX_SYMBOLS) break;
-    let text = "";
-    try {
-      const stat = await fs.stat(file);
-      if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_FILE_BYTES) continue;
-      text = await fs.readFile(file, "utf8");
-    } catch {
-      continue;
+  if (!String(root || "").trim()) return [];
+  if (!force) {
+    if (symbolRoots.has(absRoot)) return finishSymbols(absRoot);
+    const running = symbolBuild.get(absRoot);
+    if (running) {
+      await running.promise;
+      return finishSymbols(absRoot);
     }
-    const rel = path.relative(absRoot, file).replace(/\\/g, "/");
-    const ext = path.extname(file).toLowerCase();
-    extractFromText(text, ext, file, rel, items);
+  } else {
+    const running = symbolBuild.get(absRoot);
+    if (running?.force) {
+      await running.promise;
+      return finishSymbols(absRoot);
+    }
+  }
+  const previous = symbolBuild.get(absRoot)?.promise;
+  const promise = (async () => {
+    if (previous && force) await previous.catch(() => undefined);
+    await rebuildSymbols(absRoot);
+  })();
+  symbolBuild.set(absRoot, { promise, force });
+  try {
+    await promise;
+  } finally {
+    if (symbolBuild.get(absRoot)?.promise === promise) symbolBuild.delete(absRoot);
+  }
+  return finishSymbols(absRoot);
+}
+
+function finishSymbols(root: string): CodeSymbol[] {
+  const paths = symbolRoots.get(root) ?? [];
+  const items: CodeSymbol[] = [];
+  for (const file of paths) {
+    const parsed = symbolFiles.get(file);
+    if (!parsed) continue;
+    for (const item of parsed.symbols) {
+      items.push(item);
+      if (items.length >= MAX_SYMBOLS) break;
+    }
+    if (items.length >= MAX_SYMBOLS) break;
   }
   items.sort((a, b) => a.title.localeCompare(b.title) || a.sub.localeCompare(b.sub));
   return items.slice(0, MAX_SYMBOLS);
+}
+
+async function rebuildSymbols(root: string): Promise<void> {
+  const files: string[] = [];
+  await walk(root, files);
+  const prev = symbolRoots.get(root) ?? [];
+  const paths: string[] = [];
+  for (const file of files) {
+    let stat;
+    try {
+      stat = await fs.stat(file);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_FILE_BYTES) continue;
+    paths.push(file);
+    const cached = symbolFiles.get(file);
+    if (cached && cached.size === stat.size && Math.abs(cached.mtimeMs - stat.mtimeMs) < 1) continue;
+    try {
+      const text = await fs.readFile(file, "utf8");
+      const rel = path.relative(root, file).replace(/\\/g, "/");
+      const ext = path.extname(file).toLowerCase();
+      const symbols: CodeSymbol[] = [];
+      extractFromText(text, ext, file, rel, symbols);
+      symbolFiles.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, symbols });
+    } catch {
+      symbolFiles.delete(file);
+    }
+  }
+  symbolRoots.set(root, paths);
+  const next = new Set(paths);
+  for (const old of prev) {
+    if (next.has(old)) continue;
+    let used = false;
+    for (const list of symbolRoots.values()) {
+      if (list.includes(old)) {
+        used = true;
+        break;
+      }
+    }
+    if (!used) symbolFiles.delete(old);
+  }
 }
 
 async function walk(dir: string, out: string[]): Promise<void> {

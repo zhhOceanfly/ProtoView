@@ -41,19 +41,37 @@ export interface SqlSearchHit {
   preview: string;
 }
 
-interface Cache {
-  root: string;
-  at: number;
-  tables: SqlTableMeta[];
+interface IndexedTable extends SqlTableMeta {
+  blob: string;
+  nameBlob: string;
+  colLines: string[];
+  defLines: string[];
+}
+
+interface ParsedSql {
+  mtimeMs: number;
+  size: number;
+  tables: IndexedTable[];
+}
+
+interface SqlRoot {
+  paths: string[];
   warnings: string[];
 }
 
-let cache: Cache | null = null;
+const sqlFiles = new Map<string, ParsedSql>();
+const sqlRoots = new Map<string, SqlRoot>();
+const sqlBuild = new Map<string, { promise: Promise<void>; force: boolean }>();
 
 export async function sqlCatalog(root: string, force = false): Promise<SqlCatalog> {
   const abs = path.resolve(root || "");
   const indexed = await load(abs, force);
-  return { source: abs, scannedAt: Date.now(), tables: indexed.tables, warnings: indexed.warnings };
+  return {
+    source: abs,
+    scannedAt: Date.now(),
+    tables: indexed.tables.map(({ blob: _blob, nameBlob: _name, colLines: _cols, defLines: _defs, ...meta }) => meta),
+    warnings: indexed.warnings,
+  };
 }
 
 export async function sqlSearch(root: string, query: string, limit = 40): Promise<SqlSearchHit[]> {
@@ -62,17 +80,15 @@ export async function sqlSearch(root: string, query: string, limit = 40): Promis
   const indexed = await load(path.resolve(root || ""), false);
   const hits: { hit: SqlSearchHit; score: number }[] = [];
   for (const table of indexed.tables) {
-    const blob = `${table.fileName}\n${table.relative}\n${table.name}\n${table.comment}\n${table.definition || ""}\n${table.columns.map((col) => `${col.name} ${col.type} ${col.comment}`).join("\n")}`.toLowerCase();
-    if (!tokens.every((token) => blob.includes(token))) continue;
+    if (!tokens.every((token) => table.blob.includes(token))) continue;
     let count = 0;
-    const nameHit = tokens.every((token) => `${table.name} ${table.comment} ${table.fileName}`.toLowerCase().includes(token));
+    const nameHit = tokens.every((token) => table.nameBlob.includes(token));
     if (nameHit) count += 1;
-    for (const col of table.columns) {
-      const line = `${col.name} ${col.type} ${col.comment}`.toLowerCase();
+    for (const line of table.colLines) {
       if (tokens.some((token) => line.includes(token))) count += 1;
     }
-    for (const line of (table.definition || "").split(/\n/)) {
-      if (tokens.some((token) => line.toLowerCase().includes(token))) count += 1;
+    for (const line of table.defLines) {
+      if (tokens.some((token) => line.includes(token))) count += 1;
     }
     hits.push({
       score: nameHit ? 80 : 40,
@@ -94,17 +110,83 @@ export function findSqlTable(tables: SqlTableMeta[], id: string): SqlTableMeta |
   return tables.find((table) => table.id === id);
 }
 
-async function load(root: string, force: boolean): Promise<Cache> {
-  if (!force && cache && cache.root === root && Date.now() - cache.at < 60_000) return cache;
-  const warnings: string[] = [];
-  const tables: SqlTableMeta[] = [];
-  if (!root) {
-    cache = { root, at: Date.now(), tables, warnings: ["未配置扫描目录"] };
-    return cache;
+function sqlStampSame(parsed: ParsedSql, stat: { mtimeMs: number; size: number }): boolean {
+  return parsed.size === stat.size && Math.abs(parsed.mtimeMs - stat.mtimeMs) < 1;
+}
+
+function indexSqlFile(root: string, file: string, text: string, stat: { mtimeMs: number; size: number }): ParsedSql {
+  const relative = relativeOf(root, file);
+  const fileName = path.basename(file);
+  const tables = parseTables(text).map((table): IndexedTable => {
+    const colLines = table.columns.map((col) => `${col.name} ${col.type} ${col.comment}`.toLowerCase());
+    const defLines = (table.definition || "").split(/\n/).map((line) => line.toLowerCase()).filter((line) => line.trim());
+    const nameBlob = `${table.name} ${table.comment} ${fileName}`.toLowerCase();
+    const blob = `${fileName}\n${relative}\n${table.name}\n${table.comment}\n${table.definition || ""}\n${table.columns.map((col) => `${col.name} ${col.type} ${col.comment}`).join("\n")}`.toLowerCase();
+    return {
+      ...table,
+      id: `${relative}\u0000${table.name}`,
+      file,
+      fileName,
+      relative,
+      blob,
+      nameBlob,
+      colLines,
+      defLines,
+    };
+  });
+  return { mtimeMs: stat.mtimeMs, size: stat.size, tables };
+}
+
+function tablesOf(root: string): IndexedTable[] {
+  const index = sqlRoots.get(root);
+  if (!index) return [];
+  const tables: IndexedTable[] = [];
+  for (const file of index.paths) {
+    const parsed = sqlFiles.get(file);
+    if (parsed) tables.push(...parsed.tables);
   }
+  return tables;
+}
+
+async function load(root: string, force: boolean): Promise<{ tables: IndexedTable[]; warnings: string[] }> {
+  const abs = path.resolve(root || "");
+  if (!abs || !String(root || "").trim()) return { tables: [], warnings: ["未配置扫描目录"] };
+  if (!force) {
+    const hit = sqlRoots.get(abs);
+    if (hit) return { tables: tablesOf(abs), warnings: hit.warnings };
+    const running = sqlBuild.get(abs);
+    if (running) {
+      await running.promise;
+      return { tables: tablesOf(abs), warnings: sqlRoots.get(abs)?.warnings ?? [] };
+    }
+  } else {
+    const running = sqlBuild.get(abs);
+    if (running?.force) {
+      await running.promise;
+      return { tables: tablesOf(abs), warnings: sqlRoots.get(abs)?.warnings ?? [] };
+    }
+  }
+  const previous = sqlBuild.get(abs)?.promise;
+  const promise = (async () => {
+    if (previous && force) await previous.catch(() => undefined);
+    await rebuildSql(abs);
+  })();
+  sqlBuild.set(abs, { promise, force });
+  try {
+    await promise;
+  } finally {
+    if (sqlBuild.get(abs)?.promise === promise) sqlBuild.delete(abs);
+  }
+  return { tables: tablesOf(abs), warnings: sqlRoots.get(abs)?.warnings ?? [] };
+}
+
+async function rebuildSql(root: string): Promise<void> {
+  const warnings: string[] = [];
   const files: string[] = [];
   await walk(root, files);
   files.sort((a, b) => a.localeCompare(b, "zh", { numeric: true, sensitivity: "base" }));
+  const prev = sqlRoots.get(root)?.paths ?? [];
+  const paths: string[] = [];
   for (const file of files) {
     let stat;
     try {
@@ -112,30 +194,35 @@ async function load(root: string, force: boolean): Promise<Cache> {
     } catch {
       continue;
     }
-    if (!stat.isFile() || stat.size > MAX_BYTES) {
-      if (stat?.isFile()) warnings.push(`${relativeOf(root, file)} 超过 2MB，已跳过`);
+    if (!stat.isFile()) continue;
+    if (stat.size > MAX_BYTES) {
+      warnings.push(`${relativeOf(root, file)} 超过 2MB，已跳过`);
       continue;
     }
-    let text = "";
+    paths.push(file);
+    const cached = sqlFiles.get(file);
+    if (cached && sqlStampSame(cached, stat)) continue;
     try {
-      text = await fs.readFile(file, "utf8");
+      const text = await fs.readFile(file, "utf8");
+      sqlFiles.set(file, indexSqlFile(root, file, text, stat));
     } catch (error) {
+      sqlFiles.delete(file);
       warnings.push(`${relativeOf(root, file)} 无法读取：${error instanceof Error ? error.message : String(error)}`);
-      continue;
-    }
-    const relative = relativeOf(root, file);
-    for (const table of parseTables(text)) {
-      tables.push({
-        ...table,
-        id: `${relative}\u0000${table.name}`,
-        file,
-        fileName: path.basename(file),
-        relative,
-      });
     }
   }
-  cache = { root, at: Date.now(), tables, warnings };
-  return cache;
+  sqlRoots.set(root, { paths, warnings });
+  const next = new Set(paths);
+  for (const old of prev) {
+    if (next.has(old)) continue;
+    let used = false;
+    for (const index of sqlRoots.values()) {
+      if (index.paths.includes(old)) {
+        used = true;
+        break;
+      }
+    }
+    if (!used) sqlFiles.delete(old);
+  }
 }
 
 export function parseTables(sql: string): Omit<SqlTableMeta, "id" | "file" | "fileName" | "relative">[] {
