@@ -3786,6 +3786,12 @@
         ? `全局变量可在任意步骤/节点用 {{变量名}} 引用。${metaNote}`
         : `发送时可用 {{变量名}} 引用。${metaNote}`;
     }
+    const clearAllBtn = $("clearAllFlowVarsBtn");
+    if (clearAllBtn) {
+      clearAllBtn.title = flow.varsScope === "global"
+        ? "清空全局变量，以及画布上每个步骤和节点的变量"
+        : "清空本链路：这个步骤和它后面各节点的变量";
+    }
     if (!keys.length) {
       el.innerHTML = `<div class="flow-msg-empty">暂无变量，点击下方「添加变量」</div>`;
       return;
@@ -3956,6 +3962,82 @@
       ));
       if (!usedElsewhere && flow.sharedVars) delete flow.sharedVars[key];
     }
+    save();
+    render();
+    renderVarsModal();
+  }
+
+  function wipeNodeVars(node) {
+    node.vars = {};
+    node.varsAt = 0;
+  }
+
+  /** 起始步骤以及它后面、直到下一个起始步骤之前的节点 */
+  function chainIdsFromStart(startId) {
+    const ids = new Set([startId]);
+    const queue = [startId];
+    while (queue.length) {
+      const id = queue.shift();
+      for (const edge of flow.edges) {
+        if (edge.from !== id || ids.has(edge.to)) continue;
+        const next = flow.nodes.find((n) => n.id === edge.to);
+        if (!next || isStartNode(next)) continue;
+        ids.add(next.id);
+        queue.push(next.id);
+      }
+    }
+    return ids;
+  }
+
+  function chainIdsForNode(nodeId) {
+    const node = flow.nodes.find((n) => n.id === nodeId);
+    if (!node) return new Set();
+    if (isStartNode(node)) return chainIdsFromStart(node.id);
+    const ids = new Set();
+    for (const start of flow.nodes) {
+      if (!isStartNode(start)) continue;
+      const chain = chainIdsFromStart(start.id);
+      if (!chain.has(nodeId)) continue;
+      for (const id of chain) ids.add(id);
+    }
+    if (!ids.size) ids.add(nodeId);
+    return ids;
+  }
+
+  function forgetSharedKeys(keys, clearedIds) {
+    if (!flow.sharedVars) return;
+    for (const key of keys) {
+      const stillUsed = flow.nodes.some((n) => (
+        !clearedIds.has(n.id)
+        && n.vars
+        && Object.prototype.hasOwnProperty.call(n.vars, key)
+      ));
+      if (!stillUsed) delete flow.sharedVars[key];
+    }
+  }
+
+  /** 顶栏：全局 + 全部节点；步骤/节点：只清这条链路 */
+  function clearAllVars() {
+    if (flow.varsScope === "global") {
+      flow.globalVars = {};
+      flow.sharedVars = {};
+      for (const node of flow.nodes) wipeNodeVars(node);
+      persistGlobalVars();
+      save();
+      render();
+      renderVarsModal();
+      return;
+    }
+    const step = varsStep();
+    if (!step) return;
+    const ids = chainIdsForNode(step.id);
+    const keys = [];
+    for (const node of flow.nodes) {
+      if (!ids.has(node.id)) continue;
+      keys.push(...Object.keys(node.vars || {}));
+      wipeNodeVars(node);
+    }
+    forgetSharedKeys(keys, ids);
     save();
     render();
     renderVarsModal();
@@ -5374,6 +5456,7 @@
     $("closeFlowVarsFoot")?.addEventListener("click", () => $("flowVarsModal")?.classList.remove("show"));
     $("addFlowVarBtn")?.addEventListener("click", addVar);
     $("clearFlowVarsBtn")?.addEventListener("click", clearVars);
+    $("clearAllFlowVarsBtn")?.addEventListener("click", clearAllVars);
     $("globalVarsBtn")?.addEventListener("click", openGlobalVarsModal);
     $("flowGlobalVarsBtn")?.addEventListener("click", openGlobalVarsModal);
     $("flowVarsBody")?.addEventListener("click", (event) => {

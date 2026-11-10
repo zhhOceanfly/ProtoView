@@ -5,6 +5,10 @@ export interface CallGraphDbHit {
   table: string;
   op: "read" | "write" | "unknown";
   line: number;
+  /** 实际读写这张表的函数 */
+  via?: string;
+  viaFile?: string;
+  viaLine?: number;
 }
 
 export interface CallGraphNode {
@@ -15,7 +19,10 @@ export interface CallGraphNode {
   abs: string;
   line: number;
   pkg: string;
+  /** 本函数直接读写的表 */
   db: CallGraphDbHit[];
+  /** 本函数以及下层调用读写的表 */
+  downstream: CallGraphDbHit[];
   unresolved: boolean;
 }
 export interface CallGraph {
@@ -67,7 +74,12 @@ async function loadFuncDefs(root: string): Promise<FuncDef[]> {
   if (!absRoot) return [];
   const cached = fileIndexCache.get(absRoot);
   if (cached && Date.now() - cached.at < 30_000) {
-    if (!tableNameMap.size) for (const def of cached.defs) collectTableName("", def);
+    if (!tableNameMap.size) {
+      for (const def of cached.defs) collectTableName("", def);
+      indexReturnModels(cached.defs);
+    } else if (!returnModels.size) {
+      indexReturnModels(cached.defs);
+    }
     return cached.defs;
   }
 
@@ -87,7 +99,9 @@ async function loadFuncDefs(root: string): Promise<FuncDef[]> {
     defs.push(...parseGoFile(text, file, rel));
   }
   tableNameMap.clear();
+  returnModels.clear();
   for (const def of defs) collectTableName("", def);
+  indexReturnModels(defs);
   fileIndexCache.set(absRoot, { at: Date.now(), defs });
   return defs;
 }
@@ -160,25 +174,130 @@ function opFromMethod(method: string): CallGraphDbHit["op"] {
   return "unknown";
 }
 
-/** struct 名 → TableName() 返回的表名，用于 .Model(&User{}) 精确落表 */
+/** struct 名 → TableName() 返回的表名 */
 const tableNameMap = new Map<string, string>();
+/** 函数名 → 返回值里的模型（用于 player, err := GetXxx() 这种推断） */
+const returnModels = new Map<string, Set<string>>();
 
 export function clearDbTableCache(): void {
   tableNameMap.clear();
+  returnModels.clear();
 }
 
-/** 收集 `func (x User) TableName() string { return "app_user" }` 这类映射 */
+function modelKey(name: string): string {
+  return String(name || "").replace(/^\*/, "").split(".").pop()?.replace(/\[\]/g, "").toLowerCase() || "";
+}
+
+/** 收集 `func (x *User) TableName() string { return "app_user" }` */
 function collectTableName(_text: string, func: FuncDef): void {
   if (!func.name || func.name.toLowerCase() !== "tablename" || !func.receiver) return;
   const m = func.body.match(/return\s+"([\w.]+)"/);
   if (!m) return;
-  tableNameMap.set(func.receiver.toLowerCase(), m[1]);
+  const key = modelKey(func.receiver);
+  if (key.length < 3) return;
+  tableNameMap.set(key, m[1]);
+}
+
+const ORM_PREFIXES = [
+  "WriteXormCache", "BCreateOrUpdate", "InsertOrUpdate", "BUpdate", "BDelete",
+  "LoadAll", "BQuery", "BRead", "BCreate", "BClear",
+  "Read", "List", "Query", "Write", "Create", "Delete", "Remove", "Clear",
+  "Load", "Save", "Update", "Insert",
+];
+
+function ormOp(prefix: string): CallGraphDbHit["op"] {
+  if (/^(BRead|Read|List|Query|BQuery|Load|LoadAll)$/.test(prefix)) return "read";
+  if (/^(WriteXormCache|BCreateOrUpdate|InsertOrUpdate|BUpdate|BDelete|Write|Create|BCreate|Delete|Remove|Clear|BClear|Save|Update|Insert|Add)$/.test(prefix)) return "write";
+  return "unknown";
+}
+
+/** 去掉 Map / InTx / ByPk / 复数，落到已有 TableName() 的模型 */
+function lookupModel(raw: string): string {
+  const queue = [raw];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const item = queue.pop() || "";
+    if (!item || seen.has(item)) continue;
+    seen.add(item);
+    if (item.length >= 3 && tableNameMap.has(modelKey(item))) return item;
+    if (item.endsWith("Map")) queue.push(item.slice(0, -3));
+    if (item.endsWith("InTx")) queue.push(item.slice(0, -4));
+    if (item.endsWith("ByPk")) queue.push(item.slice(0, -4));
+    const by = item.match(/^(.*?)By[A-Z].*$/);
+    if (by?.[1]) queue.push(by[1]);
+    if (item.length > 1 && item.endsWith("s")) queue.push(item.slice(0, -1));
+  }
+  return "";
+}
+
+function parseOrmIdent(ident: string): { model: string; table: string; op: CallGraphDbHit["op"] } | null {
+  if (!ident || ident.startsWith("New")) return null;
+  for (const prefix of ORM_PREFIXES) {
+    if (!ident.startsWith(prefix) || ident.length === prefix.length) continue;
+    const rest = ident.slice(prefix.length);
+    if (!/^[A-Z]/.test(rest)) continue;
+    const model = lookupModel(rest);
+    const table = model ? tableNameMap.get(modelKey(model)) : "";
+    if (!table) continue;
+    return { model, table, op: ormOp(prefix) };
+  }
+  return null;
+}
+
+/** 调用名对应的模型：New / BRead / 函数返回值 */
+function modelOfCall(ident: string): string {
+  if (ident.startsWith("New") && ident.length > 3) {
+    const model = lookupModel(ident.slice(3));
+    if (model) return model;
+  }
+  const parsed = parseOrmIdent(ident);
+  if (parsed) return parsed.model;
+  const rets = returnModels.get(ident);
+  if (rets && rets.size === 1) return [...rets][0];
+  return "";
+}
+
+function indexReturnModels(defs: FuncDef[]): void {
+  returnModels.clear();
+  for (const def of defs) {
+    for (const model of returnsFromSignature(def.body)) {
+      const set = returnModels.get(def.name) || new Set<string>();
+      set.add(model);
+      returnModels.set(def.name, set);
+    }
+  }
+}
+
+function returnsFromSignature(body: string): string[] {
+  const head = body.split("{")[0] || "";
+  const noName = head.replace(/^func\s+(?:\([^)]*\)\s*)?[A-Za-z_]\w*/, "");
+  const open = noName.indexOf("(");
+  if (open < 0) return [];
+  let depth = 0;
+  let end = -1;
+  for (let i = open; i < noName.length; i += 1) {
+    if (noName[i] === "(") depth += 1;
+    else if (noName[i] === ")") {
+      depth -= 1;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  if (end < 0) return [];
+  const found: string[] = [];
+  const re = /([A-Z]\w*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(noName.slice(end + 1)))) {
+    const model = lookupModel(match[1]);
+    if (model && !found.includes(model)) found.push(model);
+  }
+  return found;
 }
 
 /** 从函数体里找读写的 DB 表（GORM / xorm / 原生 SQL）。 */
 export function extractDbTables(func: FuncDef): CallGraphDbHit[] {
   const hits = new Map<string, CallGraphDbHit>();
-  const lines = func.body.split("\n");
+  const lines = func.body.split("\n").map((item) => item.replace(/\/\/.*$/, ""));
+  const varModel = new Map<string, string>();
   const add = (rawTable: string, op: CallGraphDbHit["op"], line: number) => {
     const table = String(rawTable || "").replace(/[`"']/g, "").trim();
     if (!table || /^(select|where|from|values|set)$/i.test(table)) return;
@@ -227,6 +346,59 @@ export function extractDbTables(func: FuncDef): CallGraphDbHit[] {
     const joinRe = /\bJOIN\s+([`"']?[\w.]+[`"']?)/gi;
     let join;
     while ((join = joinRe.exec(window))) add(join[1], "read", lineNo);
+
+    // 6) origin / xorm_cache / mem_cache：BRead、BUpdate、New+Create、Read*Map、WriteXormCache、XOrm.Write
+    let found: RegExpExecArray | null;
+    const bindRe = /((?:[A-Za-z_]\w*\s*,\s*)*[A-Za-z_]\w*)\s*(?::=|=)\s*(?:[A-Za-z_]\w*\s*\.\s*)?([A-Z]\w*)\s*\(/g;
+    while ((found = bindRe.exec(line))) {
+      const model = modelOfCall(found[2]);
+      if (!model) continue;
+      const name = found[1].split(",").map((item) => item.trim()).find((item) => item && item !== "err" && item !== "ok" && item !== "_");
+      if (name) varModel.set(name, model);
+    }
+    const declRe = /\b(?:var\s+)?([A-Za-z_]\w*)\s+\*([A-Za-z_]\w*\.)?([A-Z]\w+)/g;
+    while ((found = declRe.exec(line))) {
+      const model = lookupModel(found[3]);
+      if (model) varModel.set(found[1], model);
+    }
+    const methodRe = /([A-Za-z_]\w*)\s*\.\s*(BCreateOrUpdate|InsertOrUpdate|BUpdate|BDelete|BCreate|BClear|BRead|Create|Update|Delete|Add|Remove|Save|Write)\s*\(/g;
+    while ((found = methodRe.exec(line))) {
+      const model = varModel.get(found[1]);
+      const table = model ? tableNameMap.get(modelKey(model)) : "";
+      if (table) add(table, ormOp(found[2]), lineNo);
+    }
+    const callRe = /(?:^|[^.\w])(?:[A-Za-z_]\w*\s*\.\s*)?([A-Z]\w*)\s*\(/g;
+    while ((found = callRe.exec(line))) {
+      const ident = found[1];
+      if (ident.startsWith("New")) {
+        const model = lookupModel(ident.slice(3));
+        const table = model ? tableNameMap.get(modelKey(model)) : "";
+        if (!table) continue;
+        const rest = line.slice(found.index);
+        const chain = rest.match(/New[A-Z]\w*\s*\(\s*\)(?:\s*\.\s*[A-Za-z_]\w*\s*\([^)]*\)){0,8}\s*\.\s*(Add|Create|BCreate|BCreateOrUpdate|BUpdate|Remove|Delete|Save|Update)\s*\(/);
+        if (chain) add(table, ormOp(chain[1]), lineNo);
+        continue;
+      }
+      const parsed = parseOrmIdent(ident);
+      if (parsed) add(parsed.table, parsed.op, lineNo);
+    }
+    if (/TableName\s*\(/.test(window) && /(select\s+\*|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+)/i.test(window)) {
+      const write = /DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+/i.test(window);
+      const seenModel = new Set<string>();
+      for (const model of varModel.values()) {
+        if (seenModel.has(model) || !window.includes(model)) continue;
+        seenModel.add(model);
+        const table = tableNameMap.get(modelKey(model));
+        if (table) add(table, write ? "write" : "read", lineNo);
+      }
+      const selfTable = tableNameMap.get(modelKey(func.receiver));
+      if (selfTable) add(selfTable, write ? "write" : "read", lineNo);
+    }
+    const xorm = line.match(/\bXOrm\s*\.\s*(Write|Delete|Update|Read)\s*\(\s*this\s*\)/);
+    if (xorm) {
+      const selfTable = tableNameMap.get(modelKey(func.receiver));
+      if (selfTable) add(selfTable, xorm[1] === "Read" ? "read" : "write", lineNo);
+    }
   }
   return [...hits.values()];
 }
@@ -298,6 +470,60 @@ function pickDef(name: string, from: FuncDef, index: Map<string, FuncDef[]>): Fu
   );
 }
 
+const DB_DEPTH = 6;
+const DB_WALK_CAP = 160;
+const SKIP_DB_WALK = new Set([
+  "Create", "Add", "Get", "Set", "Write", "Read", "Delete", "Remove", "Update", "Save",
+  "String", "Error", "Format", "Sprintf", "Printf", "Print", "Println", "Log", "Info", "Warn", "Debug",
+  "Lock", "Unlock", "Incre", "TableName", "AliasName", "BCreate", "BClear", "BRead", "Len", "Cap",
+  "Append", "Make", "New", "Close", "Panic", "Recover", "Error",
+]);
+
+function viaScore(name: string): number {
+  const bare = String(name || "").split(".").pop() || "";
+  if (/^(Create|BCreate|Add|Write|Delete|Remove|BClear|Save|Update|TableName|AliasName|Incre)$/.test(bare)) return 0;
+  if (/^(BRead|BQuery|Read|List|Query|Load|LoadAll|WriteXormCache|New|Clear)$/.test(bare)) return 1;
+  return 3;
+}
+
+/** 顺着调用往下找表。业务函数（如 GetRegisterLoginSetting）优先于 ORM 生成函数。 */
+function dbClosure(def: FuncDef, index: Map<string, FuncDef[]>, memo: Map<string, CallGraphDbHit[]>): CallGraphDbHit[] {
+  const id = `${def.rel}:${def.line}:${def.name}`;
+  const cached = memo.get(id);
+  if (cached) return cached;
+  const hits: CallGraphDbHit[] = [];
+  const seen = new Set<string>();
+  let walked = 0;
+  const walk = (cur: FuncDef, level: number) => {
+    if (walked >= DB_WALK_CAP) return;
+    const curId = `${cur.rel}:${cur.line}:${cur.name}`;
+    if (seen.has(curId)) return;
+    seen.add(curId);
+    walked += 1;
+    for (const hit of extractDbTables(cur)) {
+      hits.push({ ...hit, via: cur.name, viaFile: cur.rel, viaLine: cur.line });
+    }
+    if (level >= DB_DEPTH || cur.rel.endsWith(".pb.go")) return;
+    for (const callName of collectCalls(cur.body)) {
+      if (SKIP_DB_WALK.has(callName)) continue;
+      const callee = pickDef(callName, cur, index);
+      if (!callee || callee.rel.endsWith(".pb.go")) continue;
+      walk(callee, level + 1);
+    }
+  };
+  memo.set(id, []);
+  walk(def, 0);
+  const best = new Map<string, CallGraphDbHit>();
+  for (const hit of hits) {
+    const key = `${hit.table.toLowerCase()}|${hit.op}`;
+    const prev = best.get(key);
+    if (!prev || viaScore(hit.via || "") > viaScore(prev.via || "")) best.set(key, hit);
+  }
+  const list = [...best.values()];
+  memo.set(id, list);
+  return list;
+}
+
 export async function buildCallGraph(options: {
   root: string;
   name: string;
@@ -350,6 +576,7 @@ export async function buildCallGraph(options: {
   const edges: { from: string; to: string }[] = [];
   const edgeKeys = new Set<string>();
   let truncated = false;
+  const dbMemo = new Map<string, CallGraphDbHit[]>();
 
   const idOf = (def: FuncDef) => `${def.rel}:${def.line}:${def.name}`;
   const visit = (def: FuncDef, level: number): string => {
@@ -366,6 +593,7 @@ export async function buildCallGraph(options: {
       line: def.line,
       pkg: def.pkg,
       db: extractDbTables(def),
+      downstream: dbClosure(def, index, dbMemo),
       unresolved: false,
     });
     if (level >= depth) return id;

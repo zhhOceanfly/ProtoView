@@ -497,6 +497,42 @@
     });
   }
 
+  function initSourceResize() {
+    const app = $("app");
+    const grip = $("sourceDrawerGrip");
+    if (!app || !grip) return;
+    const saved = Number(localStorage.getItem("protoview.source.w"));
+    if (Number.isFinite(saved) && saved >= 320) app.style.setProperty("--source-size", `${Math.round(saved)}px`);
+    const setWidth = (clientX) => {
+      const rect = app.getBoundingClientRect();
+      const next = Math.round(Math.min(rect.width - 280, Math.max(320, rect.right - clientX)));
+      app.style.setProperty("--source-size", `${next}px`);
+      return next;
+    };
+    let dragging = false;
+    grip.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      dragging = true;
+      grip.setPointerCapture(event.pointerId);
+      app.classList.add("source-resizing");
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    grip.addEventListener("pointermove", (event) => {
+      if (dragging) setWidth(event.clientX);
+    });
+    const finish = () => {
+      if (!dragging) return;
+      dragging = false;
+      app.classList.remove("source-resizing");
+      const width = Math.round(Number.parseFloat(app.style.getPropertyValue("--source-size")) || 0);
+      if (width >= 320) localStorage.setItem("protoview.source.w", String(width));
+    };
+    grip.addEventListener("pointerup", finish);
+    grip.addEventListener("pointercancel", finish);
+    grip.addEventListener("lostpointercapture", finish);
+  }
+
   function esc(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -1789,9 +1825,6 @@
     }
     const nodeCard = (node) => {
       const pos = placed.get(node.id);
-      const dbTags = (node.db || []).map((hit) =>
-        `<span class="call-graph-db-tag is-${hit.op}" title="${esc(hit.table)}">${hit.op === "read" ? "读" : hit.op === "write" ? "写" : "?"} ${esc(hit.table)}</span>`,
-      ).join("");
       const depthLabel = levels.get(node.id) ?? 0;
       return `<div class="call-graph-node lv-${depthLabel > 0 ? "child" : "root"}" data-cg-node="${esc(node.id)}"
         style="left:${pos.x}px;top:${pos.y}px"
@@ -1800,7 +1833,6 @@
           <strong>${esc(node.receiver ? `${node.receiver}.${node.name}` : node.name)}</strong>
           <span>${esc(node.file)}:${node.line}</span>
         </div>
-        ${dbTags ? `<div class="call-graph-db">${dbTags}</div>` : ""}
         <div class="call-graph-node-actions">
           <button class="gs-action" type="button" data-cg-src title="跳转源码">跳转源码</button>
           <button class="gs-action" type="button" data-cg-db title="查看读写的数据库表">查看 DB</button>
@@ -2161,7 +2193,8 @@
   initOpenWithUi();
   renderHistory();
   initSidebarCollapsed();
-  initSidebarResize();
+    initSidebarResize();
+    initSourceResize();
   els.themeBtn.addEventListener("click", toggleTheme);
   document.addEventListener("click", (event) => {
     if (event.target.closest?.("[data-theme-toggle]")) toggleTheme();
@@ -3928,30 +3961,37 @@
     setRespBadge("ok", `已打开 ${file.replace(/\\/g, "/").split("/").pop()}:${line}`);
   }
 
-  /** 调用图「查看 DB」：整条链路聚合出的读写表列表，每行可跳到 DbView 对应表 */
+  /** 调用图「查看 DB」：当前节点以及它调用到的函数里，实际读写的表 */
   function showCallGraphDb(name, file) {
     const graph = callGraphState.graph;
     const board = $("callGraphBoard");
     board?.querySelector(".call-graph-db-panel")?.remove();
-    const seen = new Map();
-    for (const node of graph?.nodes || []) {
-      const isFocus = node.name === name && (!file || node.file === file);
-      for (const hit of node.db || []) {
-        const table = String(hit.table || "").trim();
-        if (!table) continue;
-        const key = table.toLowerCase();
-        const prev = seen.get(key);
-        const op = hit.op === "write" ? "write" : hit.op === "read" ? "read" : "unknown";
-        if (!prev) {
-          seen.set(key, { table, ops: new Set([op]), sources: isFocus ? [node.name] : [], focus: isFocus, line: hit.line, file: node.file });
-        } else {
-          prev.ops.add(op);
-          if (isFocus) { prev.focus = true; prev.line = hit.line; prev.file = node.file; }
-          if (isFocus && !prev.sources.includes(node.name)) prev.sources.push(node.name);
-        }
+    const nodes = graph?.nodes || [];
+    const focus = nodes.find((node) => node.name === name && (!file || node.file === file))
+      || nodes.find((node) => node.name === name);
+    const sourceHits = Array.isArray(focus?.downstream) && focus.downstream.length
+      ? focus.downstream
+      : nodes.flatMap((node) => (node.db || []).map((hit) => ({ ...hit, via: hit.via || node.name })));
+    const rows = [];
+    const grouped = new Map();
+    for (const hit of sourceHits) {
+      const table = String(hit.table || "").trim();
+      if (!table) continue;
+      const op = hit.op === "write" ? "write" : hit.op === "read" ? "read" : "";
+      if (!op) continue;
+      const via = String(hit.via || focus?.name || "").trim();
+      const key = table.toLowerCase();
+      let row = grouped.get(key);
+      if (!row) {
+        row = { table, ops: new Set(), readVia: [], writeVia: [] };
+        grouped.set(key, row);
       }
+      row.ops.add(op);
+      const bucket = op === "write" ? row.writeVia : row.readVia;
+      if (via && !bucket.includes(via)) bucket.push(via);
     }
-    const rows = [...seen.values()].sort((a, b) => Number(b.focus) - Number(a.focus) || a.table.localeCompare(b.table));
+    for (const row of grouped.values()) rows.push(row);
+    rows.sort((a, b) => a.table.localeCompare(b.table));
     const opLabel = (ops) => {
       const read = ops.has("read");
       const write = ops.has("write");
@@ -3960,16 +4000,32 @@
       if (read) return { text: "读", cls: "is-read" };
       return { text: "未知", cls: "is-unknown" };
     };
+    const viaText = (row) => {
+      const read = row.ops.has("read");
+      const write = row.ops.has("write");
+      if (read && write) {
+        const parts = [];
+        if (row.readVia.length) parts.push(`读 ${row.readVia.join("、")}`);
+        if (row.writeVia.length) parts.push(`写 ${row.writeVia.join("、")}`);
+        return parts.join(" · ");
+      }
+      return [...row.readVia, ...row.writeVia].join("、");
+    };
     const body = rows.length
       ? rows.map((row) => {
         const op = opLabel(row.ops);
+        const via = viaText(row);
+        const viaHtml = via ? `<span class="call-graph-db-via" title="${esc(via)}">${esc(via)}</span>` : "";
         return `<div class="call-graph-db-item">
           <span class="call-graph-db-tag ${op.cls}">${op.text}</span>
-          <span class="call-graph-db-name" title="${esc(row.table)}">${esc(row.table)}</span>
-          <button class="gs-action" type="button" data-cg-db-open="${esc(row.table)}" title="在 DbView 打开这张表">查看</button>
+          <span class="call-graph-db-main">
+            <span class="call-graph-db-name" title="${esc(row.table)}">${esc(row.table)}</span>
+            ${viaHtml}
+          </span>
+          <button class="gs-action" type="button" data-cg-db-open="${esc(row.table)}" title="跳到 DbView 的这张表">跳转</button>
         </div>`;
       }).join("")
-      : `<div class="call-graph-db-item call-graph-db-none">未识别到数据库表（可能通过 DAO 间接访问）</div>`;
+      : `<div class="call-graph-db-item call-graph-db-none">这条调用链下没有识别到数据表</div>`;
     const panel = document.createElement("div");
     panel.className = "call-graph-db-panel";
     panel.innerHTML = `<div class="call-graph-db-panel-head">

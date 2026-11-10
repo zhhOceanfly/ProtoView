@@ -291,6 +291,7 @@
     </main>
 
     <aside class="source-drawer hidden" id="sourceDrawer" aria-label="源码预览">
+      <div class="source-drawer-grip" id="sourceDrawerGrip" title="拖动调整左右宽度"></div>
       <div class="source-drawer-head">
         <div class="source-drawer-titles">
           <strong id="sourceDrawerName">源码</strong>
@@ -441,7 +442,8 @@
       </div>
       <div class="modal-foot">
         <button class="btn" id="addFlowVarBtn" type="button">添加变量</button>
-        <button class="btn" id="clearFlowVarsBtn" type="button">清空变量</button>
+        <button class="btn" id="clearFlowVarsBtn" type="button" title="只清空当前这一组变量">清空变量</button>
+        <button class="btn" id="clearAllFlowVarsBtn" type="button" title="清空这一组所属范围内的全部变量">清空所有变量</button>
         <button class="btn primary" id="closeFlowVarsFoot" type="button">关闭</button>
       </div>
     </div>

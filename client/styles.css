@@ -1012,11 +1012,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   overflow: hidden;
 }
 #app.source-open {
-  --source-w: min(42vw, 520px);
+  --source-w: var(--source-size, min(42vw, 520px));
 }
-/* 调用链路图需要更宽的右侧区域 */
+/* 调用链路图需要更宽的右侧区域，左边缘可以拖 */
 #app.source-open.graph-mode {
-  --source-w: min(58vw, 860px);
+  --source-w: var(--source-size, min(58vw, 860px));
 }
 /* 链路内双击节点：挂到画布 stage 内的右侧浮动面板 */
 #flowStage > #mainClient.flow-inspect-float {
@@ -2783,6 +2783,7 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 }
 
 .source-drawer {
+  position: relative;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
@@ -2790,6 +2791,30 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   min-width: 0;
   overflow: hidden;
 }
+.source-drawer-grip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 6;
+}
+.source-drawer-grip::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 42px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+.source-drawer-grip:hover::after,
+#app.source-resizing .source-drawer-grip::after { background: var(--accent); }
+#app.source-resizing { user-select: none; }
+#app.source-resizing * { cursor: ew-resize !important; }
 .source-drawer.hidden {
   display: none !important;
   border-left: 0;
@@ -2993,7 +3018,7 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   right: 16px;
   top: 16px;
   z-index: 6;
-  width: min(300px, 82%);
+  width: min(360px, 92%);
   max-height: calc(100% - 32px);
   display: flex;
   flex-direction: column;
@@ -3049,6 +3074,19 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
+}
+.call-graph-db-main {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.call-graph-db-via {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10px;
 }
 .call-graph-db-item .gs-action { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; }
 .call-graph-db-item.call-graph-db-none {
