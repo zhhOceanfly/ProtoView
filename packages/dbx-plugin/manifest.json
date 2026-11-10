@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.github.zhhoceanfly.protoview",
   "name": "ApiMan",
-  "version": "0.1.1",
+  "version": "0.1.6",
   "publisher": "zhhoceanfly",
   "description": "Browse Protobuf and debug gRPC / HTTP / SSE / WebSocket APIs inside DBX. Requires Node.js >= 18 on PATH (sidecar runs runtime/sidecar.js via node).",
   "icon": "assets/plugin.svg",

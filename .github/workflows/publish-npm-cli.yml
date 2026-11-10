@@ -10,7 +10,7 @@
 #
 # 触发（与 Open VSX / DBX 分开，勿共用 tag）：
 #   - 手动：Actions → Publish npm CLI → Run workflow
-#   - Tag：git tag cli-v0.1.5 && git push origin cli-v0.1.5
+#   - Tag：git tag cli-v0.1.6 && git push origin cli-v0.1.6
 #
 # 发布前先升 packages/cli/package.json 的 version（同版本不能重复发）。
 

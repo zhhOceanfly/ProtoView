@@ -1,6 +1,6 @@
 # @zhhoceanfly/protoview
 
-当前版本：**0.1.5**
+当前版本：**0.1.6**
 
 ProtoView Client **CLI**：在浏览器里调试 gRPC / HTTP / SSE / WebSocket。适合 Rider 等无法安装 VS Code 扩展的 IDE。
 

@@ -5,7 +5,7 @@
 #
 # 触发（与 npm / DBX 分开，勿共用 tag）：
 #   - 手动：Actions → Publish Open VSX → Run workflow
-#   - Tag：git tag ext-v0.1.5 && git push origin ext-v0.1.5
+#   - Tag：git tag ext-v0.1.6 && git push origin ext-v0.1.6
 #
 # 版本以根目录 package.json 的 version 为准（tag 仅作触发）。
 

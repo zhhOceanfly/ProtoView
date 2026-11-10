@@ -2,7 +2,7 @@
 
 将 ApiMan（ProtoView Client）以 DBX 插件（`.dbxp`）形式运行：Workbench UI + Node Sidecar（复用仓库内 `ClientHost` / gRPC 等核心）。
 
-商店展示名：**ApiMan**；稳定插件 ID 为 `io.github.zhhoceanfly.protoview`；publisher 为 **`zhhoceanfly`**。
+当前版本：**0.1.6**。商店展示名：**ApiMan**；稳定插件 ID 为 `io.github.zhhoceanfly.protoview`；publisher 为 **`zhhoceanfly`**。
 
 **运行要求：** 本机安装 **Node.js ≥ 18** 并在 PATH 中（Go 启动器通过 `node` 拉起 `runtime/sidecar.js`，manifest 声明 `host.binary`）。找不到或版本过低时会报错并给出安装指引。
 

@@ -7,7 +7,7 @@
   "source": "https://github.com/zhhOceanfly/ProtoView",
   "homepage": "https://github.com/zhhOceanfly/ProtoView",
   "license": "MIT",
-  "releaseNotes": "v0.1.1: publisher zhhoceanfly; host.binary; requires Node.js >= 18 on PATH; LICENSE + THIRD_PARTY_NOTICES for npm deps under runtime/node_modules; clean rebuild (vcs.modified=false).",
+  "releaseNotes": "v0.1.6: align with ProtoView 0.1.6. Flow variables, enum names in gRPC responses, shared Client environment with per-node override. Still requires Node.js >= 18 on PATH.",
   "localizations": {
     "zh-CN": {
       "name": "ApiMan",
