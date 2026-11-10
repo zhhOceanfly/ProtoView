@@ -27,6 +27,8 @@ const CORE_FILES = [
   "sqlIndex.js",
   "docIndex.js",
   "dbSession.js",
+  "dbSchema.js",
+  "gitChanges.js",
   "oceanMessages.js",
   "openEditor.js",
   "grpcInvoke.js",

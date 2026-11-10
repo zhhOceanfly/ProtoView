@@ -25,6 +25,9 @@
     excelPageSize: 60,
     excelEditing: false,
     excelPending: new Map(),
+    /** Excel 差异对比：当前对比结果与是否打开 */
+    excelDiff: null,
+    excelDiffOpen: false,
     docsPage: 0,
     docsPageSize: 60,
     searchTimer: 0,
@@ -52,7 +55,11 @@
     }
     document.body.dataset.view = view;
     renderTabs();
-    if (view === "excel") ensureExcelCatalog();
+    if (gitState.ok && ["excel", "docs", "db"].includes(view)) requestGitChanges();
+    if (view === "excel") {
+      ensureExcelCatalog();
+      updateExcelDiffButton();
+    }
     if (view === "docs") window.ProtoViewDocs?.ensure?.();
     if (view === "db") window.ProtoViewDb?.ensure?.();
     if (view === "home") requestAnimationFrame(() => $("homeSearch")?.focus());
@@ -104,14 +111,78 @@
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data) return;
+    // 拿到 bootstrap 后才知道工作区是不是 git 项目，这里补一次探测
+    if (data.type === "bootstrap") requestGitChanges(true);
     if (data.type === "excelCatalog") applyExcelCatalog(data.payload);
     if (data.type === "excelPage") applyExcelPage(data.payload);
     if (data.type === "excelSearch") applyExcelSearch(data.payload);
     if (data.type === "excelUpdate") applyExcelUpdate(data.payload);
+    if (data.type === "excelDiff") applyExcelDiff(data.payload);
+    if (data.type === "gitChanges") applyGitChanges(data.payload);
   });
+
+  // ===== Git 变更（只看变更） =====
+  /** { ok, files: Set<相对仓库根路径> } */
+  const gitState = { ok: false, files: new Set(), requested: false };
+
+  function applyGitChanges(payload) {
+    gitState.ok = Boolean(payload?.ok);
+    gitState.files = new Set(Array.isArray(payload?.files) ? payload.files : []);
+    for (const id of ["rpcChangeOnly", "excelChangeOnly", "docsChangeOnly", "dbChangeOnly"]) {
+      const box = $(id);
+      const label = box?.closest?.(".side-change-only");
+      if (label) label.classList.toggle("hidden", !gitState.ok);
+      if (!gitState.ok && box) box.checked = false;
+    }
+    // Excel 差异对比按钮：git 项目且有变更才显示
+    updateExcelDiffButton();
+    rerenderForChangeFilter();
+  }
+
+  function requestGitChanges(force = false) {
+    // 没有宿主时无法判断是否是 git 项目，直接跳过
+    if (!window.ProtoViewHost?.isHost?.() && !window.__protoViewPost) return;
+    if (gitState.requested && !force) return;
+    gitState.requested = true;
+    post("gitChanges", { force });
+  }
+
+  /** 某文件是否在当前变更里（relative 可能是 codeRoot 相对路径） */
+  function isChanged(relative) {
+    if (!gitState.ok) return false;
+    const rel = String(relative || "").replace(/\\/g, "/").replace(/^\.?\//, "");
+    if (!rel) return false;
+    if (gitState.files.has(rel)) return true;
+    // 仓库根比 codeRoot 高时，git 里是带前缀的路径
+    for (const file of gitState.files) {
+      if (file.endsWith(`/${rel}`)) return true;
+    }
+    return false;
+  }
+
+  function changeOnly(id) {
+    const box = $(id);
+    return Boolean(gitState.ok && box?.checked);
+  }
+
+  function rerenderForChangeFilter() {
+    try { window.ProtoViewExcel?.rerender?.(); } catch { /* ignore */ }
+    try { window.ProtoViewDocs?.rerender?.(); } catch { /* ignore */ }
+    try { window.ProtoViewDb?.rerender?.(); } catch { /* ignore */ }
+    try { window.ProtoViewClient?.rerenderTree?.(); } catch { /* ignore */ }
+  }
+
+  window.ProtoViewGit = {
+    isChanged,
+    changeOnly,
+    isGit: () => gitState.ok,
+    hasFiles: () => gitState.files.size > 0,
+    request: requestGitChanges,
+  };
 
   // ===== Excel =====
   let hasCatalog = false;
+  let excelScanTimer = 0;
 
   function ensureExcelCatalog(force = false) {
     if (hasCatalog && !force) return;
@@ -119,11 +190,22 @@
     if (list && !state.sheets.length) list.innerHTML = `<div class="excel-empty">扫描中…</div>`;
     if (!post("excelCatalog", { force })) {
       if (list) list.innerHTML = `<div class="excel-empty">独立模式需要连接宿主才能读取 Excel</div>`;
+      return;
     }
+    // 扫描迟迟不回来时给出可操作提示，而不是一直停在「扫描中」
+    window.clearTimeout(excelScanTimer);
+    excelScanTimer = window.setTimeout(() => {
+      if (hasCatalog) return;
+      const el = $("excelList");
+      if (el && !state.sheets.length) {
+        el.innerHTML = `<div class="excel-empty">扫描超时：请确认工作区里有 Excel 文件，或点顶部刷新重试</div>`;
+      }
+    }, 20000);
   }
 
   function applyExcelCatalog(catalog) {
     hasCatalog = true;
+    window.clearTimeout(excelScanTimer);
     state.sheets = Array.isArray(catalog?.sheets) ? catalog.sheets : [];
     renderExcelList();
     if (catalog?.warnings?.length) {
@@ -152,12 +234,16 @@
       groups.set(key, bucket);
     }
     const files = [...groups.entries()].filter(([file, sheets]) => {
+      if (changeOnly("excelChangeOnly") && !window.ProtoViewGit?.isChanged?.(file)) return false;
       if (!q) return true;
       const blob = `${file} ${sheets.map((sheet) => `${sheet.fileName} ${sheet.sheet}`).join(" ")}`.toLowerCase();
       return blob.includes(q);
     });
     if (!files.length) {
-      list.innerHTML = `<div class="excel-empty">${state.sheets.length ? "没有匹配的表" : "未找到 Excel 文件"}</div>`;
+      const empty = changeOnly("excelChangeOnly")
+        ? "当前变更里没有 Excel 表"
+        : (state.sheets.length ? "没有匹配的表" : "未找到 Excel 文件");
+      list.innerHTML = `<div class="excel-empty">${empty}</div>`;
       window.ProtoViewPager?.renderPager?.($("excelPager"), { page: 0, pages: 1, total: 0 }, () => {});
       return;
     }
@@ -188,6 +274,111 @@
     bar.querySelector(".excel-sheet-tab.active")?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }
 
+  /** Excel 差异对比：当前文件 vs git HEAD，左右两栏按行对齐 */
+  function applyExcelDiff(payload) {
+    const view = $("excelDiffView");
+    const wrap = $("excelDiffWrap");
+    if (!view || !wrap) return;
+    state.excelDiff = payload || null;
+    if (!payload?.ok) {
+      view.classList.add("hidden");
+      window.ProtoViewClient?.notify?.(payload?.error || "无法对比该表");
+      return;
+    }
+    renderExcelDiff();
+  }
+
+  function renderExcelDiff() {
+    const view = $("excelDiffView");
+    const wrap = $("excelDiffWrap");
+    const payload = state.excelDiff;
+    if (!view || !wrap || !payload?.ok) return;
+    const onlyDiff = $("excelDiffOnly")?.checked !== false;
+    const rows = (payload.rows || []).filter((row) => !onlyDiff || row.type !== "same");
+    const title = $("excelDiffTitle");
+    if (title) title.textContent = `${payload.sheet || "Sheet"} · 差异对比`;
+    const meta = $("excelDiffMeta");
+    if (meta) meta.textContent = `${payload.relative || ""} · ${payload.changedRows || 0} 行有差异`;
+    view.classList.remove("hidden");
+    $("excelSheets")?.classList.add("hidden");
+    $("excelTableWrap")?.classList.add("hidden");
+    const width = Math.max(
+      ...(payload.current || []).map((row) => (row || []).length),
+      ...(payload.base || []).map((row) => (row || []).length),
+      ...(rows || []).flatMap((row) => [(row.left || []).length, (row.right || []).length]),
+      1,
+    );
+    const head = `<tr><th class="excel-rowno">#</th>${Array.from({ length: width }, (_, i) => `<th>${columnLetter(i)}</th>`).join("")}</tr>`;
+    const cell = (row, index) => esc((row || [])[index] ?? "");
+    // 只给真正变化的单元格上色：行背景保持中性，靠 td 高亮定位到具体列
+    const changedSet = (row, side) => {
+      const out = new Map();
+      for (const item of row.cells || []) {
+        // add = 右侧新增（左侧没有），del = 左侧有、右侧没有
+        const hit = side === "left"
+          ? (item.type === "add" ? false : true)
+          : (item.type === "del" ? false : true);
+        if (hit) out.set(item.index, item.type);
+      }
+      return out;
+    };
+    const line = (row, side) => {
+      const value = side === "left" ? row.left : row.right;
+      const changed = changedSet(row, side);
+      const cells = Array.from({ length: width }, (_, i) => {
+        const type = changed.get(i);
+        if (!type) return `<td>${cell(value, i)}</td>`;
+        const cls = type === "add" ? "is-cell-add" : type === "del" ? "is-cell-del" : "is-cell-change";
+        return `<td class="${cls}">${cell(value, i)}</td>`;
+      }).join("");
+      return `<tr class="excel-diff-row"><td class="excel-rowno">${row.index}</td>${cells}</tr>`;
+    };
+    wrap.innerHTML = `
+      <div class="excel-diff-col">
+        <div class="excel-diff-head">git 版本</div>
+        <div class="excel-diff-body"><table class="excel-table"><thead>${head}</thead><tbody>${rows.map((row) => line(row, "left")).join("") || `<tr><td class="excel-empty">没有差异</td></tr>`}</tbody></table></div>
+      </div>
+      <div class="excel-diff-col">
+        <div class="excel-diff-head">当前文件</div>
+        <div class="excel-diff-body"><table class="excel-table"><thead>${head}</thead><tbody>${rows.map((row) => line(row, "right")).join("") || `<tr><td class="excel-empty">没有差异</td></tr>`}</tbody></table></div>
+      </div>`;
+  }
+
+  function columnLetter(index) {
+    let n = Number(index) || 0;
+    let out = "";
+    do {
+      out = String.fromCharCode(65 + (n % 26)) + out;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return out;
+  }
+
+  function toggleExcelDiff(show) {
+    state.excelDiffOpen = Boolean(show);
+    const view = $("excelDiffView");
+    if (!show) {
+      view?.classList.add("hidden");
+      $("excelSheets")?.classList.remove("hidden");
+      $("excelTableWrap")?.classList.remove("hidden");
+      return;
+    }
+    const id = state.activeSheetId;
+    if (!id) return;
+    post("excelDiff", { id });
+  }
+
+  function updateExcelDiffButton() {
+    const btn = $("excelDiffBtn");
+    if (!btn) return;
+    // 只在「该 Sheet 对应的文件确实有 git 变更」时显示
+    const relative = state.sheets.find((sheet) => sheet.id === state.activeSheetId)?.relative
+      || state.activeFile
+      || "";
+    const changed = Boolean(relative) && Boolean(window.ProtoViewGit?.isChanged?.(relative));
+    btn.classList.toggle("hidden", !changed);
+  }
+
   function selectFile(relative) {
     if (!relative) return;
     const sheets = sheetsOfFile(relative);
@@ -202,6 +393,11 @@
     if (!sheet) return;
     state.activeFile = fileKey(sheet);
     state.activeSheetId = id;
+    if (state.excelDiffOpen) state.excelDiffOpen = false;
+    $("excelDiffView")?.classList.add("hidden");
+    $("excelSheets")?.classList.remove("hidden");
+    $("excelTableWrap")?.classList.remove("hidden");
+    updateExcelDiffButton();
     renderExcelList();
     renderSheetTabs();
     const title = $("excelTitle");
@@ -596,10 +792,18 @@
     paintExcelMode();
 
     $("excelFilter")?.addEventListener("input", () => {
-    state.sheetFilter = $("excelFilter").value || "";
-    state.excelPage = 0;
-    renderExcelList();
-  });
+      state.sheetFilter = $("excelFilter").value || "";
+      state.excelPage = 0;
+      renderExcelList();
+    });
+
+    $("excelChangeOnly")?.addEventListener("change", () => {
+      state.excelPage = 0;
+      renderExcelList();
+    });
+    $("excelDiffBtn")?.addEventListener("click", () => toggleExcelDiff(!state.excelDiffOpen));
+    $("excelDiffClose")?.addEventListener("click", () => toggleExcelDiff(false));
+    $("excelDiffOnly")?.addEventListener("change", renderExcelDiff);
 
     $("excelList")?.addEventListener("click", (event) => {
       const item = event.target.closest("[data-excel-file]");
@@ -677,6 +881,43 @@
       pendingSearch = typeof onHits === "function" ? onHits : null;
       post("excelSearch", { query });
       return pendingSearch !== null;
+    },
+    /** 扩展标题栏快速入口 / 自定义编辑器跳转：切到对应 View Client，并尽量定位到当前文件 */
+    openTargetView(view, target = "") {
+      const name = String(view || "client");
+      if (name === "excel" || name === "docs" || name === "db") {
+        openTab(name, VIEW_LABEL[name]);
+        setView(name);
+      } else {
+        setView("client");
+      }
+      if (!target) return;
+      const normalized = String(target).replace(/\\/g, "/");
+      const base = normalized.split("/").pop() || "";
+      let attempts = 0;
+      const tryLocate = () => {
+        attempts += 1;
+        let located = false;
+        if (name === "excel") {
+          const sheet = state.sheets.find((item) => (item.relative || "").replace(/\\/g, "/").endsWith(base)
+            || (item.file || "").replace(/\\/g, "/") === normalized);
+          if (sheet) {
+            selectSheet(sheet.id);
+            located = true;
+          }
+        } else if (name === "docs") {
+          located = Boolean(window.ProtoViewDocs?.openByName?.(target));
+        } else if (name === "db") {
+          located = Boolean(window.ProtoViewDb?.openTableByName?.(base.replace(/\.[^.]+$/, "")));
+        }
+        // 目录还在扫描时重试几次，避免「一直扫描中」后什么都不选中
+        if (!located && attempts < 12) window.setTimeout(tryLocate, 400);
+      };
+      tryLocate();
+    },
+    rerender() {
+      renderExcelList();
+      updateExcelDiffButton();
     },
     openSheet(id, row = 0) {
       openExcelSheet(id, row);
@@ -812,4 +1053,6 @@
   bind();
   renderTabs();
   document.body.dataset.view = "client";
+  // app.js 先于本文件初始化，那时 ProtoViewGit 还不存在，这里补一次 git 变更请求
+  requestGitChanges();
 })();

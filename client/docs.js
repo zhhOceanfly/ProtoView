@@ -70,10 +70,17 @@
     const list = $("docsList");
     if (!list) return;
     const q = state.filter.trim().toLowerCase();
-    const items = state.docs.filter((doc) => !q || `${doc.title} ${doc.relative} ${doc.fileName}`.toLowerCase().includes(q));
+    const changeOnly = window.ProtoViewGit?.changeOnly?.("docsChangeOnly");
+    const items = state.docs.filter((doc) => {
+      if (changeOnly && !window.ProtoViewGit?.isChanged?.(doc.relative)) return false;
+      return !q || `${doc.title} ${doc.relative} ${doc.fileName}`.toLowerCase().includes(q);
+    });
     if (!items.length) {
       const where = state.source ? `（${esc(state.source)}）` : "";
-      list.innerHTML = `<div class="excel-empty">${state.docs.length ? "没有匹配的文档" : `未找到 Markdown / docs ${where}`}</div>`;
+      const empty = changeOnly
+        ? "当前变更里没有文档"
+        : (state.docs.length ? "没有匹配的文档" : `未找到 Markdown / docs ${where}`);
+      list.innerHTML = `<div class="excel-empty">${empty}</div>`;
       window.ProtoViewPager?.renderPager?.($("docsPager"), { page: 0, pages: 1, total: 0 }, () => {});
       return;
     }
@@ -333,6 +340,11 @@
     state.page = 0;
     renderList();
   });
+  $("docsChangeOnly")?.addEventListener("change", () => {
+    window.ProtoViewGit?.request?.();
+    state.page = 0;
+    renderList();
+  });
   $("docsList")?.addEventListener("click", (event) => {
     const item = event.target.closest("[data-doc-id]");
     if (!item) return;
@@ -518,8 +530,25 @@
     event.preventDefault();
   });
 
+  /** 按文件名 / 相对路径定位文档（扩展快速入口用） */
+  function openByName(target) {
+    const normalized = String(target || "").replace(/\\/g, "/");
+    const base = normalized.split("/").pop() || "";
+    const hit = state.docs.find((doc) => {
+      const relative = String(doc.relative || "").replace(/\\/g, "/");
+      return relative === normalized || relative.endsWith(`/${base}`) || relative === base
+        || String(doc.fileName || "") === base;
+    });
+    if (!hit) return false;
+    open(hit.id, 1);
+    return true;
+  }
+
   window.ProtoViewDocs = {
     ensure: () => ensure(false),
+    rerender: () => renderList(),
+    openByName,
+    docs: () => state.docs.map((doc) => ({ id: doc.id, relative: doc.relative, fileName: doc.fileName })),
     search(query, onHits) {
       if (typeof onHits === "function") searchWaiters.push(onHits);
       post("docSearch", { query });

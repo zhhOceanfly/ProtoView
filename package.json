@@ -45,6 +45,37 @@
   "contributes": {
     "commands": [
       {
+        "command": "protoview.excelDiff",
+        "title": "ExcelView 差异对比",
+        "icon": "$(diff)",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.excelDiffUris",
+        "title": "ExcelView 差异对比（两版本）",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.openExcelView",
+        "title": "在 ExcelView 中打开",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.openDocsView",
+        "title": "在 DocsView 中打开",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.openDbView",
+        "title": "在 DbView 中打开",
+        "category": "ProtoView"
+      },
+      {
+        "command": "protoview.openProtoView",
+        "title": "在 ProtoView 中打开",
+        "category": "ProtoView"
+      },
+      {
         "command": "protoview.show",
         "title": "在预览中打开",
         "category": "ProtoView"
@@ -165,10 +196,83 @@
           "command": "protoview.formatDocument",
           "when": "resourceExtname == .proto",
           "group": "1_modification"
+        },
+        {
+          "command": "protoview.excelDiff",
+          "when": "resourceExtname == .xlsx || resourceExtname == .xlsm || resourceExtname == .xls || resourceExtname == .csv",
+          "group": "navigation"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "protoview.excelDiff",
+          "when": "resourceExtname == .xlsx || resourceExtname == .xlsm || resourceExtname == .xls || resourceExtname == .csv",
+          "group": "1_modification"
+        }
+      ],
+      "scm/resourceFolder/context": [
+        {
+          "command": "protoview.excelDiff",
+          "when": "resourceExtname == .xlsx || resourceExtname == .xlsm",
+          "group": "1_modification"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "protoview.openProtoView",
+          "when": "resourceExtname == .proto",
+          "group": "navigation@9"
+        },
+        {
+          "command": "protoview.openDbView",
+          "when": "resourceExtname == .sql",
+          "group": "navigation@9"
+        },
+        {
+          "command": "protoview.openDocsView",
+          "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdx || resourceExtname == .docx",
+          "group": "navigation@9"
+        },
+        {
+          "command": "protoview.openExcelView",
+          "when": "resourceExtname == .xlsx || resourceExtname == .xlsm || resourceExtname == .xls || resourceExtname == .csv",
+          "group": "navigation@9"
         }
       ]
     },
+    "customEditors": [
+      {
+        "viewType": "protoview.excelViewer",
+        "displayName": "ExcelView",
+        "selector": [
+          { "filenamePattern": "*.xlsx" },
+          { "filenamePattern": "*.xlsm" },
+          { "filenamePattern": "*.xls" },
+          { "filenamePattern": "*.csv" }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "protoview.docsViewer",
+        "displayName": "DocsView",
+        "selector": [
+          { "filenamePattern": "*.md" },
+          { "filenamePattern": "*.markdown" },
+          { "filenamePattern": "*.mdx" },
+          { "filenamePattern": "*.docx" }
+        ],
+        "priority": "default"
+      }
+    ],
     "configurationDefaults": {
+      "workbench.editorAssociations": {
+        "*.md": "protoview.docsViewer",
+        "*.markdown": "protoview.docsViewer",
+        "*.mdx": "protoview.docsViewer",
+        "*.docx": "protoview.docsViewer",
+        "*.xlsx": "protoview.excelViewer",
+        "*.xlsm": "protoview.excelViewer"
+      },
       "[protobuf]": {
         "editor.defaultFormatter": "zoceanfly.protoview",
         "editor.formatOnSave": false,

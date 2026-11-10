@@ -15,7 +15,8 @@ import { openInEditor } from "./openEditor";
 import { ProtoParseError, parseProto } from "./parser";
 import { collectCodeSymbols } from "./codeSymbols";
 import { buildCallGraph } from "./callGraph";
-import { excelCatalog, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
+import { excelCatalogMerged, excelDiff, excelPage, excelSearch, excelUpdateCell } from "./excelIndex";
+import { gitChangesMerged } from "./gitChanges";
 import { handleOceanMessage } from "./oceanMessages";
 import {
   ProtoSourceConfig,
@@ -145,7 +146,8 @@ export class ClientHost {
       return;
     }
     if (type === "excelCatalog") {
-      const catalog = await excelCatalog(this.codeRoot());
+      // codeRoot 在 git 模式下是临时 clone，Excel 通常在工作区里，两个根都要扫
+      const catalog = await excelCatalogMerged([this.codeRoot(), this.workspaceRoot]);
       send({ type: "excelCatalog", payload: catalog });
       return;
     }
@@ -178,6 +180,22 @@ export class ClientHost {
       const payload = message.payload as { query?: string } | undefined;
       const hits = await excelSearch(this.codeRoot(), String(payload?.query || ""));
       send({ type: "excelSearch", payload: hits });
+      return;
+    }
+    if (type === "excelDiff") {
+      const payload = message.payload as { id?: string; sheet?: string } | undefined;
+      const diff = payload?.id
+        ? await excelDiff(this.codeRoot(), { id: String(payload.id), sheet: payload.sheet })
+        : { ok: false, error: "缺少表标识" };
+      send({ type: "excelDiff", payload: diff });
+      return;
+    }
+    if (type === "gitChanges") {
+      const changes = await gitChangesMerged(
+        [this.codeRoot(), this.workspaceRoot],
+        Boolean((message.payload as { force?: boolean } | undefined)?.force),
+      );
+      send({ type: "gitChanges", payload: changes });
       return;
     }
     if (type === "refresh") {

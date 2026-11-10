@@ -225,9 +225,22 @@ async function load(roots: string[], force: boolean): Promise<Cache> {
 /** docx = zip + word/document.xml，按段落把 w:t 文本抽出来当纯文本/Markdown 用 */
 async function readDocxText(file: string): Promise<string> {
   const buf = await fs.readFile(file);
+  return docxTextFromBuffer(buf);
+}
+
+/** 从内存里的 docx 二进制抽文本（自定义编辑器 / git 旧版本都能用） */
+export function docxTextFromBuffer(buf: Buffer): string {
+  if (!buf || buf.length < 4) return "";
   const xml = readZipEntry(buf, "word/document.xml");
   if (!xml) return "";
   return docxXmlToText(xml);
+}
+
+/** 二进制转文本：docx 抽正文，其余按 utf8 读 */
+export function docTextFromBuffer(buf: Buffer, file: string): string {
+  const ext = path.extname(String(file || "")).toLowerCase();
+  if (ext === ".docx") return docxTextFromBuffer(buf);
+  return buf.toString("utf8");
 }
 
 /** 从 zip 里取一个条目（只用中央目录 + zlib，避免引入额外依赖） */

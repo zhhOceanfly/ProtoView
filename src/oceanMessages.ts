@@ -1,7 +1,10 @@
 import { docCatalog, docPage, docSave, docSearch } from "./docIndex";
 import {
   dbDatabases,
+  dbDiffSchemas,
+  dbInitDatabases,
   dbMutate,
+  dbPlanSchema,
   dbQuery,
   dbTableDefinition,
   dbTablePage,
@@ -71,6 +74,7 @@ export async function handleOceanMessage(
         limit: Number(body.limit || 50),
         offset: Number(body.offset || 0),
         database: String(body.database || ""),
+        hostOverride: (body.hostOverride || null) as { host?: string; port?: number } | null,
       }),
     };
   }
@@ -81,6 +85,7 @@ export async function handleOceanMessage(
         envId: String(body.envId || ""),
         tableId: String(body.tableId || ""),
         database: String(body.database || ""),
+        hostOverride: (body.hostOverride || null) as { host?: string; port?: number } | null,
       }),
     };
   }
@@ -95,6 +100,7 @@ export async function handleOceanMessage(
       value: body.value,
       values: (body.values || {}) as Record<string, unknown>,
       database: String(body.database || ""),
+      hostOverride: (body.hostOverride || null) as { host?: string; port?: number } | null,
     });
     return { type: "dbMutate", payload: result };
   }
@@ -105,6 +111,38 @@ export async function handleOceanMessage(
         envId: String(body.envId || ""),
         sql: String(body.sql || ""),
         database: String(body.database || ""),
+        hostOverride: (body.hostOverride || null) as { host?: string; port?: number } | null,
+      }),
+    };
+  }
+  if (type === "dbPlan") {
+    return {
+      type: "dbPlan",
+      payload: await dbPlanSchema(root, {
+        template: String(body.template || ""),
+        tables: (body.tables as { fileName: string; relative: string; table?: string }[]) || undefined,
+      }),
+    };
+  }
+  if (type === "dbInit") {
+    return {
+      type: "dbInit",
+      payload: await dbInitDatabases(root, {
+        envId: String(body.envId || ""),
+        template: String(body.template || ""),
+        tables: (body.tables as { fileName: string; relative: string }[]) || undefined,
+        createTables: body.createTables !== false,
+      }),
+    };
+  }
+  if (type === "dbDiff") {
+    return {
+      type: "dbDiff",
+      payload: await dbDiffSchemas(root, {
+        envId: String(body.envId || ""),
+        template: String(body.template || ""),
+        databases: Array.isArray(body.databases) ? (body.databases as string[]) : undefined,
+        tables: (body.tables as { fileName: string; relative: string }[]) || undefined,
       }),
     };
   }

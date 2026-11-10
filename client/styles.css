@@ -397,18 +397,110 @@ html, body {
   background: var(--panel-2);
   min-width: 0;
   min-height: 38px;
+  justify-content: flex-start;
+}
 }
 .spacer { flex: 1 1 auto; min-width: 8px; }
+.side-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.side-filter-row .side-search,
+.side-filter-row .excel-filter { flex: 1 1 auto; min-width: 0; }
+.side-change-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.side-change-only:hover { color: var(--text); }
+.side-change-only input { margin: 0; }
 .excel-bar strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .excel-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .excel-meta.is-error { color: var(--danger); }
 .excel-bar .btn {
-  margin-left: auto;
   flex: 0 0 auto;
   padding: 4px 10px;
   font-size: 11px;
 }
+/* 保存按钮跟编辑模式并排，跟随所在位置，不再被推到右侧 */
+.excel-bar .btn.primary { margin-left: 0; }
 .excel-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
+/* Excel 差异对比：左右两栏，行按行号对齐 */
+.excel-diff {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.excel-diff.hidden { display: none !important; }
+.excel-sheets.hidden,
+.excel-table-wrap.hidden { display: none !important; }
+.excel-diff-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 11px;
+}
+.excel-diff-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  overflow: hidden;
+}
+.excel-diff-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+.excel-diff-col:last-child { border-right: 0; }
+.excel-diff-head {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+}
+.excel-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.excel-diff-row.is-change-left,
+.excel-diff-row.is-del-left { background: color-mix(in srgb, var(--danger, #ef4444) 18%, transparent); }
+.excel-diff-row.is-change-right,
+.excel-diff-row.is-add-right { background: color-mix(in srgb, #16a34a 18%, transparent); }
+.excel-diff-row.is-same-left,
+.excel-diff-row.is-same-right { color: var(--muted); }
+.excel-diff-row td { white-space: pre; }
+/* 只高亮真正变化的单元格，行本身保持中性底色 */
+.excel-diff-row td.is-cell-add { background: color-mix(in srgb, #16a34a 26%, transparent); }
+.excel-diff-row td.is-cell-del { background: color-mix(in srgb, var(--danger, #ef4444) 26%, transparent); }
+.excel-diff-row td.is-cell-change { background: color-mix(in srgb, #f59e0b 28%, transparent); }
+.excel-diff-row td.is-cell-add,
+.excel-diff-row td.is-cell-del,
+.excel-diff-row td.is-cell-change { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent); }
+/* 只高亮真正变化的单元格，行本身保持中性底色 */
+.excel-diff-row td.is-cell-add { background: color-mix(in srgb, #16a34a 26%, transparent); }
+.excel-diff-row td.is-cell-del { background: color-mix(in srgb, var(--danger, #ef4444) 26%, transparent); }
+.excel-diff-row td.is-cell-change { background: color-mix(in srgb, #f59e0b 28%, transparent); }
+.excel-diff-row td.is-cell-add,
+.excel-diff-row td.is-cell-del,
+.excel-diff-row td.is-cell-change { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent); }
 .excel-empty { padding: 28px 12px; text-align: center; color: var(--muted); font-size: 12px; }
 .excel-table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
 .excel-table th, .excel-table td {
@@ -489,6 +581,227 @@ html, body {
 .db-diff-row.is-add-right, .db-diff-row.is-change-right { background: color-mix(in srgb, #16a34a 20%, transparent); }
 .db-diff-row.is-same-left, .db-diff-row.is-same-right { color: var(--muted); }
 .db-diff-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.db-init-create { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+
+/* ===== 初始化库 ===== */
+.db-init {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  overflow: auto;
+}
+.db-init-form {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
+.db-init-field {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.db-init-field input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  padding: 7px 9px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.db-init-field input:focus { outline: none; border-color: var(--accent); }
+.db-init-tokens { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.db-init-token { padding: 2px 8px; font-size: 11px; }
+.db-init-hint { color: var(--muted); font-size: 11px; }
+.db-init-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.db-init-log {
+  flex: 1 1 auto;
+  min-height: 140px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 8px;
+  overflow: auto;
+}
+.db-init-row {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border-left: 2px solid transparent;
+  background: var(--panel-2);
+  font-size: 11px;
+}
+.db-init-row.is-ok { border-left-color: var(--ok); }
+.db-init-row.is-error { border-left-color: var(--danger); }
+.db-init-db { font-family: var(--mono); color: var(--accent); overflow: hidden; text-overflow: ellipsis; }
+.db-init-tables { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+
+/* ===== 库结构差异 ===== */
+.db-struct {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+  overflow: hidden;
+}
+.db-struct-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+.db-struct-side-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.db-struct-all { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text); margin-right: auto; }
+.db-struct-all input { margin: 0; }
+.db-struct-refresh { padding: 2px 8px; font-size: 11px; }
+.db-struct-dbs {
+  border-right: 0;
+  background: transparent;
+  padding: 6px;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+.db-struct-db {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text);
+  padding: 3px 5px;
+  border-radius: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.db-struct-db:hover { background: var(--hover); }
+.db-struct-db input { margin: 0; flex: 0 0 auto; }
+.db-struct-db-empty { color: var(--muted); font-size: 11px; padding: 6px; }
+.db-struct-main {
+  display: grid;
+  grid-template-rows: minmax(110px, 32%) minmax(120px, 1fr) minmax(100px, 26%);
+  min-height: 0;
+  min-width: 0;
+}
+.db-struct-list {
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  padding: 6px;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+.db-struct-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: var(--panel-2);
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text);
+}
+.db-struct-row:hover { border-color: var(--accent); }
+.db-struct-row.active { border-color: var(--accent); background: var(--active); }
+.db-struct-name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-struct-db-name { color: var(--muted); font-family: var(--mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-struct-tag {
+  font-size: 10px;
+  border-radius: 999px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.db-struct-tag.is-diff { color: #f59e0b; border-color: color-mix(in srgb, #f59e0b 45%, var(--border)); }
+.db-struct-tag.is-missingInDb { color: #f87171; border-color: color-mix(in srgb, #f87171 45%, var(--border)); }
+.db-struct-tag.is-missingInFile { color: #a78bfa; border-color: color-mix(in srgb, #a78bfa 45%, var(--border)); }
+.db-struct-detail {
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.db-struct-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.db-struct-head strong { font-family: var(--mono); font-size: 12px; }
+.db-struct-head-db { color: var(--accent); font-family: var(--mono); font-size: 10px; }
+.db-struct-head-changes { margin-left: auto; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+.db-struct-diff { flex: 1 1 auto; }
+.db-struct-script {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+}
+.db-struct-script-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 11px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.db-struct-script-head span { margin-right: auto; }
+.db-struct-sql {
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+@media (max-width: 900px) {
+  .db-struct { grid-template-columns: 1fr; }
+  .db-struct-dbs { border-right: 0; border-bottom: 1px solid var(--border); max-height: 120px; }
+}
 .pager-size { padding: 2px 6px; font-size: 11px; height: auto; }
 .db-ddl {
   margin: 0;
@@ -640,6 +953,29 @@ html, body {
   background: var(--panel-2);
 }
 .db-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-host-input {
+  flex: 0 1 200px;
+  min-width: 120px;
+  max-width: 220px;
+  font-family: var(--mono);
+}
+.db-test-result {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-test-result.is-ok { color: var(--ok); }
+.db-test-result.is-error { color: var(--danger); }
+.db-env-meta {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-env-meta.is-error { color: var(--danger); }
 .env-actions { display: flex; align-items: center; gap: 2px; }
 .env-actions .icon-btn { width: 22px; height: 22px; border-radius: 6px; }
 .db-sql-pane, .db-result-pane { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -690,7 +1026,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   left: auto;
   bottom: auto;
   z-index: 40;
-  width: min(520px, calc(100% - 24px));
+  width: min(var(--inspect-w, 520px), calc(100% - 24px));
   height: var(--inspect-h, min(720px, calc(100% - 24px)));
   display: flex !important;
   flex-direction: column;
@@ -727,6 +1063,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   gap: 6px;
   flex-wrap: wrap;
 }
+/* 浮窗也能拖宽，所以保留完整左右分栏；默认给左栏留一个可读宽度 */
+#flowStage > #mainClient.flow-inspect-float .workspace.client-split {
+  grid-template-columns: minmax(0, var(--left-size, 34%)) 12px minmax(0, 1fr);
+}
+#flowStage > #mainClient.flow-inspect-float .split-bar.v-split .split-btn { width: 12px; height: 16px; }
+#flowStage > #mainClient.flow-inspect-float .left-pane .rpc-info { padding: 8px; }
 .flow-inspect-grip {
   display: none;
   position: absolute;
@@ -738,6 +1080,30 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   z-index: 3;
 }
 #flowStage > #mainClient.flow-inspect-float .flow-inspect-grip { display: block; }
+/* 宽度拖拽手柄：贴左边缘，向左拖变宽 */
+.flow-inspect-grip-x {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 3;
+}
+#flowStage > #mainClient.flow-inspect-float .flow-inspect-grip-x { display: block; }
+.flow-inspect-grip-x::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 42px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+.flow-inspect-grip-x:hover::after { background: var(--accent); }
 .flow-inspect-grip::after {
   content: "";
   position: absolute;
@@ -1360,18 +1726,18 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   cursor: pointer;
 }
 .flow-node-btns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 5px;
 }
 .flow-node-btn {
-  flex: none;
+  flex: 0 0 auto;
   min-width: 0;
   border: 1px solid var(--border);
   background: var(--panel-2);
   color: var(--text);
   border-radius: 7px;
-  padding: 5px 6px;
+  padding: 5px 9px;
   font-size: 11px;
   line-height: 1.2;
   text-align: center;
@@ -2783,7 +3149,109 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
   display: grid;
   grid-template-rows: minmax(80px, var(--req-size)) 18px minmax(72px, 1fr);
   min-height: 0;
+  flex: 1 1 auto;
   --req-size: 62%;
+}
+/* Client 主区：左（当前标签内容）+ 竖分隔条 + 右（请求/响应上下） */
+.workspace.client-split {
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(240px, var(--left-size, 40%)) 18px minmax(280px, 1fr);
+}
+.workspace.client-split.left-collapsed {
+  grid-template-columns: 0 18px minmax(0, 1fr);
+}
+.workspace.client-split.left-collapsed > .left-pane {
+  overflow: hidden;
+  visibility: hidden;
+}
+.workspace.client-split.right-collapsed {
+  grid-template-columns: minmax(0, 1fr) 18px 0;
+}
+.workspace.client-split.right-collapsed > .right-pane {
+  overflow: hidden;
+  visibility: hidden;
+}
+/* 子元素固定列位，收起时只变宽度，不会把后面的元素挤到别的轨道 */
+.workspace.client-split > .left-pane { grid-column: 1; grid-row: 1; }
+.workspace.client-split > .split-bar { grid-column: 2; grid-row: 1; }
+.workspace.client-split > .right-pane { grid-column: 3; grid-row: 1; }
+/* 浮窗里的左右宽度规则带 id 优先级更高，收起状态要单独覆盖 */
+#flowStage > #mainClient.flow-inspect-float .workspace.client-split.left-collapsed {
+  grid-template-columns: 0 12px minmax(0, 1fr);
+}
+#flowStage > #mainClient.flow-inspect-float .workspace.client-split.right-collapsed {
+  grid-template-columns: minmax(0, 1fr) 12px 0;
+}
+.split-bar.v-split {
+  flex-direction: column;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.v-grip {
+  width: 4px;
+  height: 48px;
+  cursor: col-resize;
+}
+.split-bar.v-split:hover .v-grip,
+.workspace.splitting-x .v-grip { background: var(--accent); }
+.workspace.splitting-x { cursor: col-resize; }
+.workspace.splitting-x * { cursor: col-resize !important; }
+.split-bar.v-split .split-btn { width: 18px; height: 20px; }
+.right-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 右边界：和左侧说明栏对称，避免看起来“没画完” */
+  border-right: 1px solid var(--border);
+}
+.left-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.right-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(90px, var(--right-req-size, 55%)) 18px minmax(90px, 1fr);
+}
+/* 请求/响应各自可横向滚动，长 JSON 行不会被裁掉 */
+.right-split > .request-pane,
+.right-split > .response-pane {
+  min-width: 0;
+  min-height: 0;
+  border-right: 0;
+}
+.right-split > .request-pane .message-editor,
+.right-split > .response-pane .response {
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.right-split.req-collapsed { grid-template-rows: 0 18px minmax(0, 1fr); }
+.right-split.resp-collapsed { grid-template-rows: minmax(0, 1fr) 18px 0; }
+.right-split.req-collapsed > .request-pane { overflow: hidden; visibility: hidden; }
+.right-split.resp-collapsed > .response-pane { overflow: hidden; visibility: hidden; }
+.right-split.resp-collapsed > .response-pane .toolbar,
+.right-split.resp-collapsed > .response-pane .response { display: none; }
+.message-editor {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  resize: none;
+  padding: 10px 12px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  outline: none;
+}
+.left-pane .rpc-info {
+  border-right: 0;
+  padding: 10px;
+  overflow: auto;
+  height: 100%;
 }
 .workspace.req-collapsed {
   grid-template-rows: 0 18px minmax(0, 1fr);
@@ -2802,6 +3270,11 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 }
 .workspace.resp-collapsed > .response-pane .toolbar,
 .workspace.resp-collapsed > .response-pane .response { display: none; }
+/* 左右分栏时旧的上下收起规则不适用 */
+.workspace.client-split.req-collapsed,
+.workspace.client-split.resp-collapsed {
+  grid-template-rows: minmax(0, 1fr);
+}
 .split-bar {
   display: flex;
   align-items: center;
@@ -2840,6 +3313,10 @@ body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; 
 .split-btn:hover { color: var(--text); background: var(--hover); }
 .workspace.req-collapsed #collapseReqBtn { transform: rotate(180deg); }
 .workspace.resp-collapsed #collapseRespBtn { transform: rotate(180deg); }
+.workspace.left-collapsed #collapseReqBtn { transform: rotate(180deg); }
+.workspace.right-collapsed #collapseRespBtn { transform: rotate(180deg); }
+.right-split.req-collapsed #collapseReqAreaBtn { transform: rotate(180deg); }
+.right-split.resp-collapsed #collapseRespAreaBtn { transform: rotate(180deg); }
 .pane {
   min-height: 0;
   display: flex;
@@ -3135,7 +3612,12 @@ textarea.editor {
   overflow: auto;
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
 }
+#view-history { min-height: 0; overflow: hidden; }
+#view-history .history-head { flex: 0 0 auto; }
 .history-head {
   display: flex;
   align-items: center;
@@ -3256,16 +3738,21 @@ textarea.editor {
   user-select: none;
 }
 .response {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   margin: 0;
   padding: 0;
   color: var(--text);
   background: var(--bg);
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
 }
 .resp-empty { padding: 12px 14px; color: var(--muted); }
-.resp-block { padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.resp-block { padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* 长行靠 pre 横向滚动，容器不能被撑宽 */
+.response .resp-block > * { max-width: 100%; }
 .resp-line { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .resp-error {
   margin: 0;

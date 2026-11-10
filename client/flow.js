@@ -754,13 +754,24 @@
   let inspectAnimTimer = 0;
   let inspectIgnoreOutsideUntil = 0;
   let inspectHeight = 0;
+  let inspectWidth = 0;
   const INSPECT_H_KEY = "protoview.client.flow.inspectHeight";
+  const INSPECT_W_KEY = "protoview.client.flow.inspectWidth";
 
   function applyInspectHeight(client) {
     if (!client) return;
     if (!inspectHeight) {
       const saved = Number(localStorage.getItem(INSPECT_H_KEY) || 0);
       if (Number.isFinite(saved) && saved > 200) inspectHeight = saved;
+    }
+    if (!inspectWidth) {
+      const savedW = Number(localStorage.getItem(INSPECT_W_KEY) || 0);
+      if (Number.isFinite(savedW) && savedW > 320) inspectWidth = savedW;
+    }
+    if (inspectWidth) {
+      const stage = $("flowStage");
+      const maxW = stage ? Math.max(360, stage.getBoundingClientRect().width - 24) : 1400;
+      client.style.setProperty("--inspect-w", `${Math.min(maxW, Math.max(360, inspectWidth))}px`);
     }
     if (!inspectHeight) {
       client.style.removeProperty("--inspect-h");
@@ -794,6 +805,34 @@
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
         try { localStorage.setItem(INSPECT_H_KEY, String(Math.round(inspectHeight))); } catch { /* ignore */ }
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+
+    // 宽度拖拽：浮窗右侧贴边，向左拖变宽
+    const gripX = $("flowInspectGripX");
+    if (!gripX) return;
+    gripX.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const client = $("mainClient");
+      if (!client) return;
+      const rect = client.getBoundingClientRect();
+      const startX = event.clientX;
+      const startW = rect.width;
+      client.classList.add("inspect-resizing");
+      const move = (ev) => {
+        const stage = $("flowStage");
+        const max = stage ? Math.max(360, stage.getBoundingClientRect().width - 24) : 1400;
+        inspectWidth = Math.min(max, Math.max(360, startW - (ev.clientX - startX)));
+        client.style.setProperty("--inspect-w", `${Math.round(inspectWidth)}px`);
+      };
+      const up = () => {
+        client.classList.remove("inspect-resizing");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        try { localStorage.setItem(INSPECT_W_KEY, String(Math.round(inspectWidth))); } catch { /* ignore */ }
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
@@ -896,8 +935,8 @@
       protocol: node.protocol,
       httpMethod: node.httpMethod,
       httpPath: node.httpPath,
-      tab: opts.tab || "docs",
-      showLatest: Boolean(opts.showLatest || opts.tab === "history"),
+      tab: opts.tab || "history",
+      showLatest: opts.showLatest !== false,
     });
     return true;
   }
@@ -1570,6 +1609,8 @@
   }
   const askConfirm = (message) => showDialog(message, { confirm: true });
   const notify = (message) => showDialog(message, { confirm: false });
+  // 供 app.js / db.js 复用（webview 里原生 confirm 不可靠）
+  window.ProtoViewDialog = { confirm: askConfirm, alert: notify };
 
   function clearCanvas() {
     void askConfirm("清空链路画布？此操作不可撤销。").then(async (ok) => {
@@ -1615,7 +1656,8 @@
       if (act === "view-resp") show = false;
       if (act === "send-msg") show = canSendMsg;
       if (act === "close-stream") show = canSendMsg && hasLive;
-      if (act === "enable" || act === "disable" || act === "run") show = true;
+      // 运行 / 启用 / 禁用只对多选有意义（批量操作），单选时隐藏
+      if (act === "enable" || act === "disable" || act === "run") show = multi;
       if (multi && !["duplicate", "delete", "enable", "disable", "run"].includes(act)) show = false;
       btn.classList.toggle("hidden", !show);
     }
@@ -4778,26 +4820,23 @@
     return (node && node.ownerStepId) || flow.varOwnerStepId || "";
   }
 
-  /** 把本次提取到的变量记到触发运行的那一层（步骤运行→步骤，接口节点运行→节点） */
+  /**
+   * 记录本次提取到的变量：
+   * 1. 产生变量的接口节点本身一定记录（从哪个节点跑出来的就显示在哪个节点里）；
+   * 2. 由步骤触发的运行，再额外合并到该步骤，供后续节点按优先级引用。
+   */
   function recordStepVars(stepId, applied, node) {
     if (!applied) return;
     const keys = Object.keys(applied);
     if (!keys.length) return;
-    if (flow.varRecordMode === "node" && node) {
+    if (node) {
       if (!node.vars || typeof node.vars !== "object") node.vars = {};
       Object.assign(node.vars, applied);
       node.varsAt = Date.now();
-      return;
     }
+    if (flow.varRecordMode === "node") return;
     const step = flow.nodes.find((n) => n.id === stepId && isStartNode(n));
-    if (!step) {
-      // 没有归属步骤（例如步骤外的接口节点）时仍记到节点上，避免变量丢失
-      if (!node) return;
-      if (!node.vars || typeof node.vars !== "object") node.vars = {};
-      Object.assign(node.vars, applied);
-      node.varsAt = Date.now();
-      return;
-    }
+    if (!step) return;
     if (!step.vars || typeof step.vars !== "object") step.vars = {};
     for (const key of keys) step.vars[key] = applied[key];
     step.varsAt = Date.now();
@@ -5837,6 +5876,21 @@
         const id = head.getAttribute("data-drag");
         const node = flow.nodes.find((n) => n.id === id);
         if (!node) return;
+        // Shift / Ctrl 点节点 = 加选或取消选择（和框选配合，方便批量操作）
+        const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+        if (additive) {
+          const next = new Set(flow.selectedNodeIds);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          flow.selectedNodeIds = next;
+          for (const el of stage.querySelectorAll(".flow-node[data-node]")) {
+            el.classList.toggle("selected", flow.selectedNodeIds.has(el.getAttribute("data-node")));
+          }
+          dragNodes = null;
+          pressNodeId = null;
+          event.stopPropagation();
+          return;
+        }
         // 只改选中态，避免 render() 重建节点打断双击
         if (!flow.selectedNodeIds.has(id)) {
           flow.selectedNodeIds = new Set([id]);

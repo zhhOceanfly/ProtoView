@@ -33,7 +33,12 @@
           </div>
           <button class="btn side-flow-btn primary" id="flowBtn" type="button" title="链路调试">链路调试</button>
         </div>
-        <input class="side-search" id="filter" placeholder="筛选接口 / 消息 / 字段 / 枚举值…" />
+        <div class="side-filter-row">
+          <input class="side-search" id="filter" placeholder="筛选接口 / 消息 / 字段 / 枚举值…" />
+          <label class="side-change-only hidden" title="只看当前 Git 变更里的接口与消息">
+            <input type="checkbox" id="rpcChangeOnly" /> 只看变更
+          </label>
+        </div>
       </div>
       <div class="tree" id="tree"></div>
     </aside>
@@ -50,6 +55,7 @@
         <button class="icon-btn" id="flowInspectClose" type="button" title="关闭">✕</button>
       </div>
       <div class="flow-inspect-grip" id="flowInspectGrip" title="上下拖动调整面板高度"></div>
+      <div class="flow-inspect-grip-x" id="flowInspectGripX" title="左右拖动调整面板宽度"></div>
       <div class="topbar">
         <button class="icon-btn sidebar-toggle" data-sidebar-toggle type="button" title="收起侧栏" aria-label="收起侧栏">◧</button>
         <select class="pill" id="protocolSelect" title="协议">
@@ -101,20 +107,18 @@
         <button class="btn" id="genMsgBtn" type="button">自动生成</button>
         <button class="btn" id="formatMsgBtn" type="button">格式化</button>
         <button class="btn" id="clearMsgBtn" type="button">清空</button>
+        <button class="btn hidden" id="clearHistoryBarBtn" type="button" title="清空当前接口的发送记录与响应">清空记录</button>
         <div class="spacer"></div>
         <div class="hint" id="toolbarHint">根据请求 message 字段生成 JSON</div>
       </div>
 
-      <div class="workspace" id="workspace">
-        <section class="pane request-pane" id="requestPane">
+      <div class="workspace client-split" id="workspace">
+        <section class="pane left-pane" id="leftPane">
           <div class="pane-body">
             <div class="view active" id="view-message">
-              <div class="message-layout">
-                <aside class="rpc-info" id="rpcInfo">
-                  <div class="rpc-info-empty">选择左侧接口后显示定义与说明。</div>
-                </aside>
-                <textarea class="editor" id="messageEditor" spellcheck="false">{}</textarea>
-              </div>
+              <aside class="rpc-info" id="rpcInfo">
+                <div class="rpc-info-empty">选择左侧接口后显示定义与说明。</div>
+              </aside>
             </div>
             <div class="view" id="view-metadata">
               <div class="meta-wrap">
@@ -204,25 +208,41 @@
               <div class="history-head">
                 <span class="history-title">发送记录</span>
                 <span class="spacer"></span>
-                <button class="btn" id="clearHistoryBtn" type="button">清空记录</button>
               </div>
               <div class="history" id="historyView">发送记录会显示在这里（当前为本地会话历史，无数据库）。</div>
             </div>
           </div>
         </section>
-        <div class="split-bar" id="splitBar" title="拖动调整高度">
-          <button class="split-btn" id="collapseReqBtn" type="button" title="收起请求区">▲</button>
-          <div class="split-grip" id="splitHandle"></div>
-          <button class="split-btn" id="collapseRespBtn" type="button" title="收起响应区">▼</button>
+        <div class="split-bar v-split" id="splitBar" title="拖动调整左右宽度">
+          <button class="split-btn" id="collapseReqBtn" type="button" title="收起左侧">◀</button>
+          <div class="split-grip v-grip" id="splitHandle"></div>
+          <button class="split-btn" id="collapseRespBtn" type="button" title="收起右侧">▶</button>
         </div>
-        <section class="pane response-pane" id="responsePane">
-          <div class="toolbar">
-            <strong class="resp-title">Response</strong>
-            <span class="resp-badge" id="respBadge"></span>
-            <div class="spacer"></div>
-            <button class="btn" id="clearRespBtn" type="button">清空响应</button>
+        <section class="pane right-pane" id="rightPane">
+          <div class="right-split" id="rightSplit">
+            <div class="pane request-pane" id="requestPane">
+              <div class="toolbar">
+                <strong class="resp-title">Request</strong>
+                <span class="excel-meta" id="requestMeta"></span>
+                <span class="spacer"></span>
+              </div>
+              <textarea class="editor message-editor" id="messageEditor" spellcheck="false" wrap="off">{}</textarea>
+            </div>
+            <div class="split-bar" id="respSplitBar" title="拖动调整请求与响应高度">
+              <button class="split-btn" id="collapseReqAreaBtn" type="button" title="收起请求">▲</button>
+              <div class="split-grip" id="respSplitHandle"></div>
+              <button class="split-btn" id="collapseRespAreaBtn" type="button" title="收起响应">▼</button>
+            </div>
+            <section class="pane response-pane" id="responsePane">
+              <div class="toolbar">
+                <strong class="resp-title">Response</strong>
+                <span class="resp-badge" id="respBadge"></span>
+                <div class="spacer"></div>
+                <button class="btn" id="clearRespBtn" type="button">清空响应</button>
+              </div>
+              <div class="response" id="responseView"><div class="resp-empty">选择接口，配置地址后发送。</div></div>
+            </section>
           </div>
-          <div class="response" id="responseView"><div class="resp-empty">选择接口，配置地址后发送。</div></div>
         </section>
       </div>
     </main>
@@ -263,9 +283,9 @@
         <button type="button" data-flow-act="duplicate">复制节点</button>
         <button type="button" data-flow-act="send-msg" class="hidden">收发消息</button>
         <button type="button" data-flow-act="close-stream" class="hidden">关闭连接</button>
-        <button type="button" data-flow-act="enable">启用</button>
-        <button type="button" data-flow-act="disable">禁用</button>
-        <button type="button" data-flow-act="run">运行</button>
+        <button type="button" data-flow-act="enable" class="hidden">启用所选</button>
+        <button type="button" data-flow-act="disable" class="hidden">禁用所选</button>
+        <button type="button" data-flow-act="run" class="hidden">运行所选</button>
         <button type="button" data-flow-act="delete">删除</button>
       </div>
     </main>
@@ -718,7 +738,12 @@
             <button class="btn ai-btn" type="button" data-open-ai title="AI"><span class="ai-spark">✦</span>AI</button>
           </div>
         </div>
-        <input class="excel-filter" id="excelFilter" type="text" placeholder="筛选表名 / 文件…" autocomplete="off" />
+        <div class="side-filter-row">
+          <input class="excel-filter" id="excelFilter" type="text" placeholder="筛选表名 / 文件…" autocomplete="off" />
+          <label class="side-change-only hidden" title="只看当前 Git 变更里的表">
+            <input type="checkbox" id="excelChangeOnly" /> 只看变更
+          </label>
+        </div>
       </div>
       <div class="excel-list" id="excelList"></div>
       <div class="side-pager" id="excelPager"></div>
@@ -727,18 +752,29 @@
     <main class="excel-main">
       <div class="excel-bar">
         <button class="icon-btn sidebar-toggle" type="button" data-side-collapse="excel" title="收起侧栏">◧</button>
-        <strong id="excelTitle">选择左侧的表</strong>
-        <span class="excel-meta" id="excelMeta"></span>
-        <span class="spacer"></span>
         <div class="docs-mode" id="excelMode">
           <button class="btn active" type="button" data-excel-mode="read">阅读</button>
           <button class="btn" type="button" data-excel-mode="edit">编辑</button>
         </div>
         <button class="btn primary hidden" id="excelSave" type="button">保存</button>
+        <strong id="excelTitle">选择左侧的表</strong>
+        <span class="excel-meta" id="excelMeta"></span>
+        <span class="spacer"></span>
+        <button class="btn hidden" id="excelDiffBtn" type="button" title="按 git 版本左右对比这个 Sheet">差异对比</button>
       </div>
       <div class="excel-sheets" id="excelSheets"></div>
       <div class="excel-table-wrap" id="excelTableWrap">
         <div class="excel-empty">选择左侧的表查看内容</div>
+      </div>
+      <div class="excel-diff hidden" id="excelDiffView">
+        <div class="excel-diff-bar">
+          <strong id="excelDiffTitle">差异对比</strong>
+          <span class="excel-meta" id="excelDiffMeta"></span>
+          <span class="spacer"></span>
+          <label class="db-diff-toggle"><input type="checkbox" id="excelDiffOnly" checked /> 只看差异</label>
+          <button class="btn" id="excelDiffClose" type="button">关闭对比</button>
+        </div>
+        <div class="excel-diff-wrap" id="excelDiffWrap"></div>
       </div>
     </main>
   </div>
@@ -753,7 +789,12 @@
             <button class="btn ai-btn" type="button" data-open-ai title="AI"><span class="ai-spark">✦</span>AI</button>
           </div>
         </div>
-        <input class="excel-filter" id="docsFilter" type="text" placeholder="筛选文档…" autocomplete="off" />
+        <div class="side-filter-row">
+          <input class="excel-filter" id="docsFilter" type="text" placeholder="筛选文档…" autocomplete="off" />
+          <label class="side-change-only hidden" title="只看当前 Git 变更里的文档">
+            <input type="checkbox" id="docsChangeOnly" /> 只看变更
+          </label>
+        </div>
       </div>
       <div class="excel-list" id="docsList"></div>
       <div class="side-pager" id="docsPager"></div>
@@ -762,9 +803,6 @@
     <main class="docs-main">
       <div class="excel-bar">
         <button class="icon-btn sidebar-toggle" type="button" data-side-collapse="docs" title="收起侧栏">◧</button>
-        <strong id="docsTitle">选择左侧的文档</strong>
-        <span class="excel-meta" id="docsMeta"></span>
-        <span class="spacer"></span>
         <div class="docs-mode" id="docsMode">
           <button class="btn active" type="button" data-docs-mode="preview">阅读</button>
           <button class="btn" type="button" data-docs-mode="edit">编辑</button>
@@ -772,6 +810,9 @@
         </div>
         <button class="btn primary hidden" id="docsSave" type="button">保存</button>
         <button class="btn" id="docsJump" type="button">跳转源码</button>
+        <strong id="docsTitle">选择左侧的文档</strong>
+        <span class="excel-meta" id="docsMeta"></span>
+        <span class="spacer"></span>
       </div>
       <div class="docs-body" id="docsBody"><div class="excel-empty">选择左侧的文档查看内容</div></div>
       <div class="docs-editor hidden" id="docsEditor">
@@ -818,7 +859,12 @@
             <button class="btn ai-btn" type="button" data-open-ai title="AI"><span class="ai-spark">✦</span>AI</button>
           </div>
         </div>
-        <input class="excel-filter" id="dbFilter" type="text" placeholder="筛选 SQL 文件 / 表…" autocomplete="off" />
+        <div class="side-filter-row">
+          <input class="excel-filter" id="dbFilter" type="text" placeholder="筛选 SQL 文件 / 表…" autocomplete="off" />
+          <label class="side-change-only hidden" title="只看当前 Git 变更里的 SQL 表">
+            <input type="checkbox" id="dbChangeOnly" /> 只看变更
+          </label>
+        </div>
       </div>
       <div class="tree" id="dbTree"></div>
       <div class="side-pager" id="dbPager"></div>
@@ -830,7 +876,9 @@
         <select class="pill" id="dbEnvSelect" title="数据库环境"></select>
         <button class="btn" id="dbEnvBtn" type="button">环境配置</button>
         <select class="pill" id="dbDatabaseSelect" title="要连接的库"></select>
-        <span class="excel-meta" id="dbEnvMeta"></span>
+        <input class="pill db-host-input" id="dbHostInput" type="text" spellcheck="false" placeholder="host:port" title="可直接手填地址，留空用环境里的地址" />
+        <button class="btn" id="dbTestBtn" type="button" title="用当前地址测试连接">测试连接</button>
+        <span class="excel-meta db-env-meta" id="dbEnvMeta"></span>
         <span class="spacer"></span>
         <strong id="dbTitle">选择左侧的表</strong>
         <span class="excel-meta" id="dbPath"></span>
@@ -839,6 +887,8 @@
       <div class="tabs db-tabs" id="dbTabs">
         <button class="tab active" type="button" data-db-tab="query">SQL / 数据</button>
         <button class="tab" type="button" data-db-tab="ddl">表定义</button>
+        <button class="tab" type="button" data-db-tab="init">初始化库</button>
+        <button class="tab" type="button" data-db-tab="diff">差异对比</button>
       </div>
       <div class="db-body" id="dbBody">
         <section class="db-pane active" id="dbQueryView">
@@ -875,6 +925,63 @@
             <label class="db-diff-toggle"><input type="checkbox" id="dbDiffOnly" /> 只看差异</label>
           </div>
           <div class="db-diff" id="dbDdlWrap"></div>
+        </section>
+        <section class="db-pane" id="dbInitView">
+          <div class="db-pane-bar">
+            <span>初始化数据库</span>
+            <span class="excel-meta" id="dbInitMeta"></span>
+            <span class="spacer"></span>
+            <label class="db-init-create"><input type="checkbox" id="dbInitCreateTables" checked /> 顺带建表</label>
+          </div>
+          <div class="db-init">
+            <div class="db-init-form">
+              <label class="db-init-field">
+                库名规则
+                <input id="dbInitTemplate" type="text" spellcheck="false" placeholder="mountain-{file}" />
+              </label>
+              <div class="db-init-tokens">
+                <button class="btn db-init-token" type="button" data-init-token="{file}">文件</button>
+                <button class="btn db-init-token" type="button" data-init-token="{dir}">目录</button>
+                <button class="btn db-init-token" type="button" data-init-token="{table}">表名</button>
+                <span class="db-init-hint">按 SQL 文件名生成库名，例：mountain-{file} → mountain-game_player_storage</span>
+              </div>
+              <div class="db-init-actions">
+                <button class="btn" id="dbInitPreviewBtn" type="button">预览规则</button>
+                <button class="btn primary" id="dbInitRunBtn" type="button">开始初始化</button>
+                <button class="btn" id="dbInitCopyBtn" type="button">复制建库 SQL</button>
+              </div>
+            </div>
+            <div class="db-init-log" id="dbInitLog"><div class="excel-empty">预览后可以看到每个 SQL 文件对应的库名，确认无误再开始初始化。</div></div>
+          </div>
+        </section>
+        <section class="db-pane" id="dbDiffViewPanel">
+          <div class="db-pane-bar">
+            <span>库结构差异</span>
+            <span class="excel-meta" id="dbStructMeta"></span>
+            <span class="spacer"></span>
+            <label class="db-init-create"><input type="checkbox" id="dbStructDiffOnly" checked /> 只看有差异的表</label>
+          </div>
+          <div class="db-struct">
+            <div class="db-struct-side">
+              <div class="db-struct-side-head">
+                <label class="db-struct-all"><input type="checkbox" id="dbStructAll" checked /> 全选</label>
+                <button class="btn db-struct-refresh" id="dbStructRefreshBtn" type="button">重新对比</button>
+              </div>
+              <div class="db-struct-dbs" id="dbStructDbs"></div>
+            </div>
+            <div class="db-struct-main">
+              <div class="db-struct-list" id="dbStructList"><div class="excel-empty">点「重新对比」检查所有库里的表与 SQL 文件的差异。</div></div>
+              <div class="db-struct-detail" id="dbStructDetail"><div class="excel-empty">选择左侧一张表查看左右对比</div></div>
+              <div class="db-struct-script">
+                <div class="db-struct-script-head">
+                  <span>同步 SQL（以文件为准）</span>
+                  <button class="btn" id="dbStructCopyBtn" type="button">复制</button>
+                  <button class="btn" id="dbStructExportBtn" type="button">保存到文件</button>
+                </div>
+                <pre class="db-struct-sql" id="dbStructSql"></pre>
+              </div>
+            </div>
+          </div>
         </section>
       </div>
     </main>

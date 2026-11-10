@@ -609,23 +609,39 @@
 
   function renderEnvList() {
     els.envList.innerHTML = state.envs.map((env) => `
-      <div class="env-item${env.id === state.activeEnvId ? " active" : ""}">
+      <div class="env-item${env.id === state.activeEnvId ? " active" : ""}" data-env-pick="${esc(env.id)}">
         <div>
           <strong>${esc(env.name)}</strong>
           <span>${esc(env.host || "(未配置地址)")}</span>
         </div>
         <div class="env-actions">
           <button class="icon-btn" type="button" data-env-del="${esc(env.id)}" title="删除">✕</button>
-          <button class="btn" type="button" data-pick-env="${esc(env.id)}">编辑</button>
         </div>
       </div>
     `).join("");
   }
 
-  function deleteEnv(id) {
+  /** 切换环境前把当前表单写回，避免输入丢失 */
+  function commitEnvForm() {
+    const env = activeEnv();
+    if (!env) return;
+    env.name = els.envName.value.trim() || env.id;
+    env.host = els.envHost.value.trim();
+    env.note = els.envNote.value.trim();
+  }
+
+  /** VS Code webview 里 window.confirm 常被禁用，统一走自建对话框 */
+  function showConfirm(message) {
+    const builtin = window.ProtoViewDialog?.confirm;
+    if (typeof builtin === "function") return builtin(message);
+    return Promise.resolve(window.confirm(message));
+  }
+
+  async function deleteEnv(id) {
     const index = state.envs.findIndex((env) => env.id === id);
     if (index < 0) return;
-    if (!window.confirm(`删除环境「${state.envs[index].name}」？`)) return;
+    const ok = await showConfirm(`删除环境「${state.envs[index].name}」？`);
+    if (!ok) return;
     state.envs.splice(index, 1);
     if (state.activeEnvId === id) state.activeEnvId = state.envs[0]?.id || "";
     persistEnvs();
@@ -634,6 +650,7 @@
 
   function renderTree() {
     const query = (els.filter.value || "").trim().toLowerCase();
+    const changeOnly = window.ProtoViewGit?.changeOnly?.("rpcChangeOnly");
     const packs = state.catalog.packages || [];
     if (!packs.length) {
       els.tree.innerHTML = `<div class="empty-side">还没有接口数据。点击刷新，或确认 Proto 来源已解析成功。</div>`;
@@ -644,9 +661,9 @@
     let html = "";
     for (const pkg of packs) {
       const pkgMatched = !query || pkg.name.toLowerCase().includes(query);
-      const services = (pkg.services || []).filter((service) => matchService(pkg, service, query));
-      const messages = (pkg.messages || []).filter((item) => pkgMatched || matchTypeRef(item, query));
-      const enums = (pkg.enums || []).filter((item) => pkgMatched || matchTypeRef(item, query));
+      const services = (pkg.services || []).filter((service) => matchService(pkg, service, query, changeOnly));
+      const messages = (pkg.messages || []).filter((item) => (pkgMatched || matchTypeRef(item, query)) && (!changeOnly || typeChanged(item)));
+      const enums = (pkg.enums || []).filter((item) => (pkgMatched || matchTypeRef(item, query)) && (!changeOnly || typeChanged(item)));
       if (!services.length && !messages.length && !enums.length) continue;
       const pkgKey = `pkg:${pkg.name}`;
       if (query && (messages.length || enums.length)) {
@@ -669,7 +686,7 @@
       for (const service of services) {
         const svcKey = `svc:${service.id}`;
         const svcOpen = state.expanded.has(svcKey);
-        const rpcs = (service.rpcs || []).filter((rpc) => matchRpc(pkg, service, rpc, query));
+        const rpcs = (service.rpcs || []).filter((rpc) => matchRpc(pkg, service, rpc, query, changeOnly));
         html += `<div class="node">
           <button class="node-row" type="button" data-toggle="${esc(svcKey)}">
             <span class="caret">${svcOpen ? "▼" : "▶"}</span>
@@ -730,13 +747,30 @@
     return `${html}</div></div>`;
   }
 
-  function matchService(pkg, service, query) {
-    if (!query) return true;
-    if (pkg.name.toLowerCase().includes(query) || service.name.toLowerCase().includes(query)) return true;
-    return (service.rpcs || []).some((rpc) => matchRpc(pkg, service, rpc, query));
+  function matchService(pkg, service, query, changeOnly = false) {
+    const list = (service.rpcs || []).filter((rpc) => matchRpc(pkg, service, rpc, query, changeOnly));
+    if (changeOnly && !list.length) {
+      // 服务里没有变更的 rpc 时，若 proto 文件本身变更也保留
+      return Boolean(query) && pkg.name.toLowerCase().includes(query);
+    }
+    if (!query) return list.length > 0 || !changeOnly;
+    if (pkg.name.toLowerCase().includes(query) || service.name.toLowerCase().includes(query)) {
+      return changeOnly ? list.length > 0 || Boolean(service.path && fileChanged(service.path)) : true;
+    }
+    return list.length > 0;
   }
 
-  function matchRpc(pkg, service, rpc, query) {
+  function fileChanged(path) {
+    if (!path) return false;
+    return Boolean(window.ProtoViewGit?.isChanged?.(path));
+  }
+
+  function typeChanged(item) {
+    return fileChanged(item?.path || item?.file);
+  }
+
+  function matchRpc(pkg, service, rpc, query, changeOnly = false) {
+    if (changeOnly && !fileChanged(rpc.path || service.path || pkg.path)) return false;
     if (!query) return true;
     const hay = `${pkg.name} ${service.name} ${rpc.name} ${rpc.comment || ""} ${rpc.request} ${rpc.response}`.toLowerCase();
     if (hay.includes(query)) return true;
@@ -812,6 +846,20 @@
     return null;
   }
 
+  /** 请求区头部：显示当前接口与字段数，方便确认在编辑哪个请求 */
+  function updateRequestMeta() {
+    const el = $("requestMeta");
+    if (!el) return;
+    const rpc = state.selected;
+    if (!rpc) {
+      el.textContent = "";
+      return;
+    }
+    const text = String(els.messageEditor?.value || "").trim();
+    const lines = text ? text.split("\n").length : 0;
+    el.textContent = `${rpc.package}.${rpc.service}/${rpc.name} · ${(rpc.requestFields || []).length} 字段 · ${lines} 行`;
+  }
+
   function selectRpc(id, opts = {}) {
     const hit = findRpc(id);
     if (!hit) return;
@@ -857,6 +905,7 @@
     refreshGhzCommand();
     renderTree();
     setTab(opts.tab || state.tab);
+    updateRequestMeta();
     syncScopedHistory(Boolean(opts.showLatest));
   }
 
@@ -1423,6 +1472,7 @@
     $("genMsgBtn").hidden = !messageTools;
     $("formatMsgBtn").hidden = !messageTools;
     $("clearMsgBtn").hidden = !messageTools;
+    $("clearHistoryBarBtn")?.classList.toggle("hidden", tab !== "history");
     if (tab === "history") renderHistory();
     els.toolbarHint.textContent = tab === "message"
       ? "左侧为接口说明，右侧编辑请求 JSON"
@@ -2242,6 +2292,10 @@
     setRespBadge("ok", "grpcurl 命令已复制");
   });
   els.filter.addEventListener("input", renderTree);
+  $("rpcChangeOnly")?.addEventListener("change", () => {
+    window.ProtoViewGit?.request?.();
+    renderTree();
+  });
   els.envSelect.addEventListener("change", () => applyEnvId(els.envSelect.value));
   $("protocolSelect")?.addEventListener("change", () => {
     const protocol = currentProtocol();
@@ -2323,8 +2377,7 @@
       return;
     }
     const toggle = event.target.closest("[data-toggle]");
-    if (toggle) {
-      const key = toggle.getAttribute("data-toggle");
+    if (toggle) {      const key = toggle.getAttribute("data-toggle");
       if (state.expanded.has(key)) state.expanded.delete(key);
       else state.expanded.add(key);
       renderTree();
@@ -2336,7 +2389,7 @@
       return;
     }
     const rpc = event.target.closest("[data-rpc]");
-    if (rpc) selectRpc(rpc.getAttribute("data-rpc"));
+    if (rpc) selectRpc(rpc.getAttribute("data-rpc"), { tab: "message" });
   });
   els.tree.addEventListener("dblclick", (event) => {
     const rpc = event.target.closest("[data-rpc]");
@@ -2419,13 +2472,17 @@
     if (!state.selected) return;
     els.messageEditor.value = generateMessage(state.selected);
     state.messageDirty = true;
+    updateRequestMeta();
   });
   $("formatMsgBtn").addEventListener("click", formatMessage);
   $("clearMsgBtn").addEventListener("click", () => {
     els.messageEditor.value = "{}";
     state.messageDirty = true;
   });
-  els.messageEditor.addEventListener("input", () => { state.messageDirty = true; });
+  els.messageEditor.addEventListener("input", () => {
+    state.messageDirty = true;
+    updateRequestMeta();
+  });
   $("clearRespBtn").addEventListener("click", () => {
     setRespBadge("", "");
     els.responseView.innerHTML = `<div class="resp-empty">选择接口，配置地址后发送。</div>`;
@@ -2446,23 +2503,23 @@
     const nodeId = item.nodeId || flowApi.nodeIdForRpc?.(item.rpcId || state.selected?.id);
     if (nodeId) flowApi.openInspect?.(nodeId, { tab: "history" });
   });
-  $("clearHistoryBtn")?.addEventListener("click", () => {
+  function clearCurrentHistory() {
     const rpc = state.selected;
     const items = rpc ? state.history.filter((item) => historyMatches(item, rpc)) : state.history.slice();
     if (!items.length) return;
-    const label = rpc ? rpc.name : "全部接口";
-    if (!window.confirm(`清空「${label}」的发送记录？`)) return;
     const drop = new Set(items);
     state.history = state.history.filter((item) => !drop.has(item));
     saveHistory();
     state.historyActiveId = "";
-    if (!rpc || state.responseRpcId === rpc.id) {
-      state.responseRpcId = "";
-      setRespBadge("", "");
-      if (els.responseView) els.responseView.innerHTML = `<div class="resp-empty">该接口还没有响应。</div>`;
-    }
+    // 响应区一起清掉，避免还留着刚删除的那次结果
+    state.responseRpcId = "";
+    state.pendingResponse = null;
+    setRespBadge("", "");
+    if (els.responseView) els.responseView.innerHTML = `<div class="resp-empty">该接口还没有响应。</div>`;
     renderHistory();
-  });
+  }
+  $("clearHistoryBtn")?.addEventListener("click", clearCurrentHistory);
+  $("clearHistoryBarBtn")?.addEventListener("click", clearCurrentHistory);
 
   els.metaBody.addEventListener("input", (event) => {
     const input = event.target.closest("input[data-meta-key]");
@@ -2523,22 +2580,37 @@
     renderEnvList();
     openModal(els.envModal);
   });
-  $("closeEnvModal").addEventListener("click", () => closeModal(els.envModal));
+  $("closeEnvModal").addEventListener("click", () => {
+    commitEnvForm();
+    persistEnvs();
+    closeModal(els.envModal);
+  });
   els.envList.addEventListener("click", (event) => {
     const del = event.target.closest("[data-env-del]");
     if (del) {
+      event.preventDefault();
+      event.stopPropagation();
       deleteEnv(del.getAttribute("data-env-del"));
       return;
     }
-    const btn = event.target.closest("[data-pick-env]");
-    if (!btn) return;
-    state.activeEnvId = btn.getAttribute("data-pick-env");
+    const item = event.target.closest("[data-env-pick]");
+    if (!item) return;
+    const id = item.getAttribute("data-env-pick");
+    if (id === state.activeEnvId) return;
+    commitEnvForm();
+    state.activeEnvId = id;
+    persistEnvs();
+    fillEnvForm();
     renderEnvSelect();
   });
   $("addEnvBtn").addEventListener("click", () => {
+    commitEnvForm();
     const id = `env_${Date.now().toString(36)}`;
     state.envs.push({ id, name: `env-${state.envs.length + 1}`, host: "", note: "" });
     state.activeEnvId = id;
+    persistEnvs();
+    renderEnvList();
+    fillEnvForm();
     renderEnvSelect();
   });
   $("saveEnvBtn").addEventListener("click", () => {
@@ -3069,6 +3141,8 @@
   };
 
   window.ProtoViewClient = {
+    rerenderTree: () => renderTree(),
+    notify: (message) => { setRespBadge("", String(message || "")); },
     findRpc,
     discardClientSnapshot,
     healAfterFlow() {
@@ -3240,6 +3314,12 @@
       globalSearch.codeLoaded = false;
       globalSearch.codeItems = [];
     }
+    // 扩展标题栏快速入口：切到指定视图并按文件定位
+    if (data.type === "openClientView") {
+      const view = String(data.payload?.view || "client");
+      const target = String(data.payload?.target || "");
+      window.ProtoViewHome?.openTargetView?.(view, target);
+    }
     if (data.type === "codeSymbols") applyCodeSymbols(data);
     if (data.type === "callGraph") renderCallGraph(data.payload);
     if (data.type === "invokeResult") {
@@ -3312,7 +3392,11 @@
     if (event.target === els.bulkModal) closeModal(els.bulkModal);
   });
   els.envModal.addEventListener("click", (event) => {
-    if (event.target === els.envModal) closeModal(els.envModal);
+    if (event.target === els.envModal) {
+      commitEnvForm();
+      persistEnvs();
+      closeModal(els.envModal);
+    }
   });
 
   const ai = { tiles: [], selected: -1, solved: false, target: ["山", "海", "平", "爱"] };
@@ -3400,76 +3484,132 @@
     if (!workspace || !handle || !reqBtn || !respBtn) return;
 
     const saved = loadSplitState();
-    let ratio = typeof saved.ratio === "number" ? saved.ratio : 0.62;
+    // 左右宽度（Client 主区）
+    let leftRatio = typeof saved.leftRatio === "number" ? saved.leftRatio : 0.4;
+    let leftCollapsed = Boolean(saved.leftCollapsed);
+    let rightCollapsed = Boolean(saved.rightCollapsed);
+    // 右栏内 请求/响应 高度
+    let ratio = typeof saved.ratio === "number" ? saved.ratio : 0.5;
     let reqCollapsed = Boolean(saved.reqCollapsed);
     let respCollapsed = Boolean(saved.respCollapsed);
+    if (leftCollapsed && rightCollapsed) rightCollapsed = false;
     if (reqCollapsed && respCollapsed) respCollapsed = false;
 
     function persist() {
-      saveSplitState({ ratio, reqCollapsed, respCollapsed });
+      saveSplitState({ leftRatio, leftCollapsed, rightCollapsed, ratio, reqCollapsed, respCollapsed });
     }
 
     function apply() {
-      workspace.style.setProperty("--req-size", `${Math.round(ratio * 10000) / 100}%`);
-      workspace.classList.toggle("req-collapsed", reqCollapsed);
-      workspace.classList.toggle("resp-collapsed", respCollapsed);
-      reqBtn.title = reqCollapsed ? "展开请求区" : "收起请求区";
-      respBtn.title = respCollapsed ? "展开响应区" : "收起响应区";
+      workspace.style.setProperty("--left-size", `${Math.round(leftRatio * 10000) / 100}%`);
+      workspace.classList.toggle("left-collapsed", leftCollapsed);
+      workspace.classList.toggle("right-collapsed", rightCollapsed);
+      reqBtn.title = leftCollapsed ? "展开左侧" : "收起左侧";
+      respBtn.title = rightCollapsed ? "展开右侧" : "收起右侧";
+      const rightSplit = $("rightSplit");
+      if (rightSplit) {
+        rightSplit.style.setProperty("--right-req-size", `${Math.round(ratio * 10000) / 100}%`);
+        rightSplit.classList.toggle("req-collapsed", reqCollapsed);
+        rightSplit.classList.toggle("resp-collapsed", respCollapsed);
+      }
+      const areaReqBtn = $("collapseReqAreaBtn");
+      const areaRespBtn = $("collapseRespAreaBtn");
+      if (areaReqBtn) areaReqBtn.title = reqCollapsed ? "展开请求" : "收起请求";
+      if (areaRespBtn) areaRespBtn.title = respCollapsed ? "展开响应" : "收起响应";
       persist();
     }
 
     reqBtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (reqCollapsed) {
-        reqCollapsed = false;
-      } else {
-        reqCollapsed = true;
-        if (respCollapsed) respCollapsed = false;
-      }
+      leftCollapsed = !leftCollapsed;
+      if (leftCollapsed && rightCollapsed) rightCollapsed = false;
       apply();
     });
     respBtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (respCollapsed) {
-        respCollapsed = false;
-      } else {
-        respCollapsed = true;
-        if (reqCollapsed) reqCollapsed = false;
-      }
+      rightCollapsed = !rightCollapsed;
+      if (rightCollapsed && leftCollapsed) leftCollapsed = false;
       apply();
     });
 
-    let dragging = false;
-    const onMove = (event) => {
-      if (!dragging) return;
+    // 横向拖动：调整左右宽度
+    let draggingX = false;
+    const onMoveX = (event) => {
+      if (!draggingX) return;
       const rect = workspace.getBoundingClientRect();
-      const y = event.clientY - rect.top;
-      const next = y / rect.height;
-      ratio = Math.min(0.85, Math.max(0.18, next));
+      if (!rect.width) return;
+      leftRatio = Math.min(0.78, Math.max(0.16, (event.clientX - rect.left) / rect.width));
+      if (leftCollapsed || rightCollapsed) {
+        leftCollapsed = false;
+        rightCollapsed = false;
+      }
+      apply();
+    };
+    const onUpX = () => {
+      if (!draggingX) return;
+      draggingX = false;
+      workspace.classList.remove("splitting-x");
+      window.removeEventListener("pointermove", onMoveX);
+      window.removeEventListener("pointerup", onUpX);
+    };
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      draggingX = true;
+      workspace.classList.add("splitting-x");
+      window.addEventListener("pointermove", onMoveX);
+      window.addEventListener("pointerup", onUpX);
+    });
+    $("splitBar").addEventListener("dblclick", () => {
+      leftRatio = 0.4;
+      leftCollapsed = false;
+      rightCollapsed = false;
+      apply();
+    });
+
+    // 右栏内 请求/响应 上下拖动
+    const respHandle = $("respSplitHandle");
+    let draggingY = false;
+    const onMoveY = (event) => {
+      if (!draggingY) return;
+      const split = $("rightSplit");
+      const rect = split?.getBoundingClientRect();
+      if (!rect || !rect.height) return;
+      ratio = Math.min(0.85, Math.max(0.15, (event.clientY - rect.top) / rect.height));
       if (reqCollapsed || respCollapsed) {
         reqCollapsed = false;
         respCollapsed = false;
       }
       apply();
     };
-    const onUp = () => {
-      if (!dragging) return;
-      dragging = false;
-      workspace.classList.remove("splitting");
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+    const onUpY = () => {
+      if (!draggingY) return;
+      draggingY = false;
+      $("rightSplit")?.classList.remove("splitting");
+      window.removeEventListener("pointermove", onMoveY);
+      window.removeEventListener("pointerup", onUpY);
     };
-    handle.addEventListener("pointerdown", (event) => {
+    respHandle?.addEventListener("pointerdown", (event) => {
       event.preventDefault();
-      dragging = true;
-      workspace.classList.add("splitting");
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+      draggingY = true;
+      $("rightSplit")?.classList.add("splitting");
+      window.addEventListener("pointermove", onMoveY);
+      window.addEventListener("pointerup", onUpY);
     });
-    $("splitBar").addEventListener("dblclick", () => {
-      ratio = 0.62;
+    $("respSplitBar")?.addEventListener("dblclick", () => {
+      ratio = 0.5;
       reqCollapsed = false;
       respCollapsed = false;
+      apply();
+    });
+    $("collapseReqAreaBtn")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      reqCollapsed = !reqCollapsed;
+      if (reqCollapsed && respCollapsed) respCollapsed = false;
+      apply();
+    });
+    $("collapseRespAreaBtn")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      respCollapsed = !respCollapsed;
+      if (respCollapsed && reqCollapsed) reqCollapsed = false;
       apply();
     });
 

@@ -14,6 +14,8 @@ import {
   syncGitSource,
 } from "./source";
 import { registerLanguageFeatures } from "./language";
+import { registerExcelDiff } from "./excelDiffCommand";
+import { registerCustomViewers } from "./customViewers";
 import { ProtoNode, ProtoTree } from "./tree";
 
 let catalog: Catalog | undefined;
@@ -26,6 +28,8 @@ export function activate(context: vscode.ExtensionContext): void {
   extensionContext = context;
   sourceConfig = loadSourceConfig(context);
   clientPanel = new ClientPanel(context.extensionUri);
+  registerExcelDiff(context);
+  registerCustomViewers(context);
 
   const tree = new ProtoTree(undefined, true, showGoogle(), sourceConfig);
   clientPanel.setRefreshHandler(() => {
@@ -95,7 +99,11 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       clientPanel.open(catalog, sourceLabel(), showGoogle(), sourceConfig);
     }),
-    vscode.commands.registerCommand("protoview.showAtCursor", () => {
+    // 编辑器标题栏快速入口：按当前文件类型直接进对应 View Client
+    vscode.commands.registerCommand("protoview.openProtoView", (arg?: unknown) => openClientAt("client", arg)),
+    vscode.commands.registerCommand("protoview.openExcelView", (arg?: unknown) => openClientAt("excel", arg)),
+    vscode.commands.registerCommand("protoview.openDocsView", (arg?: unknown) => openClientAt("docs", arg)),
+    vscode.commands.registerCommand("protoview.openDbView", (arg?: unknown) => openClientAt("db", arg)),    vscode.commands.registerCommand("protoview.showAtCursor", () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !catalog) return;
       const id = findSymbolAt(catalog, editor.document.uri.fsPath, editor.selection.active.line + 1);
@@ -401,6 +409,21 @@ function sourceLabel(): string {
 
 function showGoogle(): boolean {
   return vscode.workspace.getConfiguration("protoview").get<boolean>("showGoogle") === true;
+}
+
+/** 编辑器标题栏快速入口：打开 Client 并切到指定视图，带上当前文件用于定位 */
+function openClientAt(view: "client" | "excel" | "docs" | "db", arg?: unknown): void {
+  if (!catalog) {
+    void vscode.window.showWarningMessage("请先完成 Proto 解析，再打开 ProtoView Client。");
+    return;
+  }
+  const fromArg = (value: unknown): string => {
+    if (value instanceof vscode.Uri) return value.fsPath;
+    const record = value as { resourceUri?: vscode.Uri; fsPath?: string } | undefined;
+    return record?.resourceUri?.fsPath || record?.fsPath || "";
+  };
+  const target = fromArg(arg) || vscode.window.activeTextEditor?.document.uri.fsPath || "";
+  clientPanel.openView(view, catalog, sourceLabel(), showGoogle(), sourceConfig, target);
 }
 
 export function deactivate(): void {
